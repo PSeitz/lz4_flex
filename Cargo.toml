@@ -27,7 +27,9 @@ lz4-compress = "0.1.1"
 lz4 = "1.23.1"
 
 [[bin]]
-name = "profile"
+name = "profile_comp"
+[[bin]]
+name = "profile_decomp"
 
 [[bench]]
 name = "bench"
