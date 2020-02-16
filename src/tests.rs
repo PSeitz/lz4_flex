@@ -5,9 +5,9 @@ extern crate test;
 use std::str;
 use crate::{decompress, compress};
 
-const COMPRESSION1K: &'static [u8; 729] = include_bytes!("../benches/compression_1k.txt");
-const COMPRESSION34K: &'static [u8; 34507] = include_bytes!("../benches/compression_34k.txt");
-const COMPRESSION65: &'static [u8; 65186] = include_bytes!("../benches/compression_65k.txt");
+const COMPRESSION1K: &'static [u8] = include_bytes!("../benches/compression_1k.txt");
+const COMPRESSION34K: &'static [u8] = include_bytes!("../benches/compression_34k.txt");
+const COMPRESSION65: &'static [u8] = include_bytes!("../benches/compression_65k.txt");
 
 #[bench]
 fn bench_compression_small(b: &mut test::Bencher) {
@@ -144,8 +144,8 @@ mod test_compression {
 
     #[test]
     fn test_comp_flex() {
-        print_ratio("Ratio 1k", COMPRESSION1K.len(), compress(COMPRESSION1K as &[u8]).len());
-        print_ratio("Ratio 34k", COMPRESSION34K.len(), compress(COMPRESSION34K as &[u8]).len());
+        print_ratio("Ratio 1k", COMPRESSION1K.len(), compress(COMPRESSION1K).len());
+        print_ratio("Ratio 34k", COMPRESSION34K.len(), compress(COMPRESSION34K).len());
     }
 
     mod lz4_linked {
@@ -161,8 +161,8 @@ mod test_compression {
 
         #[test]
         fn test_comp_lz4_linked() {
-            print_ratio("Ratio 1k", COMPRESSION1K.len(), get_compressed_size(COMPRESSION1K as &[u8]));
-            print_ratio("Ratio 34k", COMPRESSION34K.len(), get_compressed_size(COMPRESSION34K as &[u8]));
+            print_ratio("Ratio 1k", COMPRESSION1K.len(), get_compressed_size(COMPRESSION1K));
+            print_ratio("Ratio 34k", COMPRESSION34K.len(), get_compressed_size(COMPRESSION34K));
 
         }
     }

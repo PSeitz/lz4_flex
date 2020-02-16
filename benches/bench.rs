@@ -5,13 +5,15 @@ use std::io;
 // use lz4_flex::{decompress, decompress_into, compress, compress_into};
 
 
-const COMPRESSION1K: &'static [u8; 729] = include_bytes!("compression_1k.txt");
-const COMPRESSION34K: &'static [u8; 34507] = include_bytes!("compression_34k.txt");
-const COMPRESSION65K: &'static [u8; 65186] = include_bytes!("compression_65k.txt");
-const COMPRESSION10MB: &'static [u8; 10192446] = include_bytes!("dickens.txt");
+const COMPRESSION1K: &'static [u8] = include_bytes!("compression_1k.txt");
+const COMPRESSION34K: &'static [u8] = include_bytes!("compression_34k.txt");
+const COMPRESSION65K: &'static [u8] = include_bytes!("compression_65k.txt");
+const COMPRESSION10MB: &'static [u8] = include_bytes!("dickens.txt");
 
 const ALL: [&[u8]; 4] = [COMPRESSION1K as &[u8], COMPRESSION34K as &[u8], COMPRESSION65K as &[u8], COMPRESSION10MB as &[u8]];
 // const ALL: [&[u8]; 1] = [COMPRESSION65K as &[u8]];
+
+
 
 fn bench_compression_throughput(c: &mut Criterion) {
     let mut group = c.benchmark_group("Compress");

@@ -2,7 +2,7 @@ extern crate lz4_flex;
 
 
 
-const COMPRESSION10MB: &'static [u8; 10192446] = include_bytes!("../../benches/dickens.txt");
+const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/dickens.txt");
 
 fn main() {
 
