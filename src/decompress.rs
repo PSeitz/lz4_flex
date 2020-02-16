@@ -76,9 +76,14 @@ impl<'a> Decoder<'a> {
     fn duplicate(&mut self, start: usize, match_length: usize) {
         // We cannot simply use memcpy or `extend_from_slice`, because these do not allow
         // self-referential copies: http://ticki.github.io/img/lz4_runs_encoding_diagram.svg
-        for i in start..start + match_length {
-            let b = self.output[i];
-            self.output.push(b);
+        // `reserve` enough space on the vector to safely copy self referential data.
+        if self.output.len() < start+match_length { // TODO handle special case
+            for i in start..start + match_length {
+                let b = self.output[i];
+                self.output.push(b);
+            }
+        }else{
+            copy_on_self(&mut self.output, start, match_length);
         }
     }
 
@@ -262,6 +267,23 @@ pub fn decompress(input: &[u8]) -> Result<Vec<u8>, Error> {
 
     Ok(vec)
 }
+
+
+fn copy_on_self(vec: &mut Vec<u8>, start: usize, num_items: usize) {
+    vec.reserve(num_items);
+    unsafe {
+        std::ptr::copy_nonoverlapping(vec.as_ptr().add(start), vec.as_mut_ptr().add(vec.len()), num_items);
+        vec.set_len(vec.len() + num_items);
+    }
+}
+
+#[test]
+fn test_copy_on_self() {
+    let mut data: Vec<u8>= vec![10];
+    copy_on_self(&mut data, 0, 1);
+    assert_eq!(data, [10, 10]);
+}
+
 
 #[cfg(test)]
 mod test {
