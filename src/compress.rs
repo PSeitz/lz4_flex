@@ -288,14 +288,14 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
     vec
 }
 
-#[test]
-fn test_concat() {
-    let mut out = vec![];
-    compress_into(&[0], &mut out).unwrap();
-    compress_into(&[0], &mut out).unwrap();
-    dbg!(&out);
+// #[test]
+// fn test_concat() {
+//     let mut out = vec![];
+//     compress_into(&[0], &mut out).unwrap();
+//     compress_into(&[0], &mut out).unwrap();
+//     dbg!(&out);
 
-    let mut out = vec![];
-    compress_into(&[0, 0], &mut out).unwrap();
-    dbg!(&out);
-}
+//     let mut out = vec![];
+//     compress_into(&[0, 0], &mut out).unwrap();
+//     dbg!(&out);
+// }

@@ -24,6 +24,8 @@ quick_error! {
 struct Decoder<'a> {
     /// The compressed input.
     input: &'a [u8],
+    /// The current read position in the input.
+    input_pos: usize,
     /// The decompressed output.
     output: &'a mut Vec<u8>,
     /// The current block's "token".
@@ -36,36 +38,39 @@ struct Decoder<'a> {
 
 impl<'a> Decoder<'a> {
     /// Internal (partial) function for `take`.
-    #[inline]
-    fn take_imp(input: &mut &'a [u8], n: usize) -> Result<&'a [u8], Error> {
+    // #[inline(never)]
+    fn move_cursor(&mut self, input: &'a [u8], n: usize) -> Result<(), Error> {
         // Check if we have enough bytes left.
-        if input.len() < n {
+        if input.len() < self.input_pos + n {
             // No extra bytes. This is clearly not expected, so we return an error.
             Err(Error::ExpectedAnotherByte)
         } else {
             // Take the first n bytes.
-            let res = Ok(&input[..n]);
+            // let res = &input[self.input_pos..self.input_pos+n];
             // Shift the stream to left, so that it is no longer the first byte.
-            *input = &input[n..];
-
+            // *input = &input[n..];
+            self.input_pos+=n;
             // Return the former first byte.
-            res
+            // res
+            Ok(())
         }
     }
 
-    /// Pop n bytes from the start of the input stream.
-    fn take(&mut self, n: usize) -> Result<&[u8], Error> {
-        Self::take_imp(&mut self.input, n)
-    }
+    // /// Pop n bytes from the start of the input stream.
+    // // #[inline(never)]
+    // fn take(&mut self, n: usize) -> &[u8] {
+    //     self.move_cursor(&self.input, n)
+    // }
 
     /// Write a buffer to the output stream.
     ///
     /// The reason this doesn't take `&mut self` is that we need partial borrowing due to the rules
     /// of the borrow checker. For this reason, we instead take some number of segregated
     /// references so we can read and write them independently.
+    // #[inline(never)]
     fn output(output: &mut Vec<u8>, buf: &[u8]) {
         // We use simple memcpy to extend the vector.
-        output.extend_from_slice(&buf[..buf.len()]);
+        output.extend_from_slice(&buf);
     }
 
     /// Write an already decompressed match to the output stream.
@@ -73,6 +78,7 @@ impl<'a> Decoder<'a> {
     /// This is used for the essential part of the algorithm: deduplication. We start at some
     /// position `start` and then keep pushing the following element until we've added
     /// `match_length` elements.
+    // #[inline(never)]
     fn duplicate(&mut self, start: usize, match_length: usize) {
         // We cannot simply use memcpy or `extend_from_slice`, because these do not allow
         // self-referential copies: http://ticki.github.io/img/lz4_runs_encoding_diagram.svg
@@ -101,29 +107,36 @@ impl<'a> Decoder<'a> {
     ///
     /// is encoded to _255 + 255 + 255 + 4 = 769_. The bytes after the first 4 is ignored, because
     /// 4 is the first non-0xFF byte.
-    #[inline]
-    fn read_integer(&mut self) -> Result<usize, Error> {
+    // #[inline(never)]
+    fn read_integer(&mut self) -> Result<usize, Error>  {
         // We start at zero and count upwards.
         let mut n = 0;
         // If this byte takes value 255 (the maximum value it can take), another byte is read
         // and added to the sum. This repeats until a byte lower than 255 is read.
         while {
             // We add the next byte until we get a byte which we add to the counting variable.
-            let extra = self.take(1)?[0];
-            n += extra as usize;
+            // self.move_cursor(&self.input, 1)?;
+            // check alread done in move_cursor
+            let extra = unsafe{self.input.get_unchecked(self.input_pos)};
+            self.input_pos+=1;
+            n += *extra as usize;
 
             // We continue if we got 255.
-            extra == 0xFF
+            *extra == 0xFF
         } {}
 
         Ok(n)
     }
 
     /// Read a little-endian 16-bit integer from the input stream.
-    #[inline]
+    // #[inline(never)]
     fn read_u16(&mut self) -> Result<u16, Error> {
         // We use byteorder to read an u16 in little endian.
-        Ok(LittleEndian::read_u16(self.take(2)?))
+        
+        let num = LittleEndian::read_u16(&self.input[self.input_pos ..]);
+
+        self.move_cursor(&self.input, 2)?;
+        Ok(num)
     }
 
     /// Read the literals section of a block.
@@ -136,7 +149,8 @@ impl<'a> Decoder<'a> {
     /// 1. An LSIC integer extension to the literals length as defined by the first part of the
     ///    token, if it takes the highest value (15).
     /// 2. The literals themself.
-    fn read_literal_section(&mut self) -> Result<(), Error> {
+    // #[inline(never)]
+    fn read_literal_section(&mut self) -> Result<(), Error>  {
         // The higher token is the literals part of the token. It takes a value from 0 to 15.
         let mut literal = (self.token >> 4) as usize;
         // If the initial value is 15, it is indicated that another byte will be read and added to
@@ -151,9 +165,11 @@ impl<'a> Decoder<'a> {
         // following literal copied to the output buffer is.
 
         // Read the literals segment and output them without processing.
-        Self::output(&mut self.output, Self::take_imp(&mut self.input, literal)?);
-
+        let block = &self.input[self.input_pos..self.input_pos+literal];
+        self.move_cursor(&self.input, literal)?;
+        Self::output(&mut self.output, block);
         Ok(())
+
     }
 
     /// Read the duplicates section of the block.
@@ -165,6 +181,7 @@ impl<'a> Decoder<'a> {
     ///    in the decoded buffer and copy.
     /// 2. An LSIC integer extension to the duplicate length as defined by the first part of the
     ///    token, if it takes the highest value (15).
+    // #[inline(never)]
     fn read_duplicate_section(&mut self) -> Result<(), Error> {
         // Now, we will obtain the offset which we will use to copy from the output. It is an
         // 16-bit integer.
@@ -222,21 +239,27 @@ impl<'a> Decoder<'a> {
     /// the involved parameters are read) $t_2 + 15m + c$ bytes are copied from the output buffer
     /// at position $a + 4$ and appended to the output buffer. Note that this copy can be
     /// overlapping.
-    #[inline]
+    // #[inline(never)]
     fn complete(&mut self) -> Result<(), Error> {
         // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer
         // is empty.
-        while !self.input.is_empty() {
+        let in_len = self.input.len();
+        while in_len != self.input_pos {
             // Read the token. The token is the first byte in a block. It is divided into two 4-bit
             // subtokens, the higher and the lower.
-            self.token = self.take(1)?[0];
+            // self.token = self.take(1)[0];
+
+            self.move_cursor(&self.input, 1)?;
+
+            // check alread done in move_cursor
+            self.token = unsafe{*self.input.get_unchecked(self.input_pos - 1)};
 
             // Now, we read the literals section.
             self.read_literal_section()?;
 
             // If the input stream is emptied, we break out of the loop. This is only the case
             // in the end of the stream, since the block is intact otherwise.
-            if self.input.is_empty() { break; }
+            if in_len == self.input_pos { break; }
 
             // Now, we read the duplicates section.
             self.read_duplicate_section()?;
@@ -247,10 +270,12 @@ impl<'a> Decoder<'a> {
 }
 
 /// Decompress all bytes of `input` into `output`.
+// #[inline(never)]
 pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> {
     // Decode into our vector.
     Decoder {
         input: input,
+        input_pos: 0,
         output: output,
         token: 0,
     }.complete()?;
@@ -259,6 +284,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
 }
 
 /// Decompress all bytes of `input`.
+// #[inline(never)]
 pub fn decompress(input: &[u8]) -> Result<Vec<u8>, Error> {
     // Allocate a vector to contain the decompressed stream.
     let mut vec = Vec::with_capacity(4096);
@@ -269,6 +295,7 @@ pub fn decompress(input: &[u8]) -> Result<Vec<u8>, Error> {
 }
 
 
+// #[inline(never)]
 fn copy_on_self(vec: &mut Vec<u8>, start: usize, num_items: usize) {
     vec.reserve(num_items);
     unsafe {
@@ -278,6 +305,7 @@ fn copy_on_self(vec: &mut Vec<u8>, start: usize, num_items: usize) {
 }
 
 #[test]
+// #[inline(never)]
 fn test_copy_on_self() {
     let mut data: Vec<u8>= vec![10];
     copy_on_self(&mut data, 0, 1);
@@ -290,21 +318,25 @@ mod test {
     use super::*;
 
     #[test]
+    // #[inline(never)]
     fn aaaaaaaaaaa_lots_of_aaaaaaaaa() {
         assert_eq!(decompress(&[0x11, b'a', 1, 0]).unwrap(), b"aaaaaa");
     }
 
     #[test]
+    // #[inline(never)]
     fn multiple_repeated_blocks() {
         assert_eq!(decompress(&[0x11, b'a', 1, 0, 0x22, b'b', b'c', 2, 0]).unwrap(), b"aaaaaabcbcbcbc");
     }
 
     #[test]
+    // #[inline(never)]
     fn all_literal() {
         assert_eq!(decompress(&[0x30, b'a', b'4', b'9']).unwrap(), b"a49");
     }
 
     #[test]
+    // #[inline(never)]
     fn offset_oob() {
         decompress(&[0x10, b'a', 2, 0]).unwrap_err();
         decompress(&[0x40, b'a', 1, 0]).unwrap_err();

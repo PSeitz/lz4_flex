@@ -34,6 +34,7 @@ fn bench_compression_65k(b: &mut test::Bencher) {
     })
 }
 
+#[ignore]
 #[bench]
 fn bench_compression_10_mb(b: &mut test::Bencher) {
     b.iter(|| {
@@ -71,9 +72,9 @@ fn bench_decompression_10_mb(b: &mut test::Bencher) {
 /// Test that the compressed string decompresses to the original string.
 fn inverse(s: &str) {
     let compressed = compress(s.as_bytes());
-    println!("Compressed '{}' into {:?}", s, compressed);
+    // println!("Compressed '{}' into {:?}", s, compressed);
     let decompressed = decompress(&compressed).unwrap();
-    println!("Decompressed it into {:?}", str::from_utf8(&decompressed).unwrap());
+    // println!("Decompressed it into {:?}", str::from_utf8(&decompressed).unwrap());
     assert_eq!(decompressed, s.as_bytes());
 }
 
