@@ -12,7 +12,7 @@ keywords = ["compression", "lz4", "compress", "decompression", "decompress"]
 byteorder = "1.3.4"
 quick-error = "1.2.3"
 # Only temp for profiling
-cpuprofiler = "0.0.4"
+# cpuprofiler = "0.0.4"
 
 [profile.release]
 codegen-units = 1
@@ -26,10 +26,12 @@ criterion = "0.3.1"
 lz4-compress = "0.1.1"
 lz4 = "1.23.1"
 
+# [[bin]]
+# name = "profile_comp"
+# [[bin]]
+# name = "profile_decomp"
 [[bin]]
-name = "profile_comp"
-[[bin]]
-name = "profile_decomp"
+name = "decomp"
 
 [[bench]]
 name = "bench"
