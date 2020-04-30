@@ -8,9 +8,10 @@ use std::io;
 const COMPRESSION1K: &'static [u8] = include_bytes!("compression_1k.txt");
 const COMPRESSION34K: &'static [u8] = include_bytes!("compression_34k.txt");
 const COMPRESSION65K: &'static [u8] = include_bytes!("compression_65k.txt");
+const COMPRESSION66K: &'static [u8] = include_bytes!("compression_66k_JSON.txt");
 const COMPRESSION10MB: &'static [u8] = include_bytes!("dickens.txt");
 
-const ALL: &[&[u8]] = &[COMPRESSION1K as &[u8], COMPRESSION34K as &[u8], COMPRESSION65K as &[u8]];
+const ALL: &[&[u8]] = &[COMPRESSION1K as &[u8], COMPRESSION34K as &[u8], COMPRESSION65K as &[u8], COMPRESSION66K as &[u8]];
 // const ALL: [&[u8]; 4] = [COMPRESSION1K as &[u8], COMPRESSION34K as &[u8], COMPRESSION65K as &[u8], COMPRESSION10MB as &[u8]];
 // const ALL: [&[u8]; 1] = [COMPRESSION65K as &[u8]];
 
@@ -25,10 +26,10 @@ fn bench_compression_throughput(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("lz4_flexx", input_bytes), &input,
             |b, i| b.iter(|| lz4_flex::compress(&i) ));
-        group.bench_with_input(BenchmarkId::new("lz4_compress", input_bytes), &input,
+        group.bench_with_input(BenchmarkId::new("lz4_rust", input_bytes), &input,
             |b, i| b.iter(|| lz4_compress::compress(&i) ));
 
-        group.bench_with_input(BenchmarkId::new("lz4", input_bytes), &input,
+        group.bench_with_input(BenchmarkId::new("lz4_linked", input_bytes), &input,
             |b, i| b.iter(|| {
                 let mut cache = vec![];
                 let mut encoder = lz4::EncoderBuilder::new().level(2).build(&mut cache).unwrap();
