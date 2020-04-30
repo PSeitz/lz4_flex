@@ -62,7 +62,7 @@ fn bench_decompression_throughput(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("lz4_flexx", input_bytes), &comp_flex,
             |b, i| b.iter(|| lz4_flex::decompress(&i) ));
-        group.bench_with_input(BenchmarkId::new("lz4_compress", input_bytes), &comp2,
+        group.bench_with_input(BenchmarkId::new("lz4_rust", input_bytes), &comp2,
             |b, i| b.iter(|| lz4_compress::decompress(&i) ));
 
         group.bench_with_input(BenchmarkId::new("lz4", input_bytes), &hmm,
