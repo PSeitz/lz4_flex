@@ -79,6 +79,13 @@ fn inverse(s: &str) {
 }
 
 #[test]
+fn yopa() {
+    const COMPRESSION66K: &'static [u8] = include_bytes!("../benches/compression_66k_JSON.txt");
+    let compressed = compress(COMPRESSION66K);
+    let decompressed = decompress(&compressed).unwrap();
+}
+
+#[test]
 fn shakespear() {
     inverse("to live or not to live");
     inverse("Love is a wonderful terrible thing");

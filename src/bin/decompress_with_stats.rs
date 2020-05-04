@@ -1,6 +1,8 @@
 //! The decompression algorithm.
-
 use byteorder::{LittleEndian, ByteOrder};
+use std::ptr;
+#[macro_use]
+extern crate quick_error;
 
 const FASTLOOP_SAFE_DISTANCE : usize = 64;
 
@@ -19,6 +21,23 @@ quick_error! {
     }
 }
 
+
+const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/dickens.txt");
+// const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/compression_34k.txt");
+// const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/compression_66k_JSON.txt");
+// 
+fn main() {
+
+    let compressed = lz4_flex::compress(COMPRESSION10MB as &[u8]);
+    // for _ in 0..100000 {
+        decompress(&compressed).unwrap();
+    // }
+    
+}
+
+
+
+
 /// A LZ4 decoder.
 ///
 /// This will decode in accordance to the LZ4 format. It represents a particular state of the
@@ -36,6 +55,14 @@ struct Decoder<'a> {
     /// length and the back reference's length, respectively. LSIC is used if either are their
     /// maximal values.
     token: u8,
+    // match_usage: Vec<&'static str>,
+    match_unused: u32,
+    match_full: u32,
+    match_fit: u32,
+    match_7bit_fit: u32,
+    literal_unused: u32,
+    literal_full: u32,
+    literal_fit: u32,
 }
 
 impl<'a> Decoder<'a> {
@@ -126,7 +153,6 @@ impl<'a> Decoder<'a> {
             // We continue if we got 255.
             extra == 0xFF
         } {}
-
         Ok(n)
     }
 
@@ -155,34 +181,30 @@ impl<'a> Decoder<'a> {
     fn read_literal_section(&mut self) -> Result<(), Error>  {
         // The higher token is the literals part of the token. It takes a value from 0 to 15.
         let mut literal = (self.token >> 4) as usize;
+
+        match literal {
+            0 => self.literal_unused += 1,
+            15 => self.literal_full += 1,
+            _ => self.literal_fit += 1,
+        }
+
+
         // If the initial value is 15, it is indicated that another byte will be read and added to
         // it.
-        if literal ==  0 {
-            return Ok(())
-        }
         if literal == 15 {
             // The literal length took the maximal value, indicating that there is more than 15
             // literal bytes. We read the extra integer.
             literal += self.read_integer()? as usize;
         }
 
+        // println!("{:?}", literal);
         // Now we know the literal length. The number will be used to indicate how long the
         // following literal copied to the output buffer is.
 
         // Read the literals segment and output them without processing.
-        // let block = &self.input[self.input_pos..self.input_pos+literal];
-        // self.move_cursor(&self.input, literal)?;
-        // Self::output(&mut self.output, block);
-
-        self.output.reserve(literal);
-        unsafe{
-            let dst_ptr = self.output.as_mut_ptr().offset(self.output.len() as isize);
-            std::ptr::copy_nonoverlapping(self.input.as_ptr().add(self.input_pos), dst_ptr, literal);
-            self.output.set_len(self.output.len() + literal);
-            // self.curr = self.curr.add(literal);
-        }
+        let block = &self.input[self.input_pos..self.input_pos+literal];
         self.move_cursor(&self.input, literal)?;
-
+        Self::output(&mut self.output, block);
         Ok(())
 
     }
@@ -208,12 +230,24 @@ impl<'a> Decoder<'a> {
         // ratio, we start at 4.
         let mut match_length = (4 + (self.token & 0xF)) as usize;
 
+
+        match match_length {
+            0 => self.match_unused += 1,
+            19 => self.match_full += 1,
+            _ => self.match_fit += 1,
+        }
+
+
         // The intial match length can maximally be 19. As with the literal length, this indicates
         // that there are more bytes to read.
         if match_length == 4 + 15 {
             // The match length took the maximal value, indicating that there is more bytes. We
             // read the extra integer.
             match_length += self.read_integer()? as usize;
+        }
+
+        if match_length < 256  {
+            self.match_7bit_fit +=1;
         }
 
         // We now copy from the already decompressed buffer. This allows us for storing duplicates
@@ -343,6 +377,7 @@ impl<'a> Decoder<'a> {
         //     // We'll do a bound check to avoid panicking.
         //     self.duplicate(start, match_length as usize);
         // }
+
         while in_len != self.input_pos {
             // Read the token. The token is the first byte in a block. It is divided into two 4-bit
             // subtokens, the higher and the lower.
@@ -364,6 +399,15 @@ impl<'a> Decoder<'a> {
             self.read_duplicate_section()?;
         }
 
+        dbg!(self.match_unused);
+        dbg!(self.match_full);
+        dbg!(self.match_fit);
+        dbg!(self.match_7bit_fit);
+
+        dbg!(self.literal_unused);
+        dbg!(self.literal_full);
+        dbg!(self.literal_fit);
+
         Ok(())
     }
 }
@@ -377,6 +421,13 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         input_pos: 0,
         output: output,
         token: 0,
+        match_unused: 0,
+        match_full: 0,
+        match_fit: 0,
+        match_7bit_fit: 0,
+        literal_unused: 0,
+        literal_full: 0,
+        literal_fit: 0,
     }.complete()?;
 
     Ok(())

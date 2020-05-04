@@ -3,6 +3,7 @@
 
 
 # lz4_flex
+![lz4_flex_logo](https://raw.githubusercontent.com/PSeitz/wana_kana_rust/master/logo.png)
 
 Pure rust implementation of lz4 compression and decompression.
 

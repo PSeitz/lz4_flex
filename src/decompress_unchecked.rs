@@ -1,20 +1,7 @@
-extern crate lz4_flex;
-use byteorder::{LittleEndian, ByteOrder};
+//! The decompression algorithm.
+
+
 use std::ptr;
-#[macro_use]
-extern crate quick_error;
-
-const FASTLOOP_SAFE_DISTANCE : u32 = 64;
-const ML_BITS : u32 = 4;
-const ML_MASK : u32 = 1<<4 - 1;
-const RUN_BITS : u32 = 8-ML_BITS;
-const RUN_MASK : u32 = 1<<RUN_BITS-1;
-
-// ML_BITS  4
-// #define ML_MASK  ((1U<<ML_BITS)-1)
-// #define RUN_BITS (8-ML_BITS)
-// #define RUN_MASK ((1U<<RUN_BITS)-1)
-
 quick_error! {
     /// An error representing invalid compressed data.
     #[derive(Debug)]
@@ -29,25 +16,6 @@ quick_error! {
         }
     }
 }
-
-
-
-// const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/dickens.txt");
-const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/compression_66k_JSON.txt");
-
-fn main() {
-
-    let compressed = lz4_flex::compress(COMPRESSION10MB as &[u8]);
-    for _ in 0..100000 {
-        decompress(&compressed).unwrap();
-    }
-    
-}
-
-
-
-
-
 
 /// A LZ4 decoder.
 ///
@@ -88,7 +56,12 @@ impl<'a> Decoder<'a> {
                 self.output.push(b);
             }
         }else{
-            copy_on_self(&mut self.output, start, match_length);
+            // copy_on_self(&mut self.output, start, match_length);
+            // reserve_16_bit_boundary(&mut self.output, match_length);
+            unsafe{
+                copy_from_src(self.output.as_ptr().add(start), self.output.as_mut_ptr().add(self.output.len()), match_length);
+                self.output.set_len(self.output.len() + match_length);
+            }
         }
     }
 
@@ -138,31 +111,29 @@ impl<'a> Decoder<'a> {
     ///    token, if it takes the highest value (15).
     /// 2. The literals themself.
     // #[inline(never)]
-    // fn read_literal_section(&mut self) -> Result<(), Error>  {
-    //     // The higher token is the literals part of the token. It takes a value from 0 to 15.
-    //     let mut literal = (self.token >> 4) as usize;
-    //     // If the initial value is 15, it is indicated that another byte will be read and added to
-    //     // it.
-    //     if literal == 15 {
-    //         // The literal length took the maximal value, indicating that there is more than 15
-    //         // literal bytes. We read the extra integer.
-    //         literal += self.read_integer();
-    //     }
-    //     // Now we know the literal length. The number will be used to indicate how long the
-    //     // following literal copied to the output buffer is.
+    fn read_literal_section(&mut self)  {
+        // The higher token is the literals part of the token. It takes a value from 0 to 15.
+        let mut literal = (self.token >> 4) as usize;
+        if literal !=0 {
+            // If the initial value is 15, it is indicated that another byte will be read and added to
+            // it.
+            if literal == 15 {
+                // The literal length took the maximal value, indicating that there is more than 15
+                // literal bytes. We read the extra integer.
+                literal += self.read_integer();
+            }
 
-    //     self.output.reserve(literal);
-    //     unsafe{
-    //         let dst_ptr = self.output.as_mut_ptr().offset(self.output.len() as isize);
+            // Now we know the literal length. The number will be used to indicate how long the
+            // following literal copied to the output buffer is.
+            // reserve_16_bit_boundary(&mut self.output, literal);
+            unsafe{
+                copy_from_src(self.curr, self.output.as_mut_ptr().add(self.output.len()), literal);
+                self.output.set_len(self.output.len() + literal);
+                self.curr = self.curr.add(literal);
+            }
+        }
 
-    //         ptr::copy_nonoverlapping(self.curr, dst_ptr, literal);
-
-    //         self.output.set_len(self.output.len() + literal);
-    //         self.curr = self.curr.add(literal);
-    //     }
-    //     Ok(())
-
-    // }
+    }
 
     /// Read the duplicates section of the block.
     ///
@@ -252,7 +223,7 @@ impl<'a> Decoder<'a> {
     /// the involved parameters are read) t_2 + 15m + c bytes are copied from the output buffer
     /// at position a + 4 and appended to the output buffer. Note that this copy can be
     /// overlapping.
-    #[inline(never)]
+    // #[inline(never)]
     fn complete(&mut self) -> Result<(), Error> {
         // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer
         // is empty.
@@ -266,12 +237,11 @@ impl<'a> Decoder<'a> {
             // self.move_cursor(&self.input, 1)?;
 
             // TODO CHECK
-            // check alread done in move_cursor
             self.token = unsafe{self.curr.read()};
             unsafe{self.curr = self.curr.add(1);}
 
             // Now, we read the literals section.
-            // self.read_literal_section()?;
+            // self.read_literal_section();
 
             let mut literal = (self.token >> 4) as usize;
             if literal !=0 {
@@ -282,25 +252,16 @@ impl<'a> Decoder<'a> {
                     // literal bytes. We read the extra integer.
                     literal += self.read_integer();
                 }
+
                 // Now we know the literal length. The number will be used to indicate how long the
                 // following literal copied to the output buffer is.
-
-                // self.output.reserve(literal);
-                // unsafe{
-                //     let dst_ptr = self.output.as_mut_ptr().offset(self.output.len() as isize);
-
-                //     ptr::copy_nonoverlapping(self.curr, dst_ptr, literal);
-
-                //     self.output.set_len(self.output.len() + literal);
-                //     self.curr = self.curr.add(literal);
-                // }
-
-                copy_from_src(&mut self.output, self.curr, literal);
+                // reserve_16_bit_boundary(&mut self.output, literal);
                 unsafe{
+                    copy_from_src(self.curr, self.output.as_mut_ptr().add(self.output.len()), literal);
+                    self.output.set_len(self.output.len() + literal);
                     self.curr = self.curr.add(literal);
                 }
             }
-            
 
 
             // If the input stream is emptied, we break out of the loop. This is only the case
@@ -308,65 +269,7 @@ impl<'a> Decoder<'a> {
             if self.curr == self.end_pos { break; }
 
             // Now, we read the duplicates section.
-            let mut offset:u16 = 0;
-            unsafe{ptr::copy_nonoverlapping(self.curr, &mut offset as *mut u16 as *mut u8, 2);} // TODO check isLittleEndian
-            // unsafe{
-            //     self.curr = self.curr.add(2);
-            // }
-
-            let mut inc = 2;
-            // let offset = LittleEndian::read_u16(&self.input[self.input_pos ..]);
-            // self.input_pos+=2;
-
-            // Obtain the initial match length. The match length is the length of the duplicate segment
-            // which will later be copied from data previously decompressed into the output buffer. The
-            // initial length is derived from the second part of the token (the lower nibble), we read
-            // earlier. Since having a match length of less than 4 would mean negative compression
-            // ratio, we start at 4.
-            let mut match_length = (4 + (self.token & 0xF)) as usize;
-
-            // The intial match length can maximally be 19. As with the literal length, this indicates
-            // that there are more bytes to read.
-            if match_length == 4 + 15 {
-                // The match length took the maximal value, indicating that there is more bytes. We
-                // read the extra integer.
-                // match_length += self.read_integer()?;
-
-                // let mut n = 0;
-                // If this byte takes value 255 (the maximum value it can take), another byte is read
-                // and added to the sum. This repeats until a byte lower than 255 is read.
-                loop {
-                    // We add the next byte until we get a byte which we add to the counting variable.
-                    let extra = unsafe{self.curr.add(inc).read()};
-                    inc +=1;
-                    // unsafe{self.curr = self.curr.add(1)};
-                    match_length += extra as usize;
-                    // We continue if we got 255.
-                    if extra != 0xFF {
-                        break;
-                    }
-                }
-            }
-
-            self.curr = unsafe{ self.curr.add(inc)};
-
-            // We now copy from the already decompressed buffer. This allows us for storing duplicates
-            // by simply referencing the other location.
-
-            // Calculate the start of this duplicate segment. We use wrapping subtraction to avoid
-            // overflow checks, which we will catch later.
-            // let start = self.output.len().wrapping_sub(offset as usize);
-            let start = self.output.len() - offset as usize;
-
-            // We'll do a bound check to avoid panicking.
-            if self.output.len() < start+match_length { // TODO handle special case
-                for i in start..start + match_length {
-                    let b = self.output[i];
-                    self.output.push(b);
-                }
-            }else{
-                copy_on_self(&mut self.output, start, match_length);
-            }
+            self.read_duplicate_section();
 
             if self.curr == self.end_pos { break; }
         }
@@ -395,22 +298,35 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
 // #[inline(never)]
 pub fn decompress(input: &[u8]) -> Result<Vec<u8>, Error> {
     // Allocate a vector to contain the decompressed stream.
-    let mut vec = Vec::with_capacity(4096);
+    let mut vec = Vec::with_capacity(68000);
 
     decompress_into(input, &mut vec)?;
 
     Ok(vec)
 }
 
-fn copy_from_src(output: &mut Vec<u8>, source: *const u8, num_items: usize) {
-    output.reserve(num_items);
+
+
+
+// fn copy_from_src(output: &mut Vec<u8>, mut source: *const u8, num_items: usize) {
+fn reserve_16_bit_boundary(output: &mut Vec<u8>, items: usize) {
+    output.reserve((items + 16) & !16);
+    // output.reserve(items);
+}
+fn copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
+    // output.reserve(num_items);
     unsafe{
-        let dst_ptr = output.as_mut_ptr().offset(output.len() as isize);
 
-        ptr::copy_nonoverlapping(source, dst_ptr, num_items);
+        // let mut dst_ptr = output.as_mut_ptr().add(output.len());
+        let dst_ptr_end = dst_ptr.add(num_items);
 
-        output.set_len(output.len() + num_items);
-        
+        while dst_ptr < dst_ptr_end {
+            ptr::copy_nonoverlapping(source, dst_ptr, 16);
+            source = source.add(16);
+            dst_ptr = dst_ptr.add(16);
+        }
+
+        // output.set_len(output.len() + num_items);
     }
 }
 
@@ -418,7 +334,7 @@ fn copy_from_src(output: &mut Vec<u8>, source: *const u8, num_items: usize) {
 
 // #[inline(never)]
 fn copy_on_self(vec: &mut Vec<u8>, start: usize, num_items: usize) {
-    vec.reserve(num_items);
+    // vec.reserve(num_items);
     unsafe {
         std::ptr::copy_nonoverlapping(vec.as_ptr().add(start), vec.as_mut_ptr().add(vec.len()), num_items);
         vec.set_len(vec.len() + num_items);

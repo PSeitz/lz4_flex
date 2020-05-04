@@ -2,8 +2,6 @@
 
 use byteorder::{LittleEndian, ByteOrder};
 
-const FASTLOOP_SAFE_DISTANCE : usize = 64;
-
 quick_error! {
     /// An error representing invalid compressed data.
     #[derive(Debug)]
@@ -110,21 +108,21 @@ impl<'a> Decoder<'a> {
     /// is encoded to _255 + 255 + 255 + 4 = 769_. The bytes after the first 4 is ignored, because
     /// 4 is the first non-0xFF byte.
     // #[inline(never)]
-    fn read_integer(&mut self) -> Result<u32, Error>  {
+    fn read_integer(&mut self) -> Result<usize, Error>  {
         // We start at zero and count upwards.
-        let mut n:u32 = 0;
+        let mut n = 0;
         // If this byte takes value 255 (the maximum value it can take), another byte is read
         // and added to the sum. This repeats until a byte lower than 255 is read.
         while {
             // We add the next byte until we get a byte which we add to the counting variable.
             // self.move_cursor(&self.input, 1)?;
             // check alread done in move_cursor
-            let extra = *unsafe{self.input.get_unchecked(self.input_pos)};
+            let extra = unsafe{self.input.get_unchecked(self.input_pos)};
             self.input_pos+=1;
-            n += extra as u32;
+            n += *extra as usize;
 
             // We continue if we got 255.
-            extra == 0xFF
+            *extra == 0xFF
         } {}
 
         Ok(n)
@@ -157,32 +155,19 @@ impl<'a> Decoder<'a> {
         let mut literal = (self.token >> 4) as usize;
         // If the initial value is 15, it is indicated that another byte will be read and added to
         // it.
-        if literal ==  0 {
-            return Ok(())
-        }
         if literal == 15 {
             // The literal length took the maximal value, indicating that there is more than 15
             // literal bytes. We read the extra integer.
-            literal += self.read_integer()? as usize;
+            literal += self.read_integer()?;
         }
 
         // Now we know the literal length. The number will be used to indicate how long the
         // following literal copied to the output buffer is.
 
         // Read the literals segment and output them without processing.
-        // let block = &self.input[self.input_pos..self.input_pos+literal];
-        // self.move_cursor(&self.input, literal)?;
-        // Self::output(&mut self.output, block);
-
-        self.output.reserve(literal);
-        unsafe{
-            let dst_ptr = self.output.as_mut_ptr().offset(self.output.len() as isize);
-            std::ptr::copy_nonoverlapping(self.input.as_ptr().add(self.input_pos), dst_ptr, literal);
-            self.output.set_len(self.output.len() + literal);
-            // self.curr = self.curr.add(literal);
-        }
+        let block = &self.input[self.input_pos..self.input_pos+literal];
         self.move_cursor(&self.input, literal)?;
-
+        Self::output(&mut self.output, block);
         Ok(())
 
     }
@@ -213,7 +198,7 @@ impl<'a> Decoder<'a> {
         if match_length == 4 + 15 {
             // The match length took the maximal value, indicating that there is more bytes. We
             // read the extra integer.
-            match_length += self.read_integer()? as usize;
+            match_length += self.read_integer()?;
         }
 
         // We now copy from the already decompressed buffer. This allows us for storing duplicates
@@ -233,9 +218,6 @@ impl<'a> Decoder<'a> {
             Err(Error::OffsetOutOfBounds)
         }
     }
-
-
-   
 
     /// Complete the decompression by reading all the blocks.
     ///
@@ -261,88 +243,6 @@ impl<'a> Decoder<'a> {
         // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer
         // is empty.
         let in_len = self.input.len();
-        // while in_len - self.input_pos >= FASTLOOP_SAFE_DISTANCE {
-        //     // Read the token. The token is the first byte in a block. It is divided into two 4-bit
-        //     // subtokens, the higher and the lower.
-
-        //     self.token = unsafe{*self.input.get_unchecked(self.input_pos)};
-        //     self.input_pos+=1;
-
-
-        //     // Now, we read the literals section.
-        //     let mut literal = (self.token >> 4) as usize;
-        //     if literal == 15 {
-        //         literal += self.read_integer()? as usize;
-        //     }
-
-        //     // Now we know the literal length. The number will be used to indicate how long the
-        //     // following literal copied to the output buffer is.
-
-        //     // Read the literals segment and output them without processing.
-        //     let block = &self.input[self.input_pos..self.input_pos+literal];
-        //     self.input_pos+=literal;
-        //     Self::output(&mut self.output, block);
-
-
-        //     // unsafe{std::ptr::copy_nonoverlapping(self.input.as_ptr().add(self.input_pos), self.output.as_mut_ptr(), literal);}
-        //     // self.input_pos+=literal;
-
-        //     // self.read_literal_section()?;
-
-        //     // If the input stream is emptied, we break out of the loop. This is only the case
-        //     // in the end of the stream, since the block is intact otherwise.
-        //     if in_len == self.input_pos { break; }
-
-        //     // Now, we read the duplicates section.
-        //     // self.read_duplicate_section()?;
-        //     // let offset = self.read_u16()?;
-
-        //     let mut offset:u16 = 0;
-        //     unsafe{std::ptr::copy_nonoverlapping(self.input.as_ptr().add(self.input_pos), &mut offset as *mut u16 as *mut u8, 2);} // TODO check isLittleEndian
-        //     self.input_pos+=2;
-        //     // Obtain the initial match length. The match length is the length of the duplicate segment
-        //     // which will later be copied from data previously decompressed into the output buffer. The
-        //     // initial length is derived from the second part of the token (the lower nibble), we read
-        //     // earlier. Since having a match length of less than 4 would mean negative compression
-        //     // ratio, we start at 4.
-        //     let mut match_length = (4 + (self.token & 0xF)) as u32;
-
-        //     // The intial match length can maximally be 19. As with the literal length, this indicates
-        //     // that there are more bytes to read.
-        //     if match_length == 4 + 15 {
-        //         // The match length took the maximal value, indicating that there is more bytes. We
-        //         // read the extra integer.
-
-        //         // If this byte takes value 255 (the maximum value it can take), another byte is read
-        //         // and added to the sum. This repeats until a byte lower than 255 is read.
-        //         while {
-        //             // We add the next byte until we get a byte which we add to the counting variable.
-        //             // self.move_cursor(&self.input, 1)?;
-        //             // check alread done in move_cursor
-        //             let extra = *unsafe{self.input.get_unchecked(self.input_pos)};
-        //             self.input_pos+=1;
-        //             match_length += extra as u32;
-
-        //             // We continue if we got 255.
-        //             extra == 0xFF
-        //         } {}
-
-
-
-
-        //         // match_length += self.read_integer()? as usize;
-        //     }
-
-        //     // We now copy from the already decompressed buffer. This allows us for storing duplicates
-        //     // by simply referencing the other location.
-
-        //     // Calculate the start of this duplicate segment. We use wrapping subtraction to avoid
-        //     // overflow checks, which we will catch later.
-        //     let start = self.output.len() - offset as usize;
-
-        //     // We'll do a bound check to avoid panicking.
-        //     self.duplicate(start, match_length as usize);
-        // }
         while in_len != self.input_pos {
             // Read the token. The token is the first byte in a block. It is divided into two 4-bit
             // subtokens, the higher and the lower.

@@ -288,6 +288,30 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
     vec
 }
 
+#[test]
+fn yoops() {
+    const COMPRESSION66K: &'static [u8] = include_bytes!("../benches/compression_66k_JSON.txt");
+}
+
+#[test]
+fn test_compare() {
+
+    let mut input: &[u8] = &[10, 12, 14, 16];
+
+    let mut cache = vec![];
+    let mut encoder = lz4::EncoderBuilder::new().level(2).build(&mut cache).unwrap();
+    // let mut read = *input;
+    std::io::copy(&mut input, &mut encoder).unwrap();
+    let (comp_lz4, result) = encoder.finish();
+
+    println!("{:?}", comp_lz4);
+
+    let mut input: &[u8] = &[10, 12, 14, 16];
+    let out = compress(&input);
+    dbg!(&out);
+
+}
+
 // #[test]
 // fn test_concat() {
 //     let mut out = vec![];
