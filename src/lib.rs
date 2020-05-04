@@ -12,13 +12,12 @@ extern crate quick_error;
 mod decompress;
 mod decompress_old;
 mod decompress_unchecked;
-mod compress;
-mod compress_new;
+mod block;
 #[cfg(test)]
 mod tests;
 
 pub use decompress::{decompress_into, decompress};
-pub use compress::{compress_into, compress};
+pub use block::compress::{compress_into, compress};
 
 pub use decompress_unchecked::{decompress_into as decompress_into_unchecked, decompress as decompress_unchecked};
 
