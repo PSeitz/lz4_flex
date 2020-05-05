@@ -13,6 +13,20 @@ use std::io::Write;
 /// thus collisions are more likely, hurting the compression ratio.
 const DICTIONARY_SIZE: usize = 4096;
 
+
+/// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
+/// The last match must start at least 12 bytes before the end of block. The last match is part of the penultimate sequence. 
+/// It is followed by the last sequence, which contains only literals.
+///
+/// Note that, as a consequence, an independent block < 13 bytes cannot be compressed, because the match must copy "something", 
+/// so it needs at least one prior byte.
+///
+/// When a block can reference data from another block, it can start immediately with a match and no literal, so a block of 12 bytes can be compressed.
+const MFLIMIT: u32 = 12;
+/// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
+/// MFLIMIT + 1 for the token.
+static LZ4_MIN_LENGTH: u32 = MFLIMIT+1;
+
 /// A LZ4 block.
 ///
 /// This defines a single compression "unit", consisting of two parts, a number of raw literals,
@@ -288,10 +302,10 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
     vec
 }
 
-#[test]
-fn yoops() {
-    const COMPRESSION66K: &'static [u8] = include_bytes!("../benches/compression_66k_JSON.txt");
-}
+// #[test]
+// fn yoops() {
+//     const COMPRESSION66K: &'static [u8] = include_bytes!("../../benches/compression_66k_JSON.txt");
+// }
 
 #[test]
 fn test_compare() {
@@ -302,11 +316,11 @@ fn test_compare() {
     let mut encoder = lz4::EncoderBuilder::new().level(2).build(&mut cache).unwrap();
     // let mut read = *input;
     std::io::copy(&mut input, &mut encoder).unwrap();
-    let (comp_lz4, result) = encoder.finish();
+    let (comp_lz4, _result) = encoder.finish();
 
     println!("{:?}", comp_lz4);
 
-    let mut input: &[u8] = &[10, 12, 14, 16];
+    let input: &[u8] = &[10, 12, 14, 16];
     let out = compress(&input);
     dbg!(&out);
 

@@ -17,8 +17,6 @@ const COMPRESSION10MB: &'static [u8] = include_bytes!("dickens.txt");
 const ALL: [&[u8]; 1] = [COMPRESSION66K as &[u8]];
 // const ALL: [&[u8]; 1] = [COMPRESSION65K as &[u8]];
 
-
-
 fn bench_compression_throughput(c: &mut Criterion) {
     let mut group = c.benchmark_group("Compress");
      
@@ -89,7 +87,6 @@ fn bench_decompression_throughput(c: &mut Criterion) {
                     
                 let output = lz4::block::decompress(&i, None);
                 output
-
 
                 // let mut output:Vec<u8> = vec![];
                 // let mut waa = *i;
