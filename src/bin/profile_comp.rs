@@ -14,8 +14,6 @@ fn main() {
 }
 
 
-const LZ4_HASHLOG: i32 = 12;   
-
 use byteorder::{NativeEndian, ByteOrder};
 use std::io::Write;
 
@@ -23,7 +21,38 @@ use std::io::Write;
 ///
 /// Every four bytes is assigned an entry. When this number is lower, fewer entries exists, and
 /// thus collisions are more likely, hurting the compression ratio.
-const DICTIONARY_SIZE: usize = 4096;
+// const DICTIONARY_SIZE: usize = 4096;
+const DICTIONARY_SIZE: usize = 4096 / 4  * 64;
+
+
+/// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
+/// The last match must start at least 12 bytes before the end of block. The last match is part of the penultimate sequence. 
+/// It is followed by the last sequence, which contains only literals.
+///
+/// Note that, as a consequence, an independent block < 13 bytes cannot be compressed, because the match must copy "something", 
+/// so it needs at least one prior byte.
+///
+/// When a block can reference data from another block, it can start immediately with a match and no literal, so a block of 12 bytes can be compressed.
+const MFLIMIT: u32 = 12;
+/// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
+/// Minimum length of a block
+///
+/// MFLIMIT + 1 for the token.
+static LZ4_MIN_LENGTH: u32 = MFLIMIT+1;
+
+const MATCH_LENGTH_MASK: u32 = (1_u32 << 4) - 1; // 0b1111 / 15
+const MINMATCH: usize = 4;
+const LZ4_HASHLOG: u32 = 12;
+
+/// Switch for the hashtable size byU16
+static LZ4_64KLIMIT: u32 = (64 * 1024) + (MFLIMIT - 1);
+
+// #[derive(Debug)]
+// enum HashtableType {
+//     ByPtr, // TODO ununsed
+//     ByU32, // TODO ununsed
+//     ByU16  // 64k limit hashtable size
+// }
 
 /// A LZ4 block.
 ///
@@ -50,6 +79,13 @@ struct Duplicate {
     extra_bytes: usize,
 }
 
+
+fn hash(sequence:u32) -> u32 {
+    let res = (sequence.wrapping_mul(2654435761_u32))
+            >> ((MINMATCH as u32 * 8) - (LZ4_HASHLOG + 1));
+    res
+}
+
 /// An LZ4 encoder.
 struct Encoder<'a, W:Write> {
     /// The raw uncompressed input.
@@ -66,7 +102,7 @@ struct Encoder<'a, W:Write> {
     ///
     /// Every four bytes are hashed, and in the resulting slot their position in the input buffer
     /// is placed. This way we can easily look up a candidate to back references.
-    dict: [usize; DICTIONARY_SIZE],
+    dict: [u32; DICTIONARY_SIZE],
 }
 
 impl<'a, W:Write> Encoder<'a, W> {
@@ -75,6 +111,7 @@ impl<'a, W:Write> Encoder<'a, W> {
     /// This will update the cursor and dictionary to reflect the now processed bytes.
     ///
     /// This returns `false` if all the input bytes are processed.
+    #[inline(never)]
     fn go_forward(&mut self, steps: usize) -> bool {
         // Go over all the bytes we are skipping and update the cursor and dictionary.
         for _ in 0..steps {
@@ -93,7 +130,7 @@ impl<'a, W:Write> Encoder<'a, W> {
         // Make sure that there is at least one batch remaining.
         if self.remaining_batch() {
             // Insert the cursor into the table.
-            self.dict[self.get_cur_hash()] = self.cur;
+            self.dict[self.get_cur_hash() as usize] = self.cur as u32 + 1;
         }
     }
 
@@ -102,13 +139,13 @@ impl<'a, W:Write> Encoder<'a, W> {
         self.cur + 4 < self.input.len()
     }
 
-    // /// Get the hash of the current four bytes below the cursor.
-    // ///
-    // /// This is guaranteed to be below `DICTIONARY_SIZE`.
-    // fn get_hash_at(&self, n:usize) -> usize {
+    /// Get the hash of the current four bytes below the cursor.
+    ///
+    /// This is guaranteed to be below `DICTIONARY_SIZE`.
+    // fn get_cur_hash(&self) -> usize {
     //     // Use PCG transform to generate a relatively good hash of the four bytes batch at the
     //     // cursor.
-    //     let mut x = self.get_batch(n).wrapping_mul(0xa4d94a4f);
+    //     let mut x = self.get_batch_at_cursor().wrapping_mul(0xa4d94a4f);
     //     let a = x >> 16;
     //     let b = x >> 30;
     //     x ^= a >> b;
@@ -116,39 +153,18 @@ impl<'a, W:Write> Encoder<'a, W> {
 
     //     x as usize % DICTIONARY_SIZE
     // }
+
     /// Get the hash of the current four bytes below the cursor.
     ///
     /// This is guaranteed to be below `DICTIONARY_SIZE`.
-    fn get_cur_hash(&self) -> usize {
-        // Use PCG transform to generate a relatively good hash of the four bytes batch at the
-        // cursor.
-        let mut x = self.get_batch_at_cursor().wrapping_mul(0xa4d94a4f);
-        let a = x >> 16;
-        let b = x >> 30;
-        x ^= a >> b;
-        x = x.wrapping_mul(0xa4d94a4f);
+    fn get_cur_hash(&self) -> u32 {
 
-        x as usize % DICTIONARY_SIZE
+        let sequence:u32 = self.get_batch_at_cursor();
+        let res = hash(sequence);
+        res
+
     }
-    fn get_cur_hash2(&self) -> usize {
 
-
-    	// const U32 hashLog = (tableType == byU16) ? LZ4_HASHLOG+1 : LZ4_HASHLOG;
-    	// if (LZ4_isLittleEndian()) {
-     //    const U64 prime5bytes = 889523592379ULL;
-     //    return (U32)(((sequence << 24) * prime5bytes) >> (64 - hashLog));
-
-
-        // Use PCG transform to generate a relatively good hash of the four bytes batch at the
-        // cursor.
-        let mut x = self.get_batch_at_cursor().wrapping_mul(0xa4d94a4f);
-        let a = x >> 16;
-        let b = x >> 30;
-        x ^= a >> b;
-        x = x.wrapping_mul(0xa4d94a4f);
-
-        x as usize % DICTIONARY_SIZE
-    }
 
     /// Read a 4-byte "batch" from some position.
     ///
@@ -174,8 +190,12 @@ impl<'a, W:Write> Encoder<'a, W> {
             return None;
         }
 
+
+        let next_batch = NativeEndian::read_u32(&self.input[self.cur..]);
+        let curr_hash = hash(next_batch);
         // Find a candidate in the dictionary by hashing the current four bytes.
-        let candidate = self.dict[self.get_cur_hash()];
+        // let candidate = self.dict[curr_hash as usize];
+        let candidate = unsafe{*self.dict.get_unchecked(curr_hash as usize)};
 
         // Three requirements to the candidate exists:
         // - The candidate is not the trap value (0xFFFFFFFF), which represents an empty bucket.
@@ -183,19 +203,54 @@ impl<'a, W:Write> Encoder<'a, W> {
         //   candidate actually matches what we search for.
         // - We can address up to 16-bit offset, hence we are only able to address the candidate if
         //   its offset is less than or equals to 0xFFFF.
-        if candidate != !0
-           && self.get_batch(candidate) == self.get_batch_at_cursor()
-           && self.cur - candidate <= 0xFFFF {
+        if candidate != 0
+           && self.get_batch(candidate as usize  - 1) == next_batch
+           && self.cur + MINMATCH < self.input.len()
+           && self.cur - (candidate as usize  - 1) <= 0xFFFF {
             // Calculate the "extension bytes", i.e. the duplicate bytes beyond the batch. These
             // are the number of prefix bytes shared between the match and needle.
-            let ext = self.input[self.cur + 4..]
-                .iter()
-                .zip(&self.input[candidate + 4..])
-                .take_while(|&(a, b)| a == b)
-                .count();
+            // let ext = self.input[self.cur + 4..]
+            //     .iter()
+            //     .zip(&self.input[candidate + 4..])
+            //     .take_while(|&(a, b)| a == b)
+            //     .count();
+
+            let mut ext = 0;
+
+            // TODO check LittleEndian
+
+            // 4byte step
+            let in_len = self.input.len();
+            let stepsize = 4;
+            while in_len > self.cur + MINMATCH + ext + stepsize  {
+                let input_block = NativeEndian::read_u32(&self.input[self.cur + MINMATCH + ext..]);
+                let candidate_block = NativeEndian::read_u32(&self.input[candidate as usize - 1 + MINMATCH + ext..]);
+                if input_block != candidate_block{
+                    break;
+                }
+                ext += stepsize;
+            }
+
+            let stepsize = 2;
+            if in_len > self.cur + MINMATCH + ext + stepsize {
+                let input_block = NativeEndian::read_u16(&self.input[self.cur + MINMATCH + ext..]);
+                let candidate_block = NativeEndian::read_u16(&self.input[candidate as usize - 1 + MINMATCH + ext..]);
+                if input_block == candidate_block{
+                    ext +=stepsize;
+                }
+            }
+            let stepsize = 1;
+            if in_len > self.cur + MINMATCH + ext + stepsize {
+                let input_block = &self.input[self.cur + MINMATCH + ext..];
+                let candidate_block = &self.input[candidate as usize  - 1 + MINMATCH + ext..];
+                if input_block == candidate_block{
+                    ext +=stepsize;
+                }
+            }
+
 
             Some(Duplicate {
-                offset: (self.cur - candidate) as u16,
+                offset: (self.cur - (candidate as usize - 1)) as u16,
                 extra_bytes: ext,
             })
         } else { None }
@@ -323,7 +378,7 @@ pub fn compress_into<W:Write>(input: &[u8], output: W) -> std::io::Result<usize>
         input: input,
         output: output,
         cur: 0,
-        dict: [!0; DICTIONARY_SIZE],
+        dict: [0; DICTIONARY_SIZE],
     }.complete()
 }
 
@@ -342,6 +397,15 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
 // fn yoops() {
 //     const COMPRESSION66K: &'static [u8] = include_bytes!("../../benches/compression_66k_JSON.txt");
 // }
+
+#[test]
+fn test_bug() {
+
+    let input: &[u8] = &[10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18];
+    let out = compress(&input);
+    dbg!(&out);
+
+}
 
 #[test]
 fn test_compare() {
@@ -373,3 +437,99 @@ fn test_compare() {
 //     compress_into(&[0, 0], &mut out).unwrap();
 //     dbg!(&out);
 // }
+
+
+
+// // TODO 64bit systems only currently
+// /**
+//  * __ffs - find first bit in word.
+//  * @word: The word to search
+//  *
+//  * Undefined if no bit exists, so code should check against 0 first.
+//  */
+// fn __ffs(mut input: u32) -> u32
+// {
+//     let mut num: u32 = 0;
+//     println!("{:b}", input);
+//     println!("{:b}",  0xffff);
+//     if (input & 0xffff) == 0 {
+//         num += 16;
+//         input >>= 16;
+//     }
+//     println!("{:b}", input);
+//     println!("0{:b}",  0xff);
+//     if (input & 0xff) == 0 {
+//         num += 8;
+//         input >>= 8;
+//     }
+//     println!("000{:b}", input);
+//     println!("{:b}",  0xf);
+//     if (input & 0xf) == 0 {
+//         num += 4;
+//         input >>= 4;
+//     }
+//     if (input & 0x3) == 0 {
+//         num += 2;
+//         input >>= 2;
+//     }
+//     if (input & 0x1) == 0 { 
+//         num += 1;
+//     }
+//     return num;
+// }
+
+// TODO 64bit systems only currently
+/**
+ * __ffs - find first bit in word.
+ * @word: The word to search
+ *
+ * Undefined if no bit exists, so code should check against 0 first.
+ */
+fn __ffs(input: u32) -> u32
+{
+    let mut num: u32 = 0;
+    if (input & 0b00000000_11111111) == 0 {
+        num += 1;
+    }else{
+        return num;
+    }
+    if (input & 0b11111111_00000000) == 0 {
+        num += 1;
+    }else{
+        return num;
+    }
+    if (input & 0b11111111_00000000_00000000) == 0 {
+        num += 1;
+    }else{
+        return num;
+    }
+    if (input & 0b11111111_00000000_00000000_00000000) == 0 {
+        num += 1;
+    }
+    
+    return num;
+}
+
+#[test]
+fn test_ffs() {
+    let input_block = [1, 3, 7, 17];
+    let candidate_block = [1, 3, 7, 16];
+    
+    let input_block_u32 = byteorder::NativeEndian::read_u32(&input_block);
+    // println!("input_block_u32: {:b}", input_block_u32);
+    
+    let candidate_block_u32 = byteorder::NativeEndian::read_u32(&candidate_block);
+    // println!("candidate_block: {:b}", candidate_block_u32);
+    // let diff = LZ4_read_ARCH(pMatch) ^ LZ4_read_ARCH(pIn);
+    
+    let diff = input_block_u32 ^ candidate_block_u32;
+
+    // input_block_u32: 00010001 00000111 00000011 00000001
+    // candidate_block: 00010000 00000111 00000011 00000001
+    // XOR              00000001 00000000 00000000 00000000
+
+
+    // XOR              00000000 00000000 00000000 01000000
+
+    assert_eq!(__ffs(diff), 3);
+}
