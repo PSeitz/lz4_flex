@@ -1,10 +1,10 @@
 //! The decompression algorithm.
 use byteorder::{LittleEndian, ByteOrder};
-use std::ptr;
+
 #[macro_use]
 extern crate quick_error;
 
-const FASTLOOP_SAFE_DISTANCE : usize = 64;
+// const FASTLOOP_SAFE_DISTANCE : usize = 64;
 
 quick_error! {
     /// An error representing invalid compressed data.

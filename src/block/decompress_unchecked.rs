@@ -111,29 +111,29 @@ impl<'a> Decoder<'a> {
     ///    token, if it takes the highest value (15).
     /// 2. The literals themself.
     // #[inline(never)]
-    fn read_literal_section(&mut self)  {
-        // The higher token is the literals part of the token. It takes a value from 0 to 15.
-        let mut literal = (self.token >> 4) as usize;
-        if literal !=0 {
-            // If the initial value is 15, it is indicated that another byte will be read and added to
-            // it.
-            if literal == 15 {
-                // The literal length took the maximal value, indicating that there is more than 15
-                // literal bytes. We read the extra integer.
-                literal += self.read_integer();
-            }
+    // fn read_literal_section(&mut self)  {
+    //     // The higher token is the literals part of the token. It takes a value from 0 to 15.
+    //     let mut literal = (self.token >> 4) as usize;
+    //     if literal !=0 {
+    //         // If the initial value is 15, it is indicated that another byte will be read and added to
+    //         // it.
+    //         if literal == 15 {
+    //             // The literal length took the maximal value, indicating that there is more than 15
+    //             // literal bytes. We read the extra integer.
+    //             literal += self.read_integer();
+    //         }
 
-            // Now we know the literal length. The number will be used to indicate how long the
-            // following literal copied to the output buffer is.
-            // reserve_16_bit_boundary(&mut self.output, literal);
-            unsafe{
-                copy_from_src(self.curr, self.output.as_mut_ptr().add(self.output.len()), literal);
-                self.output.set_len(self.output.len() + literal);
-                self.curr = self.curr.add(literal);
-            }
-        }
+    //         // Now we know the literal length. The number will be used to indicate how long the
+    //         // following literal copied to the output buffer is.
+    //         // reserve_16_bit_boundary(&mut self.output, literal);
+    //         unsafe{
+    //             copy_from_src(self.curr, self.output.as_mut_ptr().add(self.output.len()), literal);
+    //             self.output.set_len(self.output.len() + literal);
+    //             self.curr = self.curr.add(literal);
+    //         }
+    //     }
 
-    }
+    // }
 
     /// Read the duplicates section of the block.
     ///
@@ -309,10 +309,10 @@ pub fn decompress(input: &[u8]) -> Result<Vec<u8>, Error> {
 
 
 // fn copy_from_src(output: &mut Vec<u8>, mut source: *const u8, num_items: usize) {
-fn reserve_16_bit_boundary(output: &mut Vec<u8>, items: usize) {
-    output.reserve((items + 16) & !16);
-    // output.reserve(items);
-}
+// fn reserve_16_bit_boundary(output: &mut Vec<u8>, items: usize) {
+//     output.reserve((items + 16) & !16);
+//     // output.reserve(items);
+// }
 fn copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
     // output.reserve(num_items);
     unsafe{
@@ -332,22 +332,22 @@ fn copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) 
 
 
 
-// #[inline(never)]
-fn copy_on_self(vec: &mut Vec<u8>, start: usize, num_items: usize) {
-    // vec.reserve(num_items);
-    unsafe {
-        std::ptr::copy_nonoverlapping(vec.as_ptr().add(start), vec.as_mut_ptr().add(vec.len()), num_items);
-        vec.set_len(vec.len() + num_items);
-    }
-}
+// // #[inline(never)]
+// fn copy_on_self(vec: &mut Vec<u8>, start: usize, num_items: usize) {
+//     // vec.reserve(num_items);
+//     unsafe {
+//         std::ptr::copy_nonoverlapping(vec.as_ptr().add(start), vec.as_mut_ptr().add(vec.len()), num_items);
+//         vec.set_len(vec.len() + num_items);
+//     }
+// }
 
-#[test]
-// #[inline(never)]
-fn test_copy_on_self() {
-    let mut data: Vec<u8>= vec![10];
-    copy_on_self(&mut data, 0, 1);
-    assert_eq!(data, [10, 10]);
-}
+// #[test]
+// // #[inline(never)]
+// fn test_copy_on_self() {
+//     let mut data: Vec<u8>= vec![10];
+//     copy_on_self(&mut data, 0, 1);
+//     assert_eq!(data, [10, 10]);
+// }
 
 
 #[cfg(test)]

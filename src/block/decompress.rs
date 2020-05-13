@@ -2,8 +2,6 @@
 
 use byteorder::{LittleEndian, ByteOrder};
 
-const FASTLOOP_SAFE_DISTANCE : usize = 64;
-
 quick_error! {
     /// An error representing invalid compressed data.
     #[derive(Debug)]
@@ -70,10 +68,10 @@ impl<'a> Decoder<'a> {
     /// of the borrow checker. For this reason, we instead take some number of segregated
     /// references so we can read and write them independently.
     // #[inline(never)]
-    fn output(output: &mut Vec<u8>, buf: &[u8]) {
-        // We use simple memcpy to extend the vector.
-        output.extend_from_slice(&buf);
-    }
+    // fn output(output: &mut Vec<u8>, buf: &[u8]) {
+    //     // We use simple memcpy to extend the vector.
+    //     output.extend_from_slice(&buf);
+    // }
 
     /// Write an already decompressed match to the output stream.
     ///

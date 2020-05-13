@@ -1,14 +1,9 @@
 extern crate lz4_flex;
-use byteorder::{LittleEndian, ByteOrder};
+
 use std::ptr;
 #[macro_use]
 extern crate quick_error;
 
-const FASTLOOP_SAFE_DISTANCE : u32 = 64;
-const ML_BITS : u32 = 4;
-const ML_MASK : u32 = 1<<4 - 1;
-const RUN_BITS : u32 = 8-ML_BITS;
-const RUN_MASK : u32 = 1<<RUN_BITS-1;
 
 // ML_BITS  4
 // #define ML_MASK  ((1U<<ML_BITS)-1)
@@ -78,19 +73,19 @@ impl<'a> Decoder<'a> {
     /// position `start` and then keep pushing the following element until we've added
     /// `match_length` elements.
     // #[inline(never)]
-    fn duplicate(&mut self, start: usize, match_length: usize) {
-        // We cannot simply use memcpy or `extend_from_slice`, because these do not allow
-        // self-referential copies: http://ticki.github.io/img/lz4_runs_encoding_diagram.svg
-        // `reserve` enough space on the vector to safely copy self referential data.
-        if self.output.len() < start+match_length { // TODO handle special case
-            for i in start..start + match_length {
-                let b = self.output[i];
-                self.output.push(b);
-            }
-        }else{
-            copy_on_self(&mut self.output, start, match_length);
-        }
-    }
+    // fn duplicate(&mut self, start: usize, match_length: usize) {
+    //     // We cannot simply use memcpy or `extend_from_slice`, because these do not allow
+    //     // self-referential copies: http://ticki.github.io/img/lz4_runs_encoding_diagram.svg
+    //     // `reserve` enough space on the vector to safely copy self referential data.
+    //     if self.output.len() < start+match_length { // TODO handle special case
+    //         for i in start..start + match_length {
+    //             let b = self.output[i];
+    //             self.output.push(b);
+    //         }
+    //     }else{
+    //         copy_on_self(&mut self.output, start, match_length);
+    //     }
+    // }
 
     /// Read an integer LSIC (linear small integer code) encoded.
     ///
@@ -174,64 +169,64 @@ impl<'a> Decoder<'a> {
     /// 2. An LSIC integer extension to the duplicate length as defined by the first part of the
     ///    token, if it takes the highest value (15).
     // #[inline(never)]
-    fn read_duplicate_section(&mut self) {
-        // Now, we will obtain the offset which we will use to copy from the output. It is an
-        // 16-bit integer.
-        // let offset = self.read_u16()?;
+    // fn read_duplicate_section(&mut self) {
+    //     // Now, we will obtain the offset which we will use to copy from the output. It is an
+    //     // 16-bit integer.
+    //     // let offset = self.read_u16()?;
 
-        let mut offset:u16 = 0;
-        unsafe{ptr::copy_nonoverlapping(self.curr, &mut offset as *mut u16 as *mut u8, 2);} // TODO check isLittleEndian
-        // unsafe{
-        //     self.curr = self.curr.add(2);
-        // }
+    //     let mut offset:u16 = 0;
+    //     unsafe{ptr::copy_nonoverlapping(self.curr, &mut offset as *mut u16 as *mut u8, 2);} // TODO check isLittleEndian
+    //     // unsafe{
+    //     //     self.curr = self.curr.add(2);
+    //     // }
 
-        let mut inc = 2;
-        // let offset = LittleEndian::read_u16(&self.input[self.input_pos ..]);
-        // self.input_pos+=2;
+    //     let mut inc = 2;
+    //     // let offset = LittleEndian::read_u16(&self.input[self.input_pos ..]);
+    //     // self.input_pos+=2;
 
-        // Obtain the initial match length. The match length is the length of the duplicate segment
-        // which will later be copied from data previously decompressed into the output buffer. The
-        // initial length is derived from the second part of the token (the lower nibble), we read
-        // earlier. Since having a match length of less than 4 would mean negative compression
-        // ratio, we start at 4.
-        let mut match_length = (4 + (self.token & 0xF)) as usize;
+    //     // Obtain the initial match length. The match length is the length of the duplicate segment
+    //     // which will later be copied from data previously decompressed into the output buffer. The
+    //     // initial length is derived from the second part of the token (the lower nibble), we read
+    //     // earlier. Since having a match length of less than 4 would mean negative compression
+    //     // ratio, we start at 4.
+    //     let mut match_length = (4 + (self.token & 0xF)) as usize;
 
-        // The intial match length can maximally be 19. As with the literal length, this indicates
-        // that there are more bytes to read.
-        if match_length == 4 + 15 {
-            // The match length took the maximal value, indicating that there is more bytes. We
-            // read the extra integer.
-            // match_length += self.read_integer()?;
+    //     // The intial match length can maximally be 19. As with the literal length, this indicates
+    //     // that there are more bytes to read.
+    //     if match_length == 4 + 15 {
+    //         // The match length took the maximal value, indicating that there is more bytes. We
+    //         // read the extra integer.
+    //         // match_length += self.read_integer()?;
 
-            // let mut n = 0;
-            // If this byte takes value 255 (the maximum value it can take), another byte is read
-            // and added to the sum. This repeats until a byte lower than 255 is read.
-            loop {
-                // We add the next byte until we get a byte which we add to the counting variable.
-                let extra = unsafe{self.curr.add(inc).read()};
-                inc +=1;
-                // unsafe{self.curr = self.curr.add(1)};
-                match_length += extra as usize;
-                // We continue if we got 255.
-                if extra != 0xFF {
-                    break;
-                }
-            }
-        }
+    //         // let mut n = 0;
+    //         // If this byte takes value 255 (the maximum value it can take), another byte is read
+    //         // and added to the sum. This repeats until a byte lower than 255 is read.
+    //         loop {
+    //             // We add the next byte until we get a byte which we add to the counting variable.
+    //             let extra = unsafe{self.curr.add(inc).read()};
+    //             inc +=1;
+    //             // unsafe{self.curr = self.curr.add(1)};
+    //             match_length += extra as usize;
+    //             // We continue if we got 255.
+    //             if extra != 0xFF {
+    //                 break;
+    //             }
+    //         }
+    //     }
 
-        self.curr = unsafe{ self.curr.add(inc)};
+    //     self.curr = unsafe{ self.curr.add(inc)};
 
-        // We now copy from the already decompressed buffer. This allows us for storing duplicates
-        // by simply referencing the other location.
+    //     // We now copy from the already decompressed buffer. This allows us for storing duplicates
+    //     // by simply referencing the other location.
 
-        // Calculate the start of this duplicate segment. We use wrapping subtraction to avoid
-        // overflow checks, which we will catch later.
-        // let start = self.output.len().wrapping_sub(offset as usize);
-        let start = self.output.len() - offset as usize;
+    //     // Calculate the start of this duplicate segment. We use wrapping subtraction to avoid
+    //     // overflow checks, which we will catch later.
+    //     // let start = self.output.len().wrapping_sub(offset as usize);
+    //     let start = self.output.len() - offset as usize;
 
-        // We'll do a bound check to avoid panicking.
-        self.duplicate(start, match_length);
-    }
+    //     // We'll do a bound check to avoid panicking.
+    //     self.duplicate(start, match_length);
+    // }
 
     /// Complete the decompression by reading all the blocks.
     ///

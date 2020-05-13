@@ -3,14 +3,12 @@
 //! A detailed explanation of the algorithm can be found [here](http://ticki.github.io/blog/how-lz4-works/).
 
 #![feature(test)]
-#![warn(missing_docs)]
 
 extern crate byteorder;
 #[macro_use]
 extern crate quick_error;
 
 mod decompress_old;
-mod decompress_unchecked;
 mod block;
 #[cfg(test)]
 mod tests;
@@ -18,7 +16,9 @@ mod tests;
 pub use block::decompress::{decompress_into, decompress};
 pub use block::compress::{compress_into, compress};
 
-pub use decompress_unchecked::{decompress_into as decompress_into_unchecked, decompress as decompress_unchecked};
+pub use block::decompress_unchecked::{decompress_into as decompress_into_unchecked, decompress as decompress_unchecked};
+
+pub use decompress_old::{decompress_into as decompress_old_into, decompress as decompress_old};
 
 const ONLY_HIGH_BIT_U8: u16 = 0b_1000_0000_0000_0000;
 pub const TOKEN_FULL_DUPLICATE_U16: u16 = 0b_0111_1111_1111_1111;
