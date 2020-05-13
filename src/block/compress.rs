@@ -4,6 +4,8 @@
 //! high performance. It has fixed memory usage, which contrary to other approachs, makes it less
 //! memory hungry.
 
+use crate::block::MINMATCH;
+use crate::block::hash;
 use byteorder::{NativeEndian, ByteOrder};
 use std::io::Write;
 
@@ -13,19 +15,6 @@ use std::io::Write;
 /// thus collisions are more likely, hurting the compression ratio.
 const DICTIONARY_SIZE: usize = 4096;
 
-
-/// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
-/// The last match must start at least 12 bytes before the end of block. The last match is part of the penultimate sequence. 
-/// It is followed by the last sequence, which contains only literals.
-///
-/// Note that, as a consequence, an independent block < 13 bytes cannot be compressed, because the match must copy "something", 
-/// so it needs at least one prior byte.
-///
-/// When a block can reference data from another block, it can start immediately with a match and no literal, so a block of 12 bytes can be compressed.
-const MFLIMIT: u32 = 12;
-/// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
-/// MFLIMIT + 1 for the token.
-static LZ4_MIN_LENGTH: u32 = MFLIMIT+1;
 
 /// A LZ4 block.
 ///
@@ -107,16 +96,24 @@ impl<'a, W:Write> Encoder<'a, W> {
     /// Get the hash of the current four bytes below the cursor.
     ///
     /// This is guaranteed to be below `DICTIONARY_SIZE`.
+    // fn get_cur_hash(&self) -> usize {
+    //     // Use PCG transform to generate a relatively good hash of the four bytes batch at the
+    //     // cursor.
+    //     let mut x = self.get_batch_at_cursor().wrapping_mul(0xa4d94a4f);
+    //     let a = x >> 16;
+    //     let b = x >> 30;
+    //     x ^= a >> b;
+    //     x = x.wrapping_mul(0xa4d94a4f);
+
+    //     x as usize % DICTIONARY_SIZE
+    // }
+    // /// Get the hash of the current four bytes below the cursor.
+    ///
+    /// This is guaranteed to be below `DICTIONARY_SIZE`.
     fn get_cur_hash(&self) -> usize {
         // Use PCG transform to generate a relatively good hash of the four bytes batch at the
         // cursor.
-        let mut x = self.get_batch_at_cursor().wrapping_mul(0xa4d94a4f);
-        let a = x >> 16;
-        let b = x >> 30;
-        x ^= a >> b;
-        x = x.wrapping_mul(0xa4d94a4f);
-
-        x as usize % DICTIONARY_SIZE
+        hash(self.get_batch_at_cursor()) as usize
     }
 
     /// Read a 4-byte "batch" from some position.
@@ -151,16 +148,54 @@ impl<'a, W:Write> Encoder<'a, W> {
         //   candidate actually matches what we search for.
         // - We can address up to 16-bit offset, hence we are only able to address the candidate if
         //   its offset is less than or equals to 0xFFFF.
-        if candidate != !0
-           && self.get_batch(candidate) == self.get_batch_at_cursor()
-           && self.cur - candidate <= 0xFFFF {
+
+        let (distance, overflow) = self.cur.overflowing_sub(candidate);
+        // let (distance, overflow) = self.cur.wrapping_sub(candidate);
+        if !overflow && 
+            distance <= 0xFFFF && 
+            // && self.cur + MINMATCH < self.input.len()
+            self.get_batch(candidate) == self.get_batch_at_cursor()
+        {
             // Calculate the "extension bytes", i.e. the duplicate bytes beyond the batch. These
             // are the number of prefix bytes shared between the match and needle.
-            let ext = self.input[self.cur + 4..]
-                .iter()
-                .zip(&self.input[candidate + 4..])
-                .take_while(|&(a, b)| a == b)
-                .count();
+            // let ext = self.input[self.cur + MINMATCH..]
+            //     .iter()
+            //     .zip(&self.input[candidate + MINMATCH..])
+            //     .take_while(|&(a, b)| a == b)
+            //     .count();
+
+            let mut ext = 0;
+
+            // TODO check LittleEndian
+            // 4byte step
+            let in_len = self.input.len();
+            let stepsize = 4;
+            while in_len > self.cur + MINMATCH + ext + stepsize  {
+                let input_block = NativeEndian::read_u32(&self.input[self.cur + MINMATCH + ext..]);
+                let candidate_block = NativeEndian::read_u32(&self.input[candidate as usize + MINMATCH + ext..]);
+                if input_block != candidate_block{
+                    break;
+                }
+                ext += stepsize;
+            }
+
+            let stepsize = 2;
+            if in_len > self.cur + MINMATCH + ext + stepsize {
+                let input_block = NativeEndian::read_u16(&self.input[self.cur + MINMATCH + ext..]);
+                let candidate_block = NativeEndian::read_u16(&self.input[candidate as usize + MINMATCH + ext..]);
+                if input_block == candidate_block{
+                    ext +=stepsize;
+                }
+            }
+            let stepsize = 1;
+            if in_len > self.cur + MINMATCH + ext + stepsize {
+                let input_block = &self.input[self.cur + MINMATCH + ext..];
+                let candidate_block = &self.input[candidate as usize + MINMATCH + ext..];
+                if input_block == candidate_block{
+                    ext +=stepsize;
+                }
+            }
+
 
             Some(Duplicate {
                 offset: (self.cur - candidate) as u16,
@@ -181,6 +216,7 @@ impl<'a, W:Write> Encoder<'a, W> {
         self.bytes_written += self.output.write(&[n as u8])?;
         Ok(())
     }
+
 
     /// Read the block of the top of the stream.
     fn pop_block(&mut self) -> Block {
@@ -218,6 +254,12 @@ impl<'a, W:Write> Encoder<'a, W> {
 
     /// Complete the encoding into `self.output`.
     fn complete(&mut self) -> std::io::Result<usize> {
+
+        // self.dict[self.get_cur_hash()] = self.cur;
+        // self.cur += 1;
+
+        // let forwardHash = self.get_cur_hash();
+
         // Construct one block at a time.
         loop {
             // The start of the literals section.
@@ -306,6 +348,16 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
 // fn yoops() {
 //     const COMPRESSION66K: &'static [u8] = include_bytes!("../../benches/compression_66k_JSON.txt");
 // }
+
+#[test]
+fn test_bug() {
+
+    let input: &[u8] = &[10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18];
+    let out = compress(&input);
+    dbg!(&out);
+
+}
+
 
 #[test]
 fn test_compare() {
