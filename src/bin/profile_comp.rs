@@ -7,10 +7,10 @@ const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/dickens.txt
 fn main() {
     // use cpuprofiler::PROFILER;
     // PROFILER.lock().unwrap().start("./my-prof.profile").unwrap();
-    // for _ in 0..100 {
-    //     compress(COMPRESSION10MB as &[u8]);
-    // }
-    compress(COMPRESSION10MB as &[u8]);
+    for _ in 0..100 {
+        compress(COMPRESSION10MB as &[u8]);
+    }
+    // compress(COMPRESSION10MB as &[u8]);
     // PROFILER.lock().unwrap().stop().unwrap();
 }
 
@@ -20,8 +20,8 @@ const MINMATCH: usize = 4;
 const LZ4_HASHLOG: u32 = 12;
 
 /// Switch for the hashtable size byU16
-#[allow(dead_code)]
-static LZ4_64KLIMIT: u32 = (64 * 1024) + (MFLIMIT - 1);
+// #[allow(dead_code)]
+// static LZ4_64KLIMIT: u32 = (64 * 1024) + (MFLIMIT - 1);
 
 
 pub(crate) fn hash(sequence:u32) -> u32 {
@@ -40,19 +40,6 @@ use std::io::Write;
 /// thus collisions are more likely, hurting the compression ratio.
 const DICTIONARY_SIZE: usize = 4096;
 
-
-/// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
-/// The last match must start at least 12 bytes before the end of block. The last match is part of the penultimate sequence. 
-/// It is followed by the last sequence, which contains only literals.
-///
-/// Note that, as a consequence, an independent block < 13 bytes cannot be compressed, because the match must copy "something", 
-/// so it needs at least one prior byte.
-///
-/// When a block can reference data from another block, it can start immediately with a match and no literal, so a block of 12 bytes can be compressed.
-const MFLIMIT: u32 = 12;
-/// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
-/// MFLIMIT + 1 for the token.
-// static LZ4_MIN_LENGTH: u32 = MFLIMIT+1;
 
 /// A LZ4 block.
 ///
@@ -96,9 +83,6 @@ struct Encoder<'a, W:Write> {
     /// Every four bytes are hashed, and in the resulting slot their position in the input buffer
     /// is placed. This way we can easily look up a candidate to back references.
     dict: [usize; DICTIONARY_SIZE],
-    step_size_4: usize,
-    step_size_2: usize,
-    step_size_1: usize,
 }
 
 impl<'a, W:Write> Encoder<'a, W> {
@@ -174,92 +158,44 @@ impl<'a, W:Write> Encoder<'a, W> {
     /// Find a duplicate of the current batch.
     ///
     /// If any duplicate is found, a tuple `(position, size - 4)` is returned.
-    #[inline(never)]
-    fn find_duplicate(&mut self) -> Option<Duplicate> {
-        // If there is no remaining batch, we return none.
-        if !self.remaining_batch() {
-            return None;
-        }
+    // fn find_duplicate(&self) -> Option<usize> {
+    //     // If there is no remaining batch, we return none.
+    //     if !self.remaining_batch() {
+    //         return None;
+    //     }
 
-        // Find a candidate in the dictionary by hashing the current four bytes.
-        let candidate = self.dict[self.get_cur_hash()];
+    //     // Find a candidate in the dictionary by hashing the current four bytes.
+    //     let candidate = self.dict[self.get_cur_hash()];
 
-        // Three requirements to the candidate exists:
-        // - The candidate is not the trap value (0xFFFFFFFF), which represents an empty bucket.
-        // - We should not return a position which is merely a hash collision, so w that the
-        //   candidate actually matches what we search for.
-        // - We can address up to 16-bit offset, hence we are only able to address the candidate if
-        //   its offset is less than or equals to 0xFFFF.
+    //     // Three requirements to the candidate exists:
+    //     // - The candidate is not the trap value (0xFFFFFFFF), which represents an empty bucket.
+    //     // - We should not return a position which is merely a hash collision, so w that the
+    //     //   candidate actually matches what we search for.
+    //     // - We can address up to 16-bit offset, hence we are only able to address the candidate if
+    //     //   its offset is less than or equals to 0xFFFF.
 
-        let (distance, overflow) = self.cur.overflowing_sub(candidate);
-        // let (distance, overflow) = self.cur.wrapping_sub(candidate);
-        if !overflow && 
-            distance <= 0xFFFF && 
-            // && self.cur + MINMATCH < self.input.len()
-            self.get_batch(candidate) == self.get_batch_at_cursor()
-        {
-            // Calculate the "extension bytes", i.e. the duplicate bytes beyond the batch. These
-            // are the number of prefix bytes shared between the match and needle.
-            // let ext = self.input[self.cur + MINMATCH..]
-            //     .iter()
-            //     .zip(&self.input[candidate + MINMATCH..])
-            //     .take_while(|&(a, b)| a == b)
-            //     .count();
+    //     let (distance, overflow) = self.cur.overflowing_sub(candidate);
+    //     // let (distance, overflow) = self.cur.wrapping_sub(candidate);
+    //     if !overflow && 
+    //         distance <= 0xFFFF && 
+    //         // && self.cur + MINMATCH < self.input.len()
+    //         self.get_batch(candidate) == self.get_batch_at_cursor()
+    //     {
+    //         return candidate;
+    //         // Calculate the "extension bytes", i.e. the duplicate bytes beyond the batch. These
+    //         // are the number of prefix bytes shared between the match and needle.
+    //         // let ext = self.input[self.cur + MINMATCH..]
+    //         //     .iter()
+    //         //     .zip(&self.input[candidate + MINMATCH..])
+    //         //     .take_while(|&(a, b)| a == b)
+    //         //     .count();
 
-            let mut ext = 0;
-
-            // TODO check LittleEndian
-            // 4byte step
-            let in_len = self.input.len();
-            let stepsize = 4;
-            while in_len > self.cur + MINMATCH + ext + stepsize  {
-                let input_block = NativeEndian::read_u32(&self.input[self.cur + MINMATCH + ext..]);
-                let candidate_block = NativeEndian::read_u32(&self.input[candidate as usize + MINMATCH + ext..]);
-                if input_block != candidate_block{
-                    break;
-                }
-                self.step_size_4 +=1;
-                ext += stepsize;
-            }
-
-            // let stepsize = 1;
-            // while in_len > self.cur + MINMATCH + ext + stepsize  {
-            //     let input_block = &self.input[self.cur + MINMATCH + ext..];
-            //     let candidate_block = &self.input[candidate as usize + MINMATCH + ext..];
-            //     if input_block != candidate_block{
-            //         break;
-            //     }
-            //     self.step_size_1 +=1;
-            //     ext += stepsize;
-            // }
-
-
-            let stepsize = 2;
-            if in_len > self.cur + MINMATCH + ext + stepsize {
-                let input_block = NativeEndian::read_u16(&self.input[self.cur + MINMATCH + ext..]);
-                let candidate_block = NativeEndian::read_u16(&self.input[candidate as usize + MINMATCH + ext..]);
-                if input_block == candidate_block{
-                    ext +=stepsize;
-            		self.step_size_2 +=1;
-                }
-            }
-            let stepsize = 1;
-            if in_len > self.cur + MINMATCH + ext + stepsize {
-                let input_block = &self.input[self.cur + MINMATCH + ext..];
-                let candidate_block = &self.input[candidate as usize + MINMATCH + ext..];
-                if input_block == candidate_block{
-                    ext +=stepsize;
-            		self.step_size_1 +=1;
-                }
-            }
-
-
-            Some(Duplicate {
-                offset: (self.cur - candidate) as u16,
-                extra_bytes: ext,
-            })
-        } else { None }
-    }
+    //         // Some(Duplicate {
+    //         //     offset: (self.cur - candidate) as u16,
+    //         //     extra_bytes: ext,
+    //         // })
+    //     } else { None }
+    // }
 
     /// Write an integer to the output in LSIC format.
     fn write_integer(&mut self, mut n: usize) -> std::io::Result<()> {
@@ -276,39 +212,38 @@ impl<'a, W:Write> Encoder<'a, W> {
 
 
     /// Read the block of the top of the stream.
-    #[inline(never)]
-    fn pop_block(&mut self) -> Block {
-        // The length of the literals section.
-        let mut lit = 0;
+    // fn pop_block(&mut self) -> Block {
+    //     // The length of the literals section.
+    //     let mut lit = 0;
 
-        loop {
-            // Search for a duplicate.
-            if let Some(dup) = self.find_duplicate() {
-                // We found a duplicate, so the literals section is over...
+    //     loop {
+    //         // Search for a duplicate.
+    //         if let Some(dup) = self.find_duplicate() {
+    //             // We found a duplicate, so the literals section is over...
 
-                // Move forward. Note that `ext` is actually the steps minus 4, because of the
-                // minimum matchlenght, so we need to add 4.
-                self.go_forward(dup.extra_bytes + 4);
+    //             // Move forward. Note that `ext` is actually the steps minus 4, because of the
+    //             // minimum matchlenght, so we need to add 4.
+    //             self.go_forward(dup.extra_bytes + 4);
 
-                return Block {
-                    lit_len: lit,
-                    dup: Some(dup),
-                };
-            }
+    //             return Block {
+    //                 lit_len: lit,
+    //                 dup: Some(dup),
+    //             };
+    //         }
 
-            // Try to move forward.
-            if !self.go_forward(1) {
-                // We reached the end of the stream, and no duplicates section follows.
-                return Block {
-                    lit_len: lit,
-                    dup: None,
-                };
-            }
+    //         // Try to move forward.
+    //         if !self.go_forward(1) {
+    //             // We reached the end of the stream, and no duplicates section follows.
+    //             return Block {
+    //                 lit_len: lit,
+    //                 dup: None,
+    //             };
+    //         }
 
-            // No duplicates found yet, so extend the literals section.
-            lit += 1;
-        }
-    }
+    //         // No duplicates found yet, so extend the literals section.
+    //         lit += 1;
+    //     }
+    // }
 
     /// Complete the encoding into `self.output`.
     #[inline(never)]
@@ -325,12 +260,60 @@ impl<'a, W:Write> Encoder<'a, W> {
             let start = self.cur;
 
             // Read the next block into two sections, the literals and the duplicates.
-            let block = self.pop_block();
+
+            let mut lit_len = 0;
+            let mut match_length = usize::MAX;
+            let mut offset = 0;
+            loop {
+
+                if self.remaining_batch() {
+
+                    // Find a candidate in the dictionary by hashing the current four bytes.
+                    let candidate = self.dict[self.get_cur_hash()];
+
+                    // Three requirements to the candidate exists:
+                    // - The candidate is not the trap value (0xFFFFFFFF), which represents an empty bucket.
+                    // - We should not return a position which is merely a hash collision, so w that the
+                    //   candidate actually matches what we search for.
+                    // - We can address up to 16-bit offset, hence we are only able to address the candidate if
+                    //   its offset is less than or equals to 0xFFFF.
+
+                    let (distance, overflow) = self.cur.overflowing_sub(candidate);
+                    // let (distance, overflow) = self.cur.wrapping_sub(candidate);
+                    if !overflow && 
+                        distance <= 0xFFFF && 
+                        // && self.cur + MINMATCH < self.input.len()
+                        self.get_batch(candidate) == self.get_batch_at_cursor()
+                    {
+                        // return candidate;
+                        let duplicate = candidate;
+                        match_length = self.input[self.cur + MINMATCH..]
+                            .iter()
+                            .zip(&self.input[duplicate + MINMATCH..])
+                            .take_while(|&(a, b)| a == b)
+                            .count();
+
+                        offset = (self.cur - duplicate) as u16;
+                        break;
+                    }
+
+                }
+
+                // Try to move forward.
+                if !self.go_forward(1) {
+                    // We reached the end of the stream, and no duplicates section follows.
+                    break;
+                }
+
+                // No duplicates found yet, so extend the literals section.
+                lit_len += 1;
+            }
+
 
             // Generate the higher half of the token.
-            let mut token = if block.lit_len < 0xF {
+            let mut token = if lit_len < 0xF {
                 // Since we can fit the literals length into it, there is no need for saturation.
-                (block.lit_len as u8) << 4
+                (lit_len as u8) << 4
             } else {
                 // We were unable to fit the literals into it, so we saturate to 0xF. We will later
                 // write the extensional value through LSIC encoding.
@@ -338,49 +321,49 @@ impl<'a, W:Write> Encoder<'a, W> {
             };
 
             // Generate the lower half of the token, the duplicates length.
-            let dup_extra_len = block.dup.map_or(0, |x| x.extra_bytes);
-            token |= if dup_extra_len < 0xF {
-                // We could fit it in.
-                dup_extra_len as u8
-            } else {
-                // We were unable to fit it in, so we default to 0xF, which will later be extended
-                // by LSIC encoding.
-                0xF
-            };
+            if match_length != usize::MAX {
+                
+                self.go_forward(match_length + 4);
+                token |= if match_length < 0xF {
+                    // We could fit it in.
+                    match_length as u8
+                } else {
+                    // We were unable to fit it in, so we default to 0xF, which will later be extended
+                    // by LSIC encoding.
+                    0xF
+                };
+            }
 
             // Push the token to the output stream.
             self.bytes_written += self.output.write(&[token])?;
 
             // If we were unable to fit the literals length into the token, write the extensional
             // part through LSIC.
-            if block.lit_len >= 0xF {
-                self.write_integer(block.lit_len - 0xF)?;
+            if lit_len >= 0xF {
+                self.write_integer(lit_len - 0xF)?;
             }
 
             // Now, write the actual literals.
-            let write_slice = &self.input[start..start + block.lit_len];
+            let write_slice = &self.input[start..start + lit_len];
             self.output.write_all(write_slice)?;
             self.bytes_written += write_slice.len();
 
-            if let Some(Duplicate { offset, .. }) = block.dup {
+            if match_length != usize::MAX {
                 // Wait! There's more. Now, we encode the duplicates section.
-
+                // let offset = (self.cur - duplicate) as u16;
                 // write the offset in little endian.
                 self.bytes_written += self.output.write(&[offset as u8])?;
                 self.bytes_written += self.output.write(&[(offset >> 8) as u8])?;
 
                 // If we were unable to fit the duplicates length into the token, write the
                 // extensional part through LSIC.
-                if dup_extra_len >= 0xF {
-                    self.write_integer(dup_extra_len - 0xF)?;
+                if match_length >= 0xF {
+                    self.write_integer(match_length - 0xF)?;
                 }
             } else {
                 break;
             }
         }
-        dbg!(self.step_size_4);
-        dbg!(self.step_size_2);
-        dbg!(self.step_size_1);
         Ok(self.bytes_written)
     }
 }
@@ -394,9 +377,6 @@ pub fn compress_into<W:Write>(input: &[u8], output: W) -> std::io::Result<usize>
         output: output,
         cur: 0,
         dict: [!0; DICTIONARY_SIZE],
-        step_size_1: 0,
-        step_size_2: 0,
-        step_size_4: 0,
     }.complete()
 }
 
@@ -410,3 +390,49 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
 
     vec
 }
+
+// #[test]
+// fn yoops() {
+//     const COMPRESSION66K: &'static [u8] = include_bytes!("../../benches/compression_66k_JSON.txt");
+// }
+
+#[test]
+fn test_bug() {
+
+    let input: &[u8] = &[10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18];
+    let out = compress(&input);
+    dbg!(&out);
+
+}
+
+
+#[test]
+fn test_compare() {
+
+    let mut input: &[u8] = &[10, 12, 14, 16];
+
+    let mut cache = vec![];
+    let mut encoder = lz4::EncoderBuilder::new().level(2).build(&mut cache).unwrap();
+    // let mut read = *input;
+    std::io::copy(&mut input, &mut encoder).unwrap();
+    let (comp_lz4, _result) = encoder.finish();
+
+    println!("{:?}", comp_lz4);
+
+    let input: &[u8] = &[10, 12, 14, 16];
+    let out = compress(&input);
+    dbg!(&out);
+
+}
+
+// #[test]
+// fn test_concat() {
+//     let mut out = vec![];
+//     compress_into(&[0], &mut out).unwrap();
+//     compress_into(&[0], &mut out).unwrap();
+//     dbg!(&out);
+
+//     let mut out = vec![];
+//     compress_into(&[0, 0], &mut out).unwrap();
+//     dbg!(&out);
+// }
