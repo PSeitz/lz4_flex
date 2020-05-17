@@ -73,6 +73,7 @@ fn bench_decompression_10_mb(b: &mut test::Bencher) {
 fn inverse(s: &str) {
     let compressed = compress(s.as_bytes());
     // println!("Compressed '{}' into {:?}", s, compressed);
+    dbg!(&compressed);
     let decompressed = decompress(&compressed).unwrap();
     // println!("Decompressed it into {:?}", str::from_utf8(&decompressed).unwrap());
     assert_eq!(decompressed, s.as_bytes());
@@ -80,9 +81,10 @@ fn inverse(s: &str) {
 
 #[test]
 fn yopa() {
-    const COMPRESSION66K: &'static [u8] = include_bytes!("../benches/compression_66k_JSON.txt");
+    const COMPRESSION66K: &'static [u8] = include_bytes!("../benches/dickens.txt");
     let compressed = compress(COMPRESSION66K);
-    let decompressed = decompress(&compressed).unwrap();
+    println!("Compression Ratio {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as f64);
+    let _decompressed = decompress(&compressed).unwrap();
 }
 
 #[test]

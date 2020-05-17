@@ -4,9 +4,12 @@
 //! high performance. It has fixed memory usage, which contrary to other approachs, makes it less
 //! memory hungry.
 
+use crate::block::MFLIMIT;
+use crate::block::MAX_DISTANCE;
+use crate::block::LZ4_MIN_LENGTH;
 use crate::block::MINMATCH;
 use crate::block::hash;
-use byteorder::{NativeEndian, ByteOrder};
+
 use std::io::Write;
 
 /// Duplication dictionary size.
@@ -42,11 +45,11 @@ struct Duplicate {
 }
 
 /// An LZ4 encoder.
-struct Encoder<'a, W:Write> {
+struct Encoder<'a, 'b> {
     /// The raw uncompressed input.
     input: &'a [u8],
     /// The compressed output.
-    output: W,
+    output: &'b mut Vec<u8>,
     /// The number of bytes from the input that are encoded.
     cur: usize,
     /// The number of bytes written to the output.
@@ -60,89 +63,26 @@ struct Encoder<'a, W:Write> {
     dict: [usize; DICTIONARY_SIZE],
 }
 
-impl<'a, W:Write> Encoder<'a, W> {
-    /// Go forward by some number of bytes.
-    ///
-    /// This will update the cursor and dictionary to reflect the now processed bytes.
-    ///
-    /// This returns `false` if all the input bytes are processed.
-    fn go_forward_2(&mut self, steps: usize) {
-        // Go over all the bytes we are skipping and update the cursor and dictionary.
-
-        if self.cur + 4 + steps < self.input.len() {
-            for _ in 0..steps {
-                self.dict[self.get_cur_hash()] = self.cur;
-                self.cur += 1;
-            }
-        }else{
-            for _ in 0..steps {
-                // Insert the cursor position into the dictionary.
-                self.insert_cursor();
-                // Increment the cursor.
-                self.cur += 1;
-            }
-        }
-
-    }
-
-    fn go_forward(&mut self, steps: usize) -> bool {
-        // Go over all the bytes we are skipping and update the cursor and dictionary.
-
-        for _ in 0..steps {
-            // Insert the cursor position into the dictionary.
-            self.insert_cursor();
-            // Increment the cursor.
-            self.cur += 1;
-        }
-
-        // Return `true` if there's more to read.
-        self.cur <= self.input.len()
-    }
-
-    /// Insert the batch under the cursor into the dictionary.
-    fn insert_cursor(&mut self) {
-        // Make sure that there is at least one batch remaining.
-        if self.remaining_batch() {
-            // Insert the cursor into the table.
-            self.dict[self.get_cur_hash()] = self.cur;
-        }
-    }
-
-    /// Check if there are any remaining batches.
-    fn remaining_batch(&self) -> bool {
-        self.cur + 4 < self.input.len()
-    }
-
+impl<'a, 'b> Encoder<'a, 'b> {
     /// Get the hash of the current four bytes below the cursor.
     ///
     /// This is guaranteed to be below `DICTIONARY_SIZE`.
-    // fn get_cur_hash(&self) -> usize {
-    //     // Use PCG transform to generate a relatively good hash of the four bytes batch at the
-    //     // cursor.
-    //     let mut x = self.get_batch_at_cursor().wrapping_mul(0xa4d94a4f);
-    //     let a = x >> 16;
-    //     let b = x >> 30;
-    //     x ^= a >> b;
-    //     x = x.wrapping_mul(0xa4d94a4f);
-
-    //     x as usize % DICTIONARY_SIZE
-    // }
-    // /// Get the hash of the current four bytes below the cursor.
-    ///
-    /// This is guaranteed to be below `DICTIONARY_SIZE`.
     fn get_cur_hash(&self) -> usize {
-        // Use PCG transform to generate a relatively good hash of the four bytes batch at the
-        // cursor.
         hash(self.get_batch_at_cursor()) as usize
+    }
+
+    fn get_hash_at(&self, pos: usize) -> usize {
+        hash(self.get_batch(pos)) as usize
     }
 
     /// Read a 4-byte "batch" from some position.
     ///
     /// This will read a native-endian 4-byte integer from some position.
     fn get_batch(&self, n: usize) -> u32 {
-        debug_assert!(self.remaining_batch(), "Reading a partial batch.");
-
-        NativeEndian::read_u32(&self.input[n..])
+        let mut batch:u32 = 0;
+        unsafe{std::ptr::copy_nonoverlapping(self.input.as_ptr().add(n), &mut batch as *mut u32 as *mut u8, 4);} 
+        batch
+        // NativeEndian::read_u32(&self.input[n..])
     }
 
     /// Read the batch at the cursor.
@@ -150,84 +90,150 @@ impl<'a, W:Write> Encoder<'a, W> {
         self.get_batch(self.cur)
     }
 
-
     /// Write an integer to the output in LSIC format.
     fn write_integer(&mut self, mut n: usize) -> std::io::Result<()> {
         // Write the 0xFF bytes as long as the integer is higher than said value.
         while n >= 0xFF {
             n -= 0xFF;
-            self.bytes_written += self.output.write(&[0xFF])?;
+            self.output.push(0xFF);
+            self.bytes_written += 1;
         }
 
         // Write the remaining byte.
-        self.bytes_written += self.output.write(&[n as u8])?;
+        self.output.push(n as u8);
+        self.bytes_written += 1;
         Ok(())
     }
+
+    /// Read the batch at the cursor.
+    fn count_same_bytes(&self, first: &[u8], second: &[u8]) -> usize {
+        // let end_limit = first.len() - 5;
+        let mut pos = 0;
+
+        const STEP_SIZE: usize = 8;
+        // compare 8 bytes blocks
+        while pos + STEP_SIZE + 5 < first.len()  {
+            let diff = read_u64(&first[pos..]) ^ read_u64(&second[pos..]);
+
+            if diff == 0{
+                pos += STEP_SIZE;
+                continue;
+            }else {
+                return pos + get_common_bytes(diff) as usize;
+            }
+        }
+
+        // compare 4 bytes block
+        if pos + 4 + 5 < first.len()  {
+            let diff = read_u32(&first[pos..]) ^ read_u32(&second[pos..]);
+
+            if diff == 0{
+                return pos + 4;
+            }else {
+                return pos + (diff.trailing_zeros() >> 3) as usize
+            }
+        }
+        // compare 2 bytes block
+        if pos + 2 + 5 < first.len()  {
+            let diff = read_u16(&first[pos..]) ^ read_u16(&second[pos..]);
+
+            if diff == 0{
+                return pos + 2;
+            }else {
+                return pos + (diff.trailing_zeros() >> 3) as usize
+            }
+        }
+
+        // TODO add end_pos_check, last 5 bytes should be literals
+        if first[pos..] == first[pos..]{
+            pos +=1;
+        }
+
+        pos
+    }
+
 
 
     /// Complete the encoding into `self.output`.
     fn complete(&mut self) -> std::io::Result<usize> {
 
-        // self.dict[self.get_cur_hash()] = self.cur;
-        // self.cur += 1;
+        /* Input too small, no compression (all literals) */
+        if self.input.len() < LZ4_MIN_LENGTH as usize {
+            let lit_len = self.input.len();
+            let token = if lit_len < 0xF {
+                // Since we can fit the literals length into it, there is no need for saturation.
+                (lit_len as u8) << 4
+            } else {
+                // We were unable to fit the literals into it, so we saturate to 0xF. We will later
+                // write the extensional value through LSIC encoding.
+                0xF0
+            };
+            self.output.push(token);
+            self.bytes_written += 1;
+            if lit_len >= 0xF {
+                self.write_integer(lit_len - 0xF)?;
+            }
 
-        // let forwardHash = self.get_cur_hash();
+            // Now, write the actual literals.
+            self.output.extend_from_slice(&self.input);
+            self.bytes_written += self.input.len();
+            return Ok(self.bytes_written);
+        }
 
+        let mut anchor = self.cur;
+
+        let mut start = self.cur;
+        self.dict[self.get_cur_hash()] = self.cur;
+        self.cur += 1;
+        let mut forward_hash = self.get_cur_hash();
+
+        let end_pos_check = self.input.len() - MFLIMIT as usize;
         // Construct one block at a time.
         loop {
             // The start of the literals section.
-            let start = self.cur;
 
             // Read the next block into two sections, the literals and the duplicates.
 
-            let mut lit_len = 0;
             let mut match_length = usize::MAX;
-            let mut offset = 0;
+            let mut offset: u16 = 0;
+
+            let mut next_cur = self.cur;
             loop {
 
-                if self.remaining_batch() {
+                let hash = forward_hash;
+                self.cur = next_cur;
+                next_cur += 1;
+                if self.cur < end_pos_check {
 
                     // Find a candidate in the dictionary by hashing the current four bytes.
-                    let candidate = self.dict[self.get_cur_hash()];
-
+                    let candidate = self.dict[hash];
+                    forward_hash = self.get_hash_at(next_cur);
+                    self.dict[hash] = self.cur;
                     // Three requirements to the candidate exists:
-                    // - The candidate is not the trap value (0xFFFFFFFF), which represents an empty bucket.
                     // - We should not return a position which is merely a hash collision, so w that the
                     //   candidate actually matches what we search for.
                     // - We can address up to 16-bit offset, hence we are only able to address the candidate if
                     //   its offset is less than or equals to 0xFFFF.
 
-                    let (distance, overflow) = self.cur.overflowing_sub(candidate);
-                    // let (distance, overflow) = self.cur.wrapping_sub(candidate);
-                    if !overflow && 
-                        distance <= 0xFFFF && 
-                        // && self.cur + MINMATCH < self.input.len()
+                    if candidate + MAX_DISTANCE > self.cur && 
                         self.get_batch(candidate) == self.get_batch_at_cursor()
                     {
-                        // return candidate;
-                        let duplicate = candidate;
-                        match_length = self.input[self.cur + MINMATCH..]
-                            .iter()
-                            .zip(&self.input[duplicate + MINMATCH..])
-                            .take_while(|&(a, b)| a == b)
-                            .count();
 
-                        offset = (self.cur - duplicate) as u16;
+                        let duplicate = candidate;
+                        match_length = self.count_same_bytes(&self.input[self.cur + MINMATCH..], &self.input[duplicate + MINMATCH..]);
+
+                        offset = (self.cur - candidate) as u16;
                         break;
                     }
 
-                }
-
-                // Try to move forward.
-                if !self.go_forward(1) {
-                    // We reached the end of the stream, and no duplicates section follows.
+                }else {
+                    self.cur = self.input.len();
                     break;
                 }
 
-                // No duplicates found yet, so extend the literals section.
-                lit_len += 1;
             }
-
+            
+            let lit_len = self.cur - anchor;
 
             // Generate the higher half of the token.
             let mut token = if lit_len < 0xF {
@@ -242,7 +248,8 @@ impl<'a, W:Write> Encoder<'a, W> {
             // Generate the lower half of the token, the duplicates length.
             if match_length != usize::MAX {
                 
-                self.go_forward_2(match_length + 4);
+                self.cur += match_length + 4;
+                // self.go_forward_2(match_length + 4);
                 token |= if match_length < 0xF {
                     // We could fit it in.
                     match_length as u8
@@ -253,8 +260,11 @@ impl<'a, W:Write> Encoder<'a, W> {
                 };
             }
 
+            anchor = self.cur;
+
             // Push the token to the output stream.
-            self.bytes_written += self.output.write(&[token])?;
+            self.output.push(token);
+            self.bytes_written += 1;
 
             // If we were unable to fit the literals length into the token, write the extensional
             // part through LSIC.
@@ -269,10 +279,10 @@ impl<'a, W:Write> Encoder<'a, W> {
 
             if match_length != usize::MAX {
                 // Wait! There's more. Now, we encode the duplicates section.
-                // let offset = (self.cur - duplicate) as u16;
+                
                 // write the offset in little endian.
-                self.bytes_written += self.output.write(&[offset as u8])?;
-                self.bytes_written += self.output.write(&[(offset >> 8) as u8])?;
+                self.output.extend_from_slice(&[offset as u8, (offset >> 8) as u8]);
+                self.bytes_written += 2;
 
                 // If we were unable to fit the duplicates length into the token, write the
                 // extensional part through LSIC.
@@ -282,19 +292,20 @@ impl<'a, W:Write> Encoder<'a, W> {
             } else {
                 break;
             }
+            start = self.cur;
         }
         Ok(self.bytes_written)
     }
 }
 
 /// Compress all bytes of `input` into `output`.
-pub fn compress_into<W:Write>(input: &[u8], output: W) -> std::io::Result<usize> {
+pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usize> {
     Encoder {
         bytes_written: 0,
         input: input,
         output: output,
         cur: 0,
-        dict: [!0; DICTIONARY_SIZE],
+        dict: [0; DICTIONARY_SIZE],
     }.complete()
 }
 
@@ -307,6 +318,85 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
 
     vec
 }
+
+fn read_u64(input: &[u8]) -> usize {
+    let mut num:usize = 0;
+    unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut usize as *mut u8, 8);} 
+    num
+}
+fn read_u32(input: &[u8]) -> u32 {
+    let mut num:u32 = 0;
+    unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut u32 as *mut u8, 4);} 
+    num
+}
+
+fn read_u16(input: &[u8]) -> u16 {
+    let mut num:u16 = 0;
+    unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut u16 as *mut u8, 2);} 
+    num
+}
+
+
+
+
+fn get_common_bytes(diff: usize) -> u32 {
+    let tr_zeroes = diff.trailing_zeros();
+    // right shift by 3, because we are only interested in 8 bit blocks
+    tr_zeroes >> 3
+}
+
+#[test]
+fn test_get_common_bytes(){
+    let num1 = read_u64(&[0,0,0,0,0,0,0,1]);
+    let num2 = read_u64(&[0,0,0,0,0,0,0,2]);
+    let diff = num1 ^ num2;
+
+    assert_eq!(get_common_bytes(diff), 7);
+
+    let num1 = read_u64(&[0,0,0,0,0,0,1,1]);
+    let num2 = read_u64(&[0,0,0,0,0,0,0,2]);
+    let diff = num1 ^ num2;
+    assert_eq!(get_common_bytes(diff), 6);
+    let num1 = read_u64(&[1,0,0,0,0,0,1,1]);
+    let num2 = read_u64(&[0,0,0,0,0,0,0,2]);
+    let diff = num1 ^ num2;
+    assert_eq!(get_common_bytes(diff), 0);
+}
+
+
+// #[test]
+// fn test_count_same_bytes() {
+//     // 8byte aligned block
+//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4] ;
+//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4];
+//     assert_eq!(count_same_bytes(&first, &second), 16);
+
+//     // 4byte aligned block
+//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4] ;
+//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4];
+//     assert_eq!(count_same_bytes(&first, &second), 20);
+
+//     // 2byte aligned block
+//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4] ;
+//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4];
+//     assert_eq!(count_same_bytes(&first, &second), 22);
+
+//     // 1byte aligned block
+//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5] ;
+//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5];
+//     assert_eq!(count_same_bytes(&first, &second), 23);
+
+//     // 1byte aligned block - last byte different
+//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5] ;
+//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 6];
+//     assert_eq!(count_same_bytes(&first, &second), 22);
+
+//     // 1byte aligned block
+//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 9, 5] ;
+//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 6];
+//     assert_eq!(count_same_bytes(&first, &second), 21);
+// }
+
 
 // #[test]
 // fn yoops() {

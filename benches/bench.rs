@@ -12,9 +12,9 @@ const COMPRESSION65K: &'static [u8] = include_bytes!("compression_65k.txt");
 const COMPRESSION66K: &'static [u8] = include_bytes!("compression_66k_JSON.txt");
 const COMPRESSION10MB: &'static [u8] = include_bytes!("dickens.txt");
 
-// const ALL: &[&[u8]] = &[COMPRESSION1K as &[u8], COMPRESSION34K as &[u8], COMPRESSION65K as &[u8], COMPRESSION66K as &[u8]];
+const ALL: &[&[u8]] = &[COMPRESSION1K as &[u8], COMPRESSION34K as &[u8], COMPRESSION65K as &[u8], COMPRESSION66K as &[u8]];
 // const ALL: [&[u8]; 4] = [COMPRESSION1K as &[u8], COMPRESSION34K as &[u8], COMPRESSION65K as &[u8], COMPRESSION10MB as &[u8]];
-const ALL: [&[u8]; 1] = [COMPRESSION66K as &[u8]];
+// const ALL: [&[u8]; 1] = [COMPRESSION66K as &[u8]];
 // const ALL: [&[u8]; 1] = [COMPRESSION65K as &[u8]];
 
 fn bench_compression_throughput(c: &mut Criterion) {

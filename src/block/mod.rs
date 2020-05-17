@@ -22,6 +22,9 @@ const MFLIMIT: u32 = 12;
 #[allow(dead_code)]
 static LZ4_MIN_LENGTH: u32 = MFLIMIT+1;
 
+const MAXD_LOG: usize = 16;
+const MAX_DISTANCE: usize = (1 << MAXD_LOG) - 1;
+
 #[allow(dead_code)]
 const MATCH_LENGTH_MASK: u32 = (1_u32 << 4) - 1; // 0b1111 / 15
 #[allow(dead_code)]

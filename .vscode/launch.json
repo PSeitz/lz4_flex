@@ -1,0 +1,250 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'lz4_flex'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "nulls",
+                    "--no-run",
+                    "--lib",
+                    "--package=lz4_flex"
+                ],
+                "filter": {
+                    "name": "lz4_flex",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'comp_debug'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=comp_debug",
+                    "--package=lz4_flex"
+                ],
+                "filter": {
+                    "name": "comp_debug",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'decomp'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=decomp",
+                    "--package=lz4_flex"
+                ],
+                "filter": {
+                    "name": "decomp",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'decomp'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=decomp",
+                    "--package=lz4_flex"
+                ],
+                "filter": {
+                    "name": "decomp",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'lz4_flex'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=lz4_flex",
+                    "--package=lz4_flex"
+                ],
+                "filter": {
+                    "name": "lz4_flex",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'lz4_flex'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=lz4_flex",
+                    "--package=lz4_flex"
+                ],
+                "filter": {
+                    "name": "lz4_flex",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'decompress_with_stats'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=decompress_with_stats",
+                    "--package=lz4_flex"
+                ],
+                "filter": {
+                    "name": "decompress_with_stats",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'decompress_with_stats'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=decompress_with_stats",
+                    "--package=lz4_flex"
+                ],
+                "filter": {
+                    "name": "decompress_with_stats",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'profile_comp'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=profile_comp",
+                    "--package=lz4_flex"
+                ],
+                "filter": {
+                    "name": "profile_comp",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'profile_comp'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=profile_comp",
+                    "--package=lz4_flex"
+                ],
+                "filter": {
+                    "name": "profile_comp",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'profile_decomp'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=profile_decomp",
+                    "--package=lz4_flex"
+                ],
+                "filter": {
+                    "name": "profile_decomp",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'profile_decomp'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=profile_decomp",
+                    "--package=lz4_flex"
+                ],
+                "filter": {
+                    "name": "profile_decomp",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug benchmark 'bench'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bench=bench",
+                    "--package=lz4_flex"
+                ],
+                "filter": {
+                    "name": "bench",
+                    "kind": "bench"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
