@@ -1,7 +1,7 @@
 #[macro_use] extern crate criterion;
 use std::io::{Read, Write};
 use self::criterion::*;
-
+use lz4::block::{compress as lz4_linked_block_compress,decompress as lz4_linked_block_decompress};
 use std::io;
 // use lz4_flex::{decompress, decompress_into, compress, compress_into};
 
@@ -31,11 +31,12 @@ fn bench_compression_throughput(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("lz4_linked", input_bytes), &input,
             |b, i| b.iter(|| {
-                let mut cache = vec![];
-                let mut encoder = lz4::EncoderBuilder::new().level(2).build(&mut cache).unwrap();
-                let mut read = **i;
-                io::copy(&mut read, &mut encoder).unwrap();
-                let (_output, _result) = encoder.finish();
+                lz4_linked_block_compress(&i, None, false)
+                // let mut cache = vec![];
+                // let mut encoder = lz4::EncoderBuilder::new().level(0).build(&mut cache).unwrap();
+                // let mut read = **i;
+                // io::copy(&mut read, &mut encoder).unwrap();
+                // let (_output, _result) = encoder.finish();
             } ));
     }
 
