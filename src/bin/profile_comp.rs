@@ -22,7 +22,7 @@ const LZ4_HASHLOG: u32 = 12;
 
 const MAXD_LOG: usize = 16;
 const MAX_DISTANCE: usize = (1 << MAXD_LOG) - 1;
-
+const END_OFFSET: usize = 5;
 /// Switch for the hashtable size byU16
 // #[allow(dead_code)]
 // static LZ4_64KLIMIT: u32 = (64 * 1024) + (MFLIMIT - 1);
@@ -35,8 +35,8 @@ pub(crate) fn hash(sequence:u32) -> u32 {
 }
 
 
-use byteorder::{NativeEndian, ByteOrder};
-use std::io::Write;
+
+
 /// Duplication dictionary size.
 ///
 /// Every four bytes is assigned an entry. When this number is lower, fewer entries exists, and
@@ -45,7 +45,11 @@ use std::io::Write;
 ///
 /// Every four bytes is assigned an entry. When this number is lower, fewer entries exists, and
 /// thus collisions are more likely, hurting the compression ratio.
-const DICTIONARY_SIZE: usize = 4096;
+/// Duplication dictionary size.
+///
+/// Every four bytes is assigned an entry. When this number is lower, fewer entries exists, and
+/// thus collisions are more likely, hurting the compression ratio.
+const DICTIONARY_SIZE: usize = 4096 * 16;
 
 
 /// A LZ4 block.
@@ -82,8 +86,6 @@ struct Encoder<'b> {
     output: &'b mut Vec<u8>,
     /// The number of bytes from the input that are encoded.
     cur: usize,
-    /// The number of bytes written to the output.
-    bytes_written: usize,
     /// The dictionary of previously encoded sequences.
     ///
     /// This is used to find duplicates in the stream so they are not written multiple times.
@@ -126,24 +128,21 @@ impl<'b> Encoder<'b> {
         while n >= 0xFF {
             n -= 0xFF;
             self.output.push(0xFF);
-            self.bytes_written += 1;
         }
 
         // Write the remaining byte.
         self.output.push(n as u8);
-        self.bytes_written += 1;
         Ok(())
     }
 
     /// Read the batch at the cursor.
-    #[inline(never)]
     unsafe fn count_same_bytes(&self, first: *const u8, second: *const u8) -> usize {
         // let end_limit = first.len() - 5;
         let mut pos = 0;
 
         const STEP_SIZE: usize = 8;
         // compare 8 bytes blocks
-        while pos + STEP_SIZE + 5 < self.input_size  {
+        while pos + STEP_SIZE + END_OFFSET < self.input_size  {
             let diff = read_u64_ptr(first.add(pos)) ^ read_u64_ptr(second.add(pos));
 
             if diff == 0{
@@ -155,7 +154,7 @@ impl<'b> Encoder<'b> {
         }
 
         // compare 4 bytes block
-        if pos + 4 + 5 < self.input_size  {
+        if pos + 4 + END_OFFSET < self.input_size  {
             let diff = read_u32_ptr(first.add(pos)) ^ read_u32_ptr(second.add(pos));
 
             if diff == 0{
@@ -165,7 +164,7 @@ impl<'b> Encoder<'b> {
             }
         }
         // compare 2 bytes block
-        if pos + 2 + 5 < self.input_size  {
+        if pos + 2 + END_OFFSET < self.input_size  {
             let diff = read_u16_ptr(first.add(pos)) ^ read_u16_ptr(second.add(pos));
 
             if diff == 0{
@@ -201,7 +200,6 @@ impl<'b> Encoder<'b> {
                 0xF0
             };
             self.output.push(token);
-            self.bytes_written += 1;
             if lit_len >= 0xF {
                 self.write_integer(lit_len - 0xF)?;
             }
@@ -209,11 +207,8 @@ impl<'b> Encoder<'b> {
             // Now, write the actual literals.
             // self.output.extend_from_slice(&self.input);
             copy_into_vec(&mut self.output, self.input, self.input_size);
-            self.bytes_written += self.input_size;
-            return Ok(self.bytes_written);
+            return Ok(self.output.len());
         }
-
-        let mut anchor = self.cur;
 
         let mut start = self.cur;
         self.dict[self.get_cur_hash()] = self.cur;
@@ -240,8 +235,8 @@ impl<'b> Encoder<'b> {
 
                     // Find a candidate in the dictionary by hashing the current four bytes.
                     let candidate = self.dict[hash];
-                    forward_hash = self.get_hash_at(next_cur);
                     self.dict[hash] = self.cur;
+                    forward_hash = self.get_hash_at(next_cur);
                     // Three requirements to the candidate exists:
                     // - We should not return a position which is merely a hash collision, so w that the
                     //   candidate actually matches what we search for.
@@ -266,7 +261,7 @@ impl<'b> Encoder<'b> {
 
             }
             
-            let lit_len = self.cur - anchor;
+            let lit_len = self.cur - start;
 
             // Generate the higher half of the token.
             let mut token = if lit_len < 0xF {
@@ -293,15 +288,12 @@ impl<'b> Encoder<'b> {
                 };
             }
 
-            anchor = self.cur;
-
             // Push the token to the output stream.
             // self.output.push(token);
             unsafe{
                 std::ptr::write(self.output.as_mut_ptr().add(self.output.len()), token);
                 self.output.set_len(self.output.len() + 1);
             }
-            self.bytes_written += 1;
 
             // If we were unable to fit the literals length into the token, write the extensional
             // part through LSIC.
@@ -314,20 +306,18 @@ impl<'b> Encoder<'b> {
             // self.output.write_all(write_slice)?;
             unsafe{copy_into_vec(&mut self.output, self.input.add(start), lit_len)};
 
-            self.bytes_written += lit_len;
-
             if match_length != usize::MAX {
                 // Wait! There's more. Now, we encode the duplicates section.
                 
                 // write the offset in little endian.
-                // self.output.extend_from_slice(&[offset as u8, (offset >> 8) as u8]);
-                // std::ptr::write(self.output.as_mut_ptr().add(self.output.len()), offset);
-                unsafe{std::ptr::copy_nonoverlapping(&offset as *const u16 as *const u8, self.output.as_mut_ptr().add(self.output.len()), 2);} // TODO only little endian supported here
-                self.bytes_written += 2;
-
+                unsafe{
+                    std::ptr::copy_nonoverlapping(&offset as *const u16 as *const u8, self.output.as_mut_ptr().add(self.output.len()), 2); // TODO only little endian supported here
+                    self.output.set_len(self.output.len() +2);
+                } 
                 // If we were unable to fit the duplicates length into the token, write the
                 // extensional part through LSIC.
                 if match_length >= 0xF {
+                     dbg!(match_length - 0xF);
                     self.write_integer(match_length - 0xF)?;
                 }
             } else {
@@ -335,7 +325,7 @@ impl<'b> Encoder<'b> {
             }
             start = self.cur;
         }
-        Ok(self.bytes_written)
+        Ok(self.output.len())
     }
 }
 
@@ -343,7 +333,6 @@ impl<'b> Encoder<'b> {
 #[inline(never)]
 pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usize> {
     Encoder {
-        bytes_written: 0,
         input: input.as_ptr(),
         input_size: input.len(),
         output: output,
@@ -414,102 +403,3 @@ fn get_common_bytes(diff: usize) -> u32 {
     // right shift by 3, because we are only interested in 8 bit blocks
     tr_zeroes >> 3
 }
-
-#[test]
-fn test_get_common_bytes(){
-    let num1 = read_u64(&[0,0,0,0,0,0,0,1]);
-    let num2 = read_u64(&[0,0,0,0,0,0,0,2]);
-    let diff = num1 ^ num2;
-
-    assert_eq!(get_common_bytes(diff), 7);
-
-    let num1 = read_u64(&[0,0,0,0,0,0,1,1]);
-    let num2 = read_u64(&[0,0,0,0,0,0,0,2]);
-    let diff = num1 ^ num2;
-    assert_eq!(get_common_bytes(diff), 6);
-    let num1 = read_u64(&[1,0,0,0,0,0,1,1]);
-    let num2 = read_u64(&[0,0,0,0,0,0,0,2]);
-    let diff = num1 ^ num2;
-    assert_eq!(get_common_bytes(diff), 0);
-}
-
-
-// #[test]
-// fn test_count_same_bytes() {
-//     // 8byte aligned block
-//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4];
-//     assert_eq!(count_same_bytes(&first, &second), 16);
-
-//     // 4byte aligned block
-//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4];
-//     assert_eq!(count_same_bytes(&first, &second), 20);
-
-//     // 2byte aligned block
-//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4];
-//     assert_eq!(count_same_bytes(&first, &second), 22);
-
-//     // 1byte aligned block
-//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5];
-//     assert_eq!(count_same_bytes(&first, &second), 23);
-
-//     // 1byte aligned block - last byte different
-//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 6];
-//     assert_eq!(count_same_bytes(&first, &second), 22);
-
-//     // 1byte aligned block
-//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 9, 5] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 6];
-//     assert_eq!(count_same_bytes(&first, &second), 21);
-// }
-
-
-// #[test]
-// fn yoops() {
-//     const COMPRESSION66K: &'static [u8] = include_bytes!("../../benches/compression_66k_JSON.txt");
-// }
-
-#[test]
-fn test_bug() {
-
-    let input: &[u8] = &[10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18];
-    let out = compress(&input);
-    dbg!(&out);
-
-}
-
-
-#[test]
-fn test_compare() {
-
-    let mut input: &[u8] = &[10, 12, 14, 16];
-
-    let mut cache = vec![];
-    let mut encoder = lz4::EncoderBuilder::new().level(2).build(&mut cache).unwrap();
-    // let mut read = *input;
-    std::io::copy(&mut input, &mut encoder).unwrap();
-    let (comp_lz4, _result) = encoder.finish();
-
-    println!("{:?}", comp_lz4);
-
-    let input: &[u8] = &[10, 12, 14, 16];
-    let out = compress(&input);
-    dbg!(&out);
-
-}
-
-// #[test]
-// fn test_concat() {
-//     let mut out = vec![];
-//     compress_into(&[0], &mut out).unwrap();
-//     compress_into(&[0], &mut out).unwrap();
-//     dbg!(&out);
-
-//     let mut out = vec![];
-//     compress_into(&[0, 0], &mut out).unwrap();
-//     dbg!(&out);
-// }

@@ -1,6 +1,7 @@
 //! The decompression algorithm.
 
 
+use crate::block::wild_copy_from_src;
 use std::ptr;
 quick_error! {
     /// An error representing invalid compressed data.
@@ -59,7 +60,7 @@ impl<'a> Decoder<'a> {
             // copy_on_self(&mut self.output, start, match_length);
             // reserve_16_bit_boundary(&mut self.output, match_length);
             unsafe{
-                copy_from_src(self.output.as_ptr().add(start), self.output.as_mut_ptr().add(self.output.len()), match_length);
+                wild_copy_from_src(self.output.as_ptr().add(start), self.output.as_mut_ptr().add(self.output.len()), match_length);
                 self.output.set_len(self.output.len() + match_length);
             }
         }
@@ -127,7 +128,7 @@ impl<'a> Decoder<'a> {
     //         // following literal copied to the output buffer is.
     //         // reserve_16_bit_boundary(&mut self.output, literal);
     //         unsafe{
-    //             copy_from_src(self.curr, self.output.as_mut_ptr().add(self.output.len()), literal);
+    //             wild_copy_from_src(self.curr, self.output.as_mut_ptr().add(self.output.len()), literal);
     //             self.output.set_len(self.output.len() + literal);
     //             self.curr = self.curr.add(literal);
     //         }
@@ -257,7 +258,7 @@ impl<'a> Decoder<'a> {
                 // following literal copied to the output buffer is.
                 // reserve_16_bit_boundary(&mut self.output, literal);
                 unsafe{
-                    copy_from_src(self.curr, self.output.as_mut_ptr().add(self.output.len()), literal);
+                    wild_copy_from_src(self.curr, self.output.as_mut_ptr().add(self.output.len()), literal);
                     self.output.set_len(self.output.len() + literal);
                     self.curr = self.curr.add(literal);
                 }
@@ -305,30 +306,6 @@ pub fn decompress(input: &[u8]) -> Result<Vec<u8>, Error> {
     Ok(vec)
 }
 
-
-
-
-// fn copy_from_src(output: &mut Vec<u8>, mut source: *const u8, num_items: usize) {
-// fn reserve_16_bit_boundary(output: &mut Vec<u8>, items: usize) {
-//     output.reserve((items + 16) & !16);
-//     // output.reserve(items);
-// }
-fn copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
-    // output.reserve(num_items);
-    unsafe{
-
-        // let mut dst_ptr = output.as_mut_ptr().add(output.len());
-        let dst_ptr_end = dst_ptr.add(num_items);
-
-        while dst_ptr < dst_ptr_end {
-            ptr::copy_nonoverlapping(source, dst_ptr, 16);
-            source = source.add(16);
-            dst_ptr = dst_ptr.add(16);
-        }
-
-        // output.set_len(output.len() + num_items);
-    }
-}
 
 
 

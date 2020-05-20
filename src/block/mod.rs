@@ -30,10 +30,9 @@ const MAX_DISTANCE: usize = (1 << MAXD_LOG) - 1;
 
 #[allow(dead_code)]
 const MATCH_LENGTH_MASK: u32 = (1_u32 << 4) - 1; // 0b1111 / 15
-#[allow(dead_code)]
+
 const MINMATCH: usize = 4;
-#[allow(dead_code)]
-const LZ4_HASHLOG: u32 = 12;
+const LZ4_HASHLOG: u32 = 16;
 
 #[allow(dead_code)]
 const FASTLOOP_SAFE_DISTANCE : usize = 64;
@@ -47,6 +46,22 @@ pub(crate) fn hash(sequence:u32) -> u32 {
     let res = (sequence.wrapping_mul(2654435761_u32))
             >> (1 + (MINMATCH as u32 * 8) - (LZ4_HASHLOG + 1));
     res
+}
+
+
+fn wild_copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
+    // output.reserve(num_items);
+    unsafe{
+
+        // let mut dst_ptr = output.as_mut_ptr().add(output.len());
+        let dst_ptr_end = dst_ptr.add(num_items);
+
+        while dst_ptr < dst_ptr_end {
+            std::ptr::copy_nonoverlapping(source, dst_ptr, 8);
+            source = source.add(8);
+            dst_ptr = dst_ptr.add(8);
+        }
+    }
 }
 
 
