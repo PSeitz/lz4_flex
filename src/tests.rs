@@ -1,6 +1,6 @@
 //! Tests.
 
-extern crate test;
+// extern crate test;
 
 use std::str;
 use crate::{decompress, compress};
@@ -10,64 +10,64 @@ const COMPRESSION34K: &'static [u8] = include_bytes!("../benches/compression_34k
 const COMPRESSION65: &'static [u8] = include_bytes!("../benches/compression_65k.txt");
 const COMPRESSION10MB: &'static [u8] = include_bytes!("../benches/dickens.txt");
 
-#[bench]
-fn bench_compression_small(b: &mut test::Bencher) {
-    b.iter(|| {
-        let _compressed = compress("To cute to die! Save the red panda!".as_bytes());
-    })
-}
+// #[bench]
+// fn bench_compression_small(b: &mut test::Bencher) {
+//     b.iter(|| {
+//         let _compressed = compress("To cute to die! Save the red panda!".as_bytes());
+//     })
+// }
 
-#[bench]
-fn bench_compression_medium(b: &mut test::Bencher) {
-    b.iter(|| {
-        let _compressed = compress(r#"An iterator that knows its exact length.
-        Many Iterators don't know how many times they will iterate, but some do. If an iterator knows how many times it can iterate, providing access to that information can be useful. For example, if you want to iterate backwards, a good start is to know where the end is.
-        When implementing an ExactSizeIterator, you must also implement Iterator. When doing so, the implementation of size_hint must return the exact size of the iterator.
-        The len method has a default implementation, so you usually shouldn't implement it. However, you may be able to provide a more performant implementation than the default, so overriding it in this case makes sense."#.as_bytes());
-    })
-}
+// #[bench]
+// fn bench_compression_medium(b: &mut test::Bencher) {
+//     b.iter(|| {
+//         let _compressed = compress(r#"An iterator that knows its exact length.
+//         Many Iterators don't know how many times they will iterate, but some do. If an iterator knows how many times it can iterate, providing access to that information can be useful. For example, if you want to iterate backwards, a good start is to know where the end is.
+//         When implementing an ExactSizeIterator, you must also implement Iterator. When doing so, the implementation of size_hint must return the exact size of the iterator.
+//         The len method has a default implementation, so you usually shouldn't implement it. However, you may be able to provide a more performant implementation than the default, so overriding it in this case makes sense."#.as_bytes());
+//     })
+// }
 
-#[bench]
-fn bench_compression_65k(b: &mut test::Bencher) {
-    b.iter(|| {
-        compress(COMPRESSION65);
-    })
-}
+// #[bench]
+// fn bench_compression_65k(b: &mut test::Bencher) {
+//     b.iter(|| {
+//         compress(COMPRESSION65);
+//     })
+// }
 
-#[ignore]
-#[bench]
-fn bench_compression_10_mb(b: &mut test::Bencher) {
-    b.iter(|| {
-        compress(COMPRESSION10MB);
-    })
-}
+// #[ignore]
+// #[bench]
+// fn bench_compression_10_mb(b: &mut test::Bencher) {
+//     b.iter(|| {
+//         compress(COMPRESSION10MB);
+//     })
+// }
 
-#[bench]
-fn bench_decompression_small(b: &mut test::Bencher) {
-    let comp = compress("To cute to die! Save the red panda!".as_bytes());
-    b.iter(|| {
-        decompress(&comp)
-    })
-}
+// #[bench]
+// fn bench_decompression_small(b: &mut test::Bencher) {
+//     let comp = compress("To cute to die! Save the red panda!".as_bytes());
+//     b.iter(|| {
+//         decompress(&comp)
+//     })
+// }
 
-#[bench]
-fn bench_decompression_medium(b: &mut test::Bencher) {
-    let comp = compress(r#"An iterator that knows its exact length.
-        Many Iterators don't know how many times they will iterate, but some do. If an iterator knows how many times it can iterate, providing access to that information can be useful. For example, if you want to iterate backwards, a good start is to know where the end is.
-        When implementing an ExactSizeIterator, you must also implement Iterator. When doing so, the implementation of size_hint must return the exact size of the iterator.
-        The len method has a default implementation, so you usually shouldn't implement it. However, you may be able to provide a more performant implementation than the default, so overriding it in this case makes sense."#.as_bytes());
-    b.iter(|| {
-        decompress(&comp)
-    })
-}
+// #[bench]
+// fn bench_decompression_medium(b: &mut test::Bencher) {
+//     let comp = compress(r#"An iterator that knows its exact length.
+//         Many Iterators don't know how many times they will iterate, but some do. If an iterator knows how many times it can iterate, providing access to that information can be useful. For example, if you want to iterate backwards, a good start is to know where the end is.
+//         When implementing an ExactSizeIterator, you must also implement Iterator. When doing so, the implementation of size_hint must return the exact size of the iterator.
+//         The len method has a default implementation, so you usually shouldn't implement it. However, you may be able to provide a more performant implementation than the default, so overriding it in this case makes sense."#.as_bytes());
+//     b.iter(|| {
+//         decompress(&comp)
+//     })
+// }
 
-#[bench]
-fn bench_decompression_10_mb(b: &mut test::Bencher) {
-    let comp = compress(COMPRESSION10MB);
-    b.iter(|| {
-        decompress(&comp)
-    })
-}
+// #[bench]
+// fn bench_decompression_10_mb(b: &mut test::Bencher) {
+//     let comp = compress(COMPRESSION10MB);
+//     b.iter(|| {
+//         decompress(&comp)
+//     })
+// }
 
 /// Test that the compressed string decompresses to the original string.
 fn inverse(s: &str) {
