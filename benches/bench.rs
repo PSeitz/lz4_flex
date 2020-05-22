@@ -1,8 +1,8 @@
-#[macro_use] extern crate criterion;
-use std::io::{Read, Write};
+extern crate criterion;
+
 use self::criterion::*;
-use lz4::block::{compress as lz4_linked_block_compress,decompress as lz4_linked_block_decompress};
-use std::io;
+use lz4::block::{compress as lz4_linked_block_compress};
+
 // use lz4_flex::{decompress, decompress_into, compress, compress_into};
 
 
@@ -10,7 +10,7 @@ const COMPRESSION1K: &'static [u8] = include_bytes!("compression_1k.txt");
 const COMPRESSION34K: &'static [u8] = include_bytes!("compression_34k.txt");
 const COMPRESSION65K: &'static [u8] = include_bytes!("compression_65k.txt");
 const COMPRESSION66K: &'static [u8] = include_bytes!("compression_66k_JSON.txt");
-const COMPRESSION10MB: &'static [u8] = include_bytes!("dickens.txt");
+// const COMPRESSION10MB: &'static [u8] = include_bytes!("dickens.txt");
 
 const ALL: &[&[u8]] = &[COMPRESSION1K as &[u8], COMPRESSION34K as &[u8], COMPRESSION65K as &[u8], COMPRESSION66K as &[u8]];
 // const ALL: [&[u8]; 4] = [COMPRESSION1K as &[u8], COMPRESSION34K as &[u8], COMPRESSION65K as &[u8], COMPRESSION10MB as &[u8]];
@@ -19,7 +19,7 @@ const ALL: &[&[u8]] = &[COMPRESSION1K as &[u8], COMPRESSION34K as &[u8], COMPRES
 
 fn bench_compression_throughput(c: &mut Criterion) {
     let mut group = c.benchmark_group("Compress");
-     
+
     for input in ALL.iter() {
         let input_bytes = input.len() as u64;
         group.throughput(Throughput::Bytes(input_bytes));

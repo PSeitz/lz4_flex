@@ -4,6 +4,7 @@
 
 use std::str;
 use crate::{decompress, compress};
+use lz4::block::{compress as lz4_cpp_block_compress,decompress as lz4_cpp_block_decompress};
 
 const COMPRESSION1K: &'static [u8] = include_bytes!("../benches/compression_1k.txt");
 const COMPRESSION34K: &'static [u8] = include_bytes!("../benches/compression_34k.txt");
@@ -71,12 +72,24 @@ const COMPRESSION10MB: &'static [u8] = include_bytes!("../benches/dickens.txt");
 
 /// Test that the compressed string decompresses to the original string.
 fn inverse(s: &str) {
+    // compress with rust, decompress with rust
     let compressed = compress(s.as_bytes());
     // println!("Compressed '{}' into {:?}", s, compressed);
-    dbg!(&compressed);
     let decompressed = decompress(&compressed).unwrap();
     // println!("Decompressed it into {:?}", str::from_utf8(&decompressed).unwrap());
     assert_eq!(decompressed, s.as_bytes());
+
+    // compress with lz4 cpp, decompress with rust
+    let compressed = lz4_cpp_block_compress(s.as_bytes(), None, false).unwrap();
+    let decompressed = decompress(&compressed).unwrap();
+    assert_eq!(decompressed, s.as_bytes());
+
+    if s.len() != 0 {
+        // compress with rust, decompress with lz4 cpp
+        let compressed = compress(s.as_bytes());
+        let decompressed = lz4_cpp_block_decompress(&compressed, Some(s.len() as i32)).unwrap();
+        assert_eq!(decompressed, s.as_bytes());
+    }
 }
 
 #[test]
