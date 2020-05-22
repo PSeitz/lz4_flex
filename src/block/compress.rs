@@ -191,7 +191,7 @@ impl Encoder {
 
         let mut start = self.cur;
         let hash = self.get_cur_hash();
-        self.dict[hash] = self.cur;
+        unsafe{*self.dict.get_unchecked_mut(hash) = self.cur};
         self.cur += 1;
         let mut forward_hash = self.get_cur_hash();
 
@@ -217,9 +217,11 @@ impl Encoder {
                 next_cur += step_size;
                 if self.cur < end_pos_check {
 
-                    // Find a candidate in the dictionary by hashing the current four bytes.
-                    let candidate = self.dict[hash];
-                    self.dict[hash] = self.cur;
+                    // Find a candidate in the dictionary with the hash of the current four bytes.
+                    // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
+                    // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
+                    let candidate = unsafe{*self.dict.get_unchecked(hash)};
+                    unsafe{*self.dict.get_unchecked_mut(hash) = self.cur};
                     forward_hash = self.get_hash_at(next_cur);
                     // Three requirements to the candidate exists:
                     // - We should not return a position which is merely a hash collision, so w that the
