@@ -115,13 +115,12 @@ impl Encoder {
 
     /// Read the batch at the cursor.
     unsafe fn count_same_bytes(&self, first: *const u8, second: *const u8) -> usize {
-        // let end_limit = first.len() - 5;
         let mut pos = 0;
 
-        const STEP_SIZE: usize = 8;
-        // compare 8 bytes blocks
+        // compare 4/8 bytes blocks depending on the arch
+        const STEP_SIZE: usize = std::mem::size_of::<usize>();
         while pos + STEP_SIZE + END_OFFSET < self.input_size  {
-            let diff = read_u64_ptr(first.add(pos)) ^ read_u64_ptr(second.add(pos));
+            let diff = read_usize_ptr(first.add(pos)) ^ read_usize_ptr(second.add(pos));
 
             if diff == 0{
                 pos += STEP_SIZE;
@@ -132,15 +131,18 @@ impl Encoder {
         }
 
         // compare 4 bytes block
-        if pos + 4 + END_OFFSET < self.input_size  {
-            let diff = read_u32_ptr(first.add(pos)) ^ read_u32_ptr(second.add(pos));
+        #[cfg(target_pointer_width = "64")]{
+            if pos + 4 + END_OFFSET < self.input_size  {
+                let diff = read_u32_ptr(first.add(pos)) ^ read_u32_ptr(second.add(pos));
 
-            if diff == 0{
-                return pos + 4;
-            }else {
-                return pos + (diff.trailing_zeros() >> 3) as usize
+                if diff == 0{
+                    return pos + 4;
+                }else {
+                    return pos + (diff.trailing_zeros() >> 3) as usize
+                }
             }
         }
+        
         // compare 2 bytes block
         if pos + 2 + END_OFFSET < self.input_size  {
             let diff = read_u16_ptr(first.add(pos)) ^ read_u16_ptr(second.add(pos));
@@ -269,11 +271,6 @@ impl Encoder {
             // Push the token to the output stream.
             // self.output.push(token);
             push_unsafe(&mut self.output_ptr, token);
-            // unsafe{
-            //     std::ptr::write(self.output.as_mut_ptr().add(self.output.len()), token);
-            //     self.output.set_len(self.output.len() + 1);
-            // }
-
             // If we were unable to fit the literals length into the token, write the extensional
             // part through LSIC.
             if lit_len >= 0xF {
@@ -281,8 +278,6 @@ impl Encoder {
             }
 
             // Now, write the actual literals.
-            // let write_slice = &self.input[start..start + lit_len];
-            // self.output.write_all(write_slice)?;
             unsafe{
                 wild_copy_from_src(self.input.add(start), self.output_ptr, lit_len); // TODO add wildcopy check 8byte
                 self.output_ptr = self.output_ptr.add(lit_len);
@@ -330,12 +325,6 @@ fn push_unsafe(output: &mut *mut u8, el: u8) {
         *output = output.add(1);
     }
 }
-// fn push_unsafe(output: &mut Vec<u8>, el: u8) {
-//     unsafe{
-//         std::ptr::write(output.as_mut_ptr().add(output.len()), el);
-//         output.set_len(output.len() + 1);
-//     }
-// }
 
 /// Compress all bytes of `input`.
 pub fn compress(input: &[u8]) -> Vec<u8> {
@@ -377,6 +366,12 @@ fn read_u32_ptr(input: *const u8) -> u32 {
     num
 }
 
+fn read_usize_ptr(input: *const u8) -> usize {
+    let mut num:usize = 0;
+    unsafe{std::ptr::copy_nonoverlapping(input, &mut num as *mut usize as *mut u8, std::mem::size_of::<usize>());} 
+    num
+}
+
 fn read_u16_ptr(input: *const u8) -> u16 {
     let mut num:u16 = 0;
     unsafe{std::ptr::copy_nonoverlapping(input, &mut num as *mut u16 as *mut u8, 2);} 
@@ -410,6 +405,7 @@ fn get_common_bytes(diff: usize) -> u32 {
 }
 
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn test_get_common_bytes(){
     let num1 = read_u64(&[0,0,0,0,0,0,0,1]);
     let num2 = read_u64(&[0,0,0,0,0,0,0,2]);
@@ -425,6 +421,25 @@ fn test_get_common_bytes(){
     let num2 = read_u64(&[0,0,0,0,0,0,0,2]);
     let diff = num1 ^ num2;
     assert_eq!(get_common_bytes(diff), 0);
+}
+
+#[test]
+#[cfg(target_pointer_width = "32")]
+fn test_get_common_bytes(){
+    let num1 = read_u32(&[0,0,0,1]);
+    let num2 = read_u32(&[0,0,0,2]);
+    let diff = num1 ^ num2;
+
+    assert_eq!(get_common_bytes(diff as usize), 3);
+
+    let num1 = read_u32(&[0,0,1,1]);
+    let num2 = read_u32(&[0,0,0,2]);
+    let diff = num1 ^ num2;
+    assert_eq!(get_common_bytes(diff as usize), 2);
+    let num1 = read_u32(&[1,0,1,1]);
+    let num2 = read_u32(&[0,0,0,2]);
+    let diff = num1 ^ num2;
+    assert_eq!(get_common_bytes(diff as usize), 0);
 }
 
 
