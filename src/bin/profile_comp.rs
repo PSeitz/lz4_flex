@@ -378,22 +378,22 @@ fn read_u16_ptr(input: *const u8) -> u16 {
     num
 }
 
-fn read_u64(input: &[u8]) -> usize {
-    let mut num:usize = 0;
-    unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut usize as *mut u8, 8);} 
-    num
-}
-fn read_u32(input: &[u8]) -> u32 {
-    let mut num:u32 = 0;
-    unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut u32 as *mut u8, 4);} 
-    num
-}
+// fn read_u64(input: &[u8]) -> usize {
+//     let mut num:usize = 0;
+//     unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut usize as *mut u8, 8);} 
+//     num
+// }
+// fn read_u32(input: &[u8]) -> u32 {
+//     let mut num:u32 = 0;
+//     unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut u32 as *mut u8, 4);} 
+//     num
+// }
 
-fn read_u16(input: &[u8]) -> u16 {
-    let mut num:u16 = 0;
-    unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut u16 as *mut u8, 2);} 
-    num
-}
+// fn read_u16(input: &[u8]) -> u16 {
+//     let mut num:u16 = 0;
+//     unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut u16 as *mut u8, 2);} 
+//     num
+// }
 
 
 

@@ -2,6 +2,7 @@
 
 // extern crate test;
 
+// use crate::block::compress::compress_into_2;
 use std::str;
 use crate::{decompress, compress};
 use lz4::block::{compress as lz4_cpp_block_compress,decompress as lz4_cpp_block_decompress};
@@ -94,11 +95,53 @@ fn inverse(s: &str) {
 
 #[test]
 fn yopa() {
-    const COMPRESSION66K: &'static [u8] = include_bytes!("../benches/dickens.txt");
+    const COMPRESSION10MB: &'static [u8] = include_bytes!("../benches/dickens.txt");
+    let compressed = compress(COMPRESSION10MB);
+    println!("Compression Ratio 10MB {:?}", compressed.len() as f64/ COMPRESSION10MB.len()  as f64);
+    let _decompressed = decompress(&compressed).unwrap();
+
+    const COMPRESSION66K: &'static [u8] = include_bytes!("../benches/compression_65k.txt");
     let compressed = compress(COMPRESSION66K);
-    println!("Compression Ratio {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as f64);
+    println!("Compression Ratio 66K {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as f64);
+    let _decompressed = decompress(&compressed).unwrap();
+
+    const COMPRESSION34K: &'static [u8] = include_bytes!("../benches/compression_34k.txt");
+    let compressed = compress(COMPRESSION34K);
+    println!("Compression Ratio 34K {:?}", compressed.len() as f64/ COMPRESSION34K.len()  as f64);
     let _decompressed = decompress(&compressed).unwrap();
 }
+
+// #[test]
+// fn test_ratio() {
+//     const COMPRESSION66K: &'static [u8] = include_bytes!("../benches/compression_65k.txt");
+//     let compressed = compress(COMPRESSION66K);
+//     println!("Compression Ratio 66K {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as f64);
+//     let _decompressed = decompress(&compressed).unwrap();
+
+
+//     let mut vec = Vec::with_capacity(10 + (COMPRESSION66K.len() as f64 * 1.1) as usize);
+//     let input = COMPRESSION66K;
+
+//     let bytes_written = compress_into_2(input, &mut vec, 256, 8).unwrap();
+//     println!("dict size 256 {:?}", bytes_written as f64/ COMPRESSION66K.len()  as f64);
+//     let bytes_written = compress_into_2(input, &mut vec, 512, 7).unwrap();
+//     println!("dict size 512 {:?}", bytes_written as f64/ COMPRESSION66K.len()  as f64);
+//     let bytes_written = compress_into_2(input, &mut vec, 1024, 6).unwrap();
+//     println!("dict size 1024 {:?}", bytes_written as f64/ COMPRESSION66K.len()  as f64);
+//     let bytes_written = compress_into_2(input, &mut vec, 2048, 5).unwrap();
+//     println!("dict size 2048 {:?}", bytes_written as f64/ COMPRESSION66K.len()  as f64);
+//     let bytes_written = compress_into_2(input, &mut vec, 4096, 4).unwrap();
+//     println!("dict size 4096 {:?}", bytes_written as f64/ COMPRESSION66K.len()  as f64);
+//     let bytes_written = compress_into_2(input, &mut vec, 8192, 3).unwrap();
+//     println!("dict size 8192 {:?}", bytes_written as f64/ COMPRESSION66K.len()  as f64);
+//     let bytes_written = compress_into_2(input, &mut vec, 16384, 2).unwrap();
+//     println!("dict size 16384 {:?}", bytes_written as f64/ COMPRESSION66K.len()  as f64);
+//     let bytes_written = compress_into_2(input, &mut vec, 32768, 1).unwrap();
+//     println!("dict size 32768 {:?}", bytes_written as f64/ COMPRESSION66K.len()  as f64);
+
+//     // let bytes_written = compress_into_2(input, &mut vec).unwrap();
+
+// }
 
 #[test]
 fn shakespear() {

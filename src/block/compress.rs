@@ -12,8 +12,6 @@ use crate::block::LZ4_MIN_LENGTH;
 use crate::block::MINMATCH;
 use crate::block::hash;
 
-use std::io::Write;
-
 /// Duplication dictionary size.
 ///
 /// Every four bytes is assigned an entry. When this number is lower, fewer entries exists, and
@@ -57,6 +55,7 @@ struct Encoder{
     output_ptr: *mut u8,
     /// The number of bytes from the input that are encoded.
     cur: usize,
+    /// Shift the hash value for the dictionary to the right, so match the dictionary size.
     dict_bitshift: u8,
     /// The dictionary of previously encoded sequences.
     ///
@@ -64,7 +63,7 @@ struct Encoder{
     ///
     /// Every four bytes are hashed, and in the resulting slot their position in the input buffer
     /// is placed. This way we can easily look up a candidate to back references.
-    dict: [usize; DICTIONARY_SIZE],
+    dict: Vec<usize>,
 }
 
 impl Encoder {
@@ -191,7 +190,8 @@ impl Encoder {
         }
 
         let mut start = self.cur;
-        self.dict[self.get_cur_hash()] = self.cur;
+        let hash = self.get_cur_hash();
+        self.dict[hash] = self.cur;
         self.cur += 1;
         let mut forward_hash = self.get_cur_hash();
 
@@ -309,15 +309,42 @@ impl Encoder {
 
 /// Compress all bytes of `input` into `output`.
 pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usize> {
+    // TODO check dictionary sizes for input input_sizes
+    let (dict_size, dict_bitshift) = match input.len() {
+        0..=500 => (128, 9),
+        500..=1_000 => (256, 8),
+        1_000..=4_000 => (512, 7),
+        4_000..=8_000 => (1024, 6),
+        8_000..=16_000 => (2048, 5),
+        16_000..=100_000 => (4096, 4),
+        100_000..=400_000 => (8192, 3),
+        _ => (16384, 2),
+    };
+    let dict = vec![0; dict_size];
+
     Encoder {
         input: input.as_ptr(),
         input_size: input.len(),
         output_ptr: output.as_mut_ptr(),
-        dict_bitshift: 4,
+        dict_bitshift: dict_bitshift,
         cur: 0,
-        dict: [0; DICTIONARY_SIZE],
+        dict,
     }.complete()
 }
+
+// /// Compress all bytes of `input` into `output`.
+// pub fn compress_into_2(input: &[u8], output: &mut Vec<u8>, dict_size: usize, dict_bitshift: u8) -> std::io::Result<usize> {
+//     let dict = vec![0; dict_size];
+//     dbg!(input.len(), dict_size);
+//     Encoder {
+//         input: input.as_ptr(),
+//         input_size: input.len(),
+//         output_ptr: output.as_mut_ptr(),
+//         dict_bitshift,
+//         cur: 0,
+//         dict,
+//     }.complete()
+// }
 
 fn push_unsafe(output: &mut *mut u8, el: u8) {
     unsafe{
