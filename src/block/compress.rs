@@ -4,6 +4,7 @@
 //! high performance. It has fixed memory usage, which contrary to other approachs, makes it less
 //! memory hungry.
 
+use crate::block::LZ4_SKIPTRIGGER;
 use crate::block::wild_copy_from_src;
 use crate::block::END_OFFSET;
 use crate::block::MFLIMIT;
@@ -85,7 +86,6 @@ impl Encoder {
         let mut batch:u32 = 0;
         unsafe{std::ptr::copy_nonoverlapping(self.input.add(n), &mut batch as *mut u32 as *mut u8, 4);} 
         batch
-        // NativeEndian::read_u32(&self.input[n..])
     }
 
     /// Read the batch at the cursor.
@@ -201,16 +201,20 @@ impl Encoder {
             // The start of the literals section.
 
             // Read the next block into two sections, the literals and the duplicates.
-
+            let mut step_size;
+            let mut non_match_count = 1 << LZ4_SKIPTRIGGER;
             let mut match_length = usize::MAX;
             let mut offset: u16 = 0;
 
             let mut next_cur = self.cur;
             loop {
 
+                non_match_count += 1;
+                step_size = non_match_count >> LZ4_SKIPTRIGGER;
+
                 let hash = forward_hash;
                 self.cur = next_cur;
-                next_cur += 1;
+                next_cur += step_size;
                 if self.cur < end_pos_check {
 
                     // Find a candidate in the dictionary by hashing the current four bytes.

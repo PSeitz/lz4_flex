@@ -17,6 +17,7 @@ const MFLIMIT: u32 = 12;
 /// The last 5 bytes of input are always literals. Therefore, the last sequence contains at least 5 bytes. 
 const END_OFFSET: usize = 5;
 
+const LZ4_SKIPTRIGGER: usize = 6;
 
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
 /// Minimum length of a block
