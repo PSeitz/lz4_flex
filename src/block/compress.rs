@@ -99,7 +99,6 @@ impl Encoder {
         // Write the 0xFF bytes as long as the integer is higher than said value.
         while n >= 0xFF {
             n -= 0xFF;
-            // self.output.push(0xFF);
             unsafe{
                 self.output_ptr.write(0xFF);
                 self.output_ptr = self.output_ptr.add(1);
@@ -107,7 +106,6 @@ impl Encoder {
         }
 
         // Write the remaining byte.
-        // self.output.push(n as u8);
         unsafe{
             self.output_ptr.write(n as u8);
             self.output_ptr = self.output_ptr.add(1);
@@ -297,7 +295,7 @@ impl Encoder {
                 
                 // write the offset in little endian.
                 unsafe{
-                    std::ptr::copy_nonoverlapping(&offset as *const u16 as *const u8, self.output_ptr, 2); // TODO only little endian supported here
+                    std::ptr::copy_nonoverlapping(&offset.to_le() as *const u16 as *const u8, self.output_ptr, 2);
                     self.output_ptr = self.output_ptr.add(2);
                 } 
                 // If we were unable to fit the duplicates length into the token, write the
