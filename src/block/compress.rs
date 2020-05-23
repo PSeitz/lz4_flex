@@ -208,41 +208,36 @@ impl Encoder {
 
             let mut next_cur = self.cur;
             let mut candidate;
-            loop {
 
+            while {
+                
                 non_match_count += 1;
                 step_size = non_match_count >> LZ4_SKIPTRIGGER;
 
                 let hash = forward_hash;
                 self.cur = next_cur;
                 next_cur += step_size;
-                if self.cur < end_pos_check {
 
-                    // Find a candidate in the dictionary with the hash of the current four bytes.
-                    // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
-                    // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
-                    candidate = unsafe{*self.dict.get_unchecked(hash)};
-                    unsafe{*self.dict.get_unchecked_mut(hash) = self.cur};
-                    forward_hash = self.get_hash_at(next_cur);
-                    // Three requirements to the candidate exists:
-                    // - We should not return a position which is merely a hash collision, so w that the
-                    //   candidate actually matches what we search for.
-                    // - We can address up to 16-bit offset, hence we are only able to address the candidate if
-                    //   its offset is less than or equals to 0xFFFF.
-
-                    if candidate + MAX_DISTANCE > self.cur && 
-                        self.get_batch(candidate) == self.get_batch(self.cur)
-                    {
-
-                        // offset = (self.cur - candidate) as u16;
-                        break;
-                    }
-
-                }else {
+                if self.cur > end_pos_check {
                     return self.handle_last_literals(start, out_ptr_start);
                 }
+                
+                // Find a candidate in the dictionary with the hash of the current four bytes.
+                // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
+                // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
+                candidate = unsafe{*self.dict.get_unchecked(hash)};
+                unsafe{*self.dict.get_unchecked_mut(hash) = self.cur};
+                forward_hash = self.get_hash_at(next_cur);
 
-            };
+                // Two requirements to the candidate exists:
+                // - We should not return a position which is merely a hash collision, so w that the
+                //   candidate actually matches what we search for.
+                // - We can address up to 16-bit offset, hence we are only able to address the candidate if
+                //   its offset is less than or equals to 0xFFFF.
+                (candidate + MAX_DISTANCE) < self.cur ||
+                self.get_batch(candidate) != self.get_batch(self.cur)
+            }{}
+
 
             let offset = (self.cur - candidate) as u16;
             let match_length = unsafe{ self.count_same_bytes(self.input.add(self.cur+MINMATCH), self.input.add(candidate + MINMATCH)) };
