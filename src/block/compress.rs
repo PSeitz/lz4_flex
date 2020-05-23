@@ -136,12 +136,8 @@ impl Encoder {
         pos
     }
 
-    // #[inline]
-    // fn write_to_ouput(&mut self) {
-    // }
-
     /// Complete the encoding into `self.output`.
-    #[inline(never)]
+    #[inline]
     fn handle_last_literals(&mut self, start:usize, out_ptr_start: *mut u8) -> std::io::Result<usize> {
 
         let lit_len = self.input_size - start;
@@ -164,7 +160,7 @@ impl Encoder {
             wild_copy_from_src(self.input.add(start), self.output_ptr, lit_len); // TODO add wildcopy check 8byte
             self.output_ptr = self.output_ptr.add(lit_len);
         }
-        return  Ok(self.output_ptr as usize - out_ptr_start as usize);
+        return Ok(self.output_ptr as usize - out_ptr_start as usize);
 
     }
 
@@ -201,7 +197,7 @@ impl Encoder {
         self.cur += 1;
         let mut forward_hash = self.get_cur_hash();
 
-        let end_pos_check = self.input_size - MFLIMIT as usize - 4; // 4 because of 16bytes wildcopy
+        let end_pos_check = self.input_size - MFLIMIT as usize;
         loop {
 
             // Read the next block into two sections, the literals and the duplicates.
@@ -244,8 +240,6 @@ impl Encoder {
 
                 }else {
                     return self.handle_last_literals(start, out_ptr_start);
-                    // self.cur = self.input_size;
-                    // break;
                 }
 
             };

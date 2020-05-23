@@ -12,7 +12,7 @@ pub mod decompress_unchecked;
 /// so it needs at least one prior byte.
 ///
 /// When a block can reference data from another block, it can start immediately with a match and no literal, so a block of 12 bytes can be compressed.
-const MFLIMIT: u32 = 12;
+const MFLIMIT: u32 = 16;
 
 /// The last 5 bytes of input are always literals. Therefore, the last sequence contains at least 5 bytes. 
 const END_OFFSET: usize = 5;
@@ -24,7 +24,7 @@ const LZ4_SKIPTRIGGER: usize = 6;
 ///
 /// MFLIMIT + 1 for the token.
 #[allow(dead_code)]
-static LZ4_MIN_LENGTH: u32 = MFLIMIT+1;
+const LZ4_MIN_LENGTH: u32 = MFLIMIT+1;
 
 const MAXD_LOG: usize = 16;
 const MAX_DISTANCE: usize = (1 << MAXD_LOG) - 1;
