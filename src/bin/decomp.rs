@@ -53,7 +53,7 @@ struct Decoder<'a> {
     end_pos: *const u8,
     /// The compressed input.
     // input: &'a [u8],
-    /// The current read position in the input.
+
     // input_pos: usize,
     /// The decompressed output.
     output: &'a mut Vec<u8>,

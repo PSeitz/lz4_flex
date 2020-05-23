@@ -21,31 +21,6 @@ use crate::block::hash;
 // const DICTIONARY_SIZE: usize = 4096;
 
 
-/// A LZ4 block.
-///
-/// This defines a single compression "unit", consisting of two parts, a number of raw literals,
-/// and possibly a pointer to the already encoded buffer from which to copy.
-#[derive(Debug)]
-struct Block {
-    
-    lit_len: usize,
-    /// The duplicates section if any.
-    ///
-    /// Only the last block in a stream can lack of the duplicates section.
-    dup: Option<Duplicate>,
-}
-
-/// A consecutive sequence of bytes found in already encoded part of the input.
-#[derive(Copy, Clone, Debug)]
-struct Duplicate {
-    /// The number of bytes before our cursor, where the duplicate starts.
-    offset: u16,
-    /// The length beyond the four first bytes.
-    ///
-    /// Adding four to this number yields the actual length.
-    extra_bytes: usize,
-}
-
 /// An LZ4 encoder.
 struct Encoder{
     /// The raw uncompressed input.
@@ -112,6 +87,7 @@ impl Encoder {
     }
 
     /// Read the batch at the cursor.
+    #[inline]
     unsafe fn count_same_bytes(&self, first: *const u8, second: *const u8) -> usize {
         let mut pos = 0;
 
@@ -160,9 +136,38 @@ impl Encoder {
         pos
     }
 
-
+    // #[inline]
+    // fn write_to_ouput(&mut self) {
+    // }
 
     /// Complete the encoding into `self.output`.
+    #[inline(never)]
+    fn handle_last_literals(&mut self, start:usize, out_ptr_start: *mut u8) -> std::io::Result<usize> {
+
+        let lit_len = self.input_size - start;
+        // copy the last literals
+        let token = if lit_len < 0xF {
+            // Since we can fit the literals length into it, there is no need for saturation.
+            (lit_len as u8) << 4
+        } else {
+            // We were unable to fit the literals into it, so we saturate to 0xF. We will later
+            // write the extensional value through LSIC encoding.
+            0xF0
+        };
+        push_unsafe(&mut self.output_ptr, token);
+        if lit_len >= 0xF {
+            self.write_integer(lit_len - 0xF)?;
+        }
+
+        // Now, write the actual literals.
+        unsafe{
+            wild_copy_from_src(self.input.add(start), self.output_ptr, lit_len); // TODO add wildcopy check 8byte
+            self.output_ptr = self.output_ptr.add(lit_len);
+        }
+        return  Ok(self.output_ptr as usize - out_ptr_start as usize);
+
+    }
+
     #[inline]
     fn complete(&mut self) -> std::io::Result<usize> {
         let out_ptr_start = self.output_ptr;
@@ -196,17 +201,17 @@ impl Encoder {
         self.cur += 1;
         let mut forward_hash = self.get_cur_hash();
 
-        let end_pos_check = self.input_size - MFLIMIT as usize;
+        let end_pos_check = self.input_size - MFLIMIT as usize - 4; // 4 because of 16bytes wildcopy
         loop {
 
             // Read the next block into two sections, the literals and the duplicates.
             let mut step_size;
             let mut non_match_count = 1 << LZ4_SKIPTRIGGER;
-            let mut match_length = usize::MAX;
             // The number of bytes before our cursor, where the duplicate starts.
-            let mut offset: u16 = 0;
+            // let mut offset: u16 = 0;
 
             let mut next_cur = self.cur;
+            let mut candidate;
             loop {
 
                 non_match_count += 1;
@@ -220,7 +225,7 @@ impl Encoder {
                     // Find a candidate in the dictionary with the hash of the current four bytes.
                     // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
                     // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
-                    let candidate = unsafe{*self.dict.get_unchecked(hash)};
+                    candidate = unsafe{*self.dict.get_unchecked(hash)};
                     unsafe{*self.dict.get_unchecked_mut(hash) = self.cur};
                     forward_hash = self.get_hash_at(next_cur);
                     // Three requirements to the candidate exists:
@@ -233,20 +238,20 @@ impl Encoder {
                         self.get_batch(candidate) == self.get_batch(self.cur)
                     {
 
-                        let duplicate = candidate;
-                        match_length = unsafe{ self.count_same_bytes(self.input.add(self.cur+MINMATCH), self.input.add(duplicate+MINMATCH)) };
-
-                        offset = (self.cur - candidate) as u16;
+                        // offset = (self.cur - candidate) as u16;
                         break;
                     }
 
                 }else {
-                    self.cur = self.input_size;
-                    break;
+                    return self.handle_last_literals(start, out_ptr_start);
+                    // self.cur = self.input_size;
+                    // break;
                 }
 
-            }
+            };
 
+            let offset = (self.cur - candidate) as u16;
+            let match_length = unsafe{ self.count_same_bytes(self.input.add(self.cur+MINMATCH), self.input.add(candidate + MINMATCH)) };
             // The length (in bytes) of the literals section.
             let lit_len = self.cur - start;
 
@@ -261,22 +266,19 @@ impl Encoder {
             };
 
             // Generate the lower half of the token, the duplicates length.
-            if match_length != usize::MAX {
                 
-                self.cur += match_length + 4;
-                // self.go_forward_2(match_length + 4);
-                token |= if match_length < 0xF {
-                    // We could fit it in.
-                    match_length as u8
-                } else {
-                    // We were unable to fit it in, so we default to 0xF, which will later be extended
-                    // by LSIC encoding.
-                    0xF
-                };
-            }
+            self.cur += match_length + 4;
+            // self.go_forward_2(match_length + 4);
+            token |= if match_length < 0xF {
+                // We could fit it in.
+                match_length as u8
+            } else {
+                // We were unable to fit it in, so we default to 0xF, which will later be extended
+                // by LSIC encoding.
+                0xF
+            };
 
             // Push the token to the output stream.
-            // self.output.push(token);
             push_unsafe(&mut self.output_ptr, token);
             // If we were unable to fit the literals length into the token, write the extensional
             // part through LSIC.
@@ -290,28 +292,20 @@ impl Encoder {
                 self.output_ptr = self.output_ptr.add(lit_len);
             }
 
-            // unsafe{copy_into_vec(&mut self.output_ptr, self.input.add(start), lit_len)};
-
-            if match_length != usize::MAX {
-                // Wait! There's more. Now, we encode the duplicates section.
-                
-                // write the offset in little endian.
-                unsafe{
-                    std::ptr::copy_nonoverlapping(&offset.to_le() as *const u16 as *const u8, self.output_ptr, 2);
-                    self.output_ptr = self.output_ptr.add(2);
-                } 
-                // If we were unable to fit the duplicates length into the token, write the
-                // extensional part through LSIC.
-                if match_length >= 0xF {
-                    self.write_integer(match_length - 0xF)?;
-                }
-            } else {
-                break;
+            // write the offset in little endian.
+            unsafe{
+                std::ptr::copy_nonoverlapping(&offset.to_le() as *const u16 as *const u8, self.output_ptr, 2);
+                self.output_ptr = self.output_ptr.add(2);
+            } 
+            // If we were unable to fit the duplicates length into the token, write the
+            // extensional part through LSIC.
+            if match_length >= 0xF {
+                self.write_integer(match_length - 0xF)?;
             }
             start = self.cur;
-            forward_hash = self.get_hash_at(next_cur + step_size);
+            forward_hash = self.get_hash_at(next_cur);
         }
-        Ok(self.output_ptr as usize - out_ptr_start as usize)
+        // Ok(self.output_ptr as usize - out_ptr_start as usize)
     }
 }
 
@@ -341,20 +335,6 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
     }.complete()
 }
 
-// /// Compress all bytes of `input` into `output`.
-// pub fn compress_into_2(input: &[u8], output: &mut Vec<u8>, dict_size: usize, dict_bitshift: u8) -> std::io::Result<usize> {
-//     let dict = vec![0; dict_size];
-//     dbg!(input.len(), dict_size);
-//     Encoder {
-//         input: input.as_ptr(),
-//         input_size: input.len(),
-//         output_ptr: output.as_mut_ptr(),
-//         dict_bitshift,
-//         cur: 0,
-//         dict,
-//     }.complete()
-// }
-
 #[inline]
 fn push_unsafe(output: &mut *mut u8, el: u8) {
     unsafe{
@@ -367,7 +347,7 @@ fn push_unsafe(output: &mut *mut u8, el: u8) {
 #[inline]
 pub fn compress(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
-    let mut vec = Vec::with_capacity(10 + (input.len() as f64 * 1.1) as usize);
+    let mut vec = Vec::with_capacity(16 + (input.len() as f64 * 1.1) as usize);
 
     let bytes_written = compress_into(input, &mut vec).unwrap();
     unsafe{
