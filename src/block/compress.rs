@@ -18,7 +18,7 @@ use crate::block::hash;
 /// Every four bytes is assigned an entry. When this number is lower, fewer entries exists, and
 /// thus collisions are more likely, hurting the compression ratio.
 // const DICTIONARY_SIZE: usize = 4096 * 16;
-const DICTIONARY_SIZE: usize = 4096;
+// const DICTIONARY_SIZE: usize = 4096;
 
 
 /// A LZ4 block.
@@ -27,7 +27,7 @@ const DICTIONARY_SIZE: usize = 4096;
 /// and possibly a pointer to the already encoded buffer from which to copy.
 #[derive(Debug)]
 struct Block {
-    /// The length (in bytes) of the literals section.
+    
     lit_len: usize,
     /// The duplicates section if any.
     ///
@@ -71,10 +71,12 @@ impl Encoder {
     /// Get the hash of the current four bytes below the cursor.
     ///
     /// This is guaranteed to be below `DICTIONARY_SIZE`.
+    #[inline]
     fn get_cur_hash(&self) -> usize {
-        hash(self.get_batch_at_cursor()) as usize >> self.dict_bitshift
+        hash(self.get_batch(self.cur)) as usize >> self.dict_bitshift
     }
 
+    #[inline]
     fn get_hash_at(&self, pos: usize) -> usize {
         hash(self.get_batch(pos)) as usize >> self.dict_bitshift
     }
@@ -82,18 +84,15 @@ impl Encoder {
     /// Read a 4-byte "batch" from some position.
     ///
     /// This will read a native-endian 4-byte integer from some position.
+    #[inline]
     fn get_batch(&self, n: usize) -> u32 {
         let mut batch:u32 = 0;
         unsafe{std::ptr::copy_nonoverlapping(self.input.add(n), &mut batch as *mut u32 as *mut u8, 4);} 
         batch
     }
 
-    /// Read the batch at the cursor.
-    fn get_batch_at_cursor(&self) -> u32 {
-        self.get_batch(self.cur)
-    }
-
     /// Write an integer to the output in LSIC format.
+    #[inline]
     fn write_integer(&mut self, mut n: usize) -> std::io::Result<()> {
         // Write the 0xFF bytes as long as the integer is higher than said value.
         while n >= 0xFF {
@@ -164,10 +163,12 @@ impl Encoder {
 
 
     /// Complete the encoding into `self.output`.
+    #[inline]
     fn complete(&mut self) -> std::io::Result<usize> {
         let out_ptr_start = self.output_ptr;
         /* Input too small, no compression (all literals) */
         if self.input_size < LZ4_MIN_LENGTH as usize {
+            // The length (in bytes) of the literals section.
             let lit_len = self.input_size;
             let token = if lit_len < 0xF {
                 // Since we can fit the literals length into it, there is no need for saturation.
@@ -196,14 +197,13 @@ impl Encoder {
         let mut forward_hash = self.get_cur_hash();
 
         let end_pos_check = self.input_size - MFLIMIT as usize;
-        // Construct one block at a time.
         loop {
-            // The start of the literals section.
 
             // Read the next block into two sections, the literals and the duplicates.
             let mut step_size;
             let mut non_match_count = 1 << LZ4_SKIPTRIGGER;
             let mut match_length = usize::MAX;
+            // The number of bytes before our cursor, where the duplicate starts.
             let mut offset: u16 = 0;
 
             let mut next_cur = self.cur;
@@ -230,7 +230,7 @@ impl Encoder {
                     //   its offset is less than or equals to 0xFFFF.
 
                     if candidate + MAX_DISTANCE > self.cur && 
-                        self.get_batch(candidate) == self.get_batch_at_cursor()
+                        self.get_batch(candidate) == self.get_batch(self.cur)
                     {
 
                         let duplicate = candidate;
@@ -246,7 +246,8 @@ impl Encoder {
                 }
 
             }
-            
+
+            // The length (in bytes) of the literals section.
             let lit_len = self.cur - start;
 
             // Generate the higher half of the token.
@@ -308,12 +309,14 @@ impl Encoder {
                 break;
             }
             start = self.cur;
+            forward_hash = self.get_hash_at(next_cur + step_size);
         }
         Ok(self.output_ptr as usize - out_ptr_start as usize)
     }
 }
 
 /// Compress all bytes of `input` into `output`.
+#[inline]
 pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usize> {
     // TODO check dictionary sizes for input input_sizes
     let (dict_size, dict_bitshift) = match input.len() {
@@ -352,6 +355,7 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
 //     }.complete()
 // }
 
+#[inline]
 fn push_unsafe(output: &mut *mut u8, el: u8) {
     unsafe{
         std::ptr::write(*output, el);
@@ -360,6 +364,7 @@ fn push_unsafe(output: &mut *mut u8, el: u8) {
 }
 
 /// Compress all bytes of `input`.
+#[inline]
 pub fn compress(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
     let mut vec = Vec::with_capacity(10 + (input.len() as f64 * 1.1) as usize);
@@ -371,6 +376,7 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
     vec
 }
 
+#[inline]
 fn copy_into_vec(out_ptr:&mut *mut u8, start: *const u8, num_items: usize) {
     // vec.reserve(num_items);
     unsafe {
@@ -388,49 +394,48 @@ fn copy_into_vec(out_ptr:&mut *mut u8, start: *const u8, num_items: usize) {
 // }
 
 
-fn read_u64_ptr(input: *const u8) -> usize {
-    let mut num:usize = 0;
-    unsafe{std::ptr::copy_nonoverlapping(input, &mut num as *mut usize as *mut u8, 8);} 
-    num
-}
+// fn read_u64_ptr(input: *const u8) -> usize {
+//     let mut num:usize = 0;
+//     unsafe{std::ptr::copy_nonoverlapping(input, &mut num as *mut usize as *mut u8, 8);} 
+//     num
+// }
+#[inline]
 fn read_u32_ptr(input: *const u8) -> u32 {
     let mut num:u32 = 0;
     unsafe{std::ptr::copy_nonoverlapping(input, &mut num as *mut u32 as *mut u8, 4);} 
     num
 }
-
+#[inline]
 fn read_usize_ptr(input: *const u8) -> usize {
     let mut num:usize = 0;
     unsafe{std::ptr::copy_nonoverlapping(input, &mut num as *mut usize as *mut u8, std::mem::size_of::<usize>());} 
     num
 }
-
+#[inline]
 fn read_u16_ptr(input: *const u8) -> u16 {
     let mut num:u16 = 0;
     unsafe{std::ptr::copy_nonoverlapping(input, &mut num as *mut u16 as *mut u8, 2);} 
     num
 }
+// #[inline]
+// fn read_u64(input: &[u8]) -> usize {
+//     let mut num:usize = 0;
+//     unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut usize as *mut u8, 8);} 
+//     num
+// }
+// fn read_u32(input: &[u8]) -> u32 {
+//     let mut num:u32 = 0;
+//     unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut u32 as *mut u8, 4);} 
+//     num
+// }
 
-fn read_u64(input: &[u8]) -> usize {
-    let mut num:usize = 0;
-    unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut usize as *mut u8, 8);} 
-    num
-}
-fn read_u32(input: &[u8]) -> u32 {
-    let mut num:u32 = 0;
-    unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut u32 as *mut u8, 4);} 
-    num
-}
+// fn read_u16(input: &[u8]) -> u16 {
+//     let mut num:u16 = 0;
+//     unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut u16 as *mut u8, 2);} 
+//     num
+// }
 
-fn read_u16(input: &[u8]) -> u16 {
-    let mut num:u16 = 0;
-    unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut u16 as *mut u8, 2);} 
-    num
-}
-
-
-
-
+#[inline]
 fn get_common_bytes(diff: usize) -> u32 {
     let tr_zeroes = diff.trailing_zeros();
     // right shift by 3, because we are only interested in 8 bit blocks
@@ -440,18 +445,18 @@ fn get_common_bytes(diff: usize) -> u32 {
 #[test]
 #[cfg(target_pointer_width = "64")]
 fn test_get_common_bytes(){
-    let num1 = read_u64(&[0,0,0,0,0,0,0,1]);
-    let num2 = read_u64(&[0,0,0,0,0,0,0,2]);
+    let num1 = read_usize_ptr([0,0,0,0,0,0,0,1].as_ptr());
+    let num2 = read_usize_ptr([0,0,0,0,0,0,0,2].as_ptr());
     let diff = num1 ^ num2;
 
     assert_eq!(get_common_bytes(diff), 7);
 
-    let num1 = read_u64(&[0,0,0,0,0,0,1,1]);
-    let num2 = read_u64(&[0,0,0,0,0,0,0,2]);
+    let num1 = read_usize_ptr([0,0,0,0,0,0,1,1].as_ptr());
+    let num2 = read_usize_ptr([0,0,0,0,0,0,0,2].as_ptr());
     let diff = num1 ^ num2;
     assert_eq!(get_common_bytes(diff), 6);
-    let num1 = read_u64(&[1,0,0,0,0,0,1,1]);
-    let num2 = read_u64(&[0,0,0,0,0,0,0,2]);
+    let num1 = read_usize_ptr([1,0,0,0,0,0,1,1].as_ptr());
+    let num2 = read_usize_ptr([0,0,0,0,0,0,0,2].as_ptr());
     let diff = num1 ^ num2;
     assert_eq!(get_common_bytes(diff), 0);
 }
@@ -474,7 +479,6 @@ fn test_get_common_bytes(){
     let diff = num1 ^ num2;
     assert_eq!(get_common_bytes(diff as usize), 0);
 }
-
 
 /// Write an integer to the output in LSIC format.
 // fn write_integer(&mut self, mut n: usize) -> std::io::Result<()> {

@@ -6,11 +6,12 @@
 use std::str;
 use crate::{decompress, compress};
 use lz4::block::{compress as lz4_cpp_block_compress,decompress as lz4_cpp_block_decompress};
+use lz4_compress::{compress as lz4_rust_compress};
 
 const COMPRESSION1K: &'static [u8] = include_bytes!("../benches/compression_1k.txt");
 const COMPRESSION34K: &'static [u8] = include_bytes!("../benches/compression_34k.txt");
-const COMPRESSION65: &'static [u8] = include_bytes!("../benches/compression_65k.txt");
-const COMPRESSION10MB: &'static [u8] = include_bytes!("../benches/dickens.txt");
+// const COMPRESSION65: &'static [u8] = include_bytes!("../benches/compression_65k.txt");
+// const COMPRESSION10MB: &'static [u8] = include_bytes!("../benches/dickens.txt");
 
 // #[bench]
 // fn bench_compression_small(b: &mut test::Bencher) {
@@ -100,15 +101,41 @@ fn yopa() {
     println!("Compression Ratio 10MB {:?}", compressed.len() as f64/ COMPRESSION10MB.len()  as f64);
     let _decompressed = decompress(&compressed).unwrap();
 
+    let compressed = lz4_cpp_block_compress(COMPRESSION10MB, None, false).unwrap();
+    println!("Cpp Compression Ratio 10MB {:?}", compressed.len() as f64/ COMPRESSION10MB.len()  as f64);
+
     const COMPRESSION66K: &'static [u8] = include_bytes!("../benches/compression_65k.txt");
     let compressed = compress(COMPRESSION66K);
     println!("Compression Ratio 66K {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as f64);
     let _decompressed = decompress(&compressed).unwrap();
 
+    let compressed = lz4_cpp_block_compress(COMPRESSION66K, None, false).unwrap();
+    println!("Cpp Compression Ratio 66K {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as f64);
+
     const COMPRESSION34K: &'static [u8] = include_bytes!("../benches/compression_34k.txt");
     let compressed = compress(COMPRESSION34K);
     println!("Compression Ratio 34K {:?}", compressed.len() as f64/ COMPRESSION34K.len()  as f64);
     let _decompressed = decompress(&compressed).unwrap();
+
+    let compressed = lz4_cpp_block_compress(COMPRESSION34K, None, false).unwrap();
+    println!("Cpp Compression Ratio 34K {:?}", compressed.len() as f64/ COMPRESSION34K.len()  as f64);
+
+    let compressed = lz4_rust_compress(COMPRESSION34K);
+    println!("lz4_rust_compress Compression Ratio 34K {:?}", compressed.len() as f64/ COMPRESSION34K.len()  as f64);
+}
+
+#[test]
+fn compare_compression() {
+    const INPUT: &'static [u8] = b"find the find mkay find mkay find and so on find find";
+    let compressed = compress(INPUT);
+    println!("Compression Ratio 34K {:?}", compressed.len() as f64/ INPUT.len()  as f64);
+    let _decompressed = decompress(&compressed).unwrap();
+
+    let compressed = lz4_cpp_block_compress(INPUT, None, false).unwrap();
+    println!("Cpp Compression Ratio 34K {:?}", compressed.len() as f64/ INPUT.len()  as f64);
+
+    let compressed = lz4_rust_compress(INPUT);
+    println!("lz4_rust_compress Compression Ratio 34K {:?}", compressed.len() as f64/ INPUT.len()  as f64);
 }
 
 // #[test]
