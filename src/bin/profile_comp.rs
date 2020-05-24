@@ -116,13 +116,13 @@ impl Encoder {
     }
 
     /// Read the batch at the cursor.
-    #[inline]
+    #[inline(never)]
     unsafe fn count_same_bytes(&self, first: *const u8, second: *const u8) -> usize {
         let mut pos = 0;
 
         // compare 4/8 bytes blocks depending on the arch
         const STEP_SIZE: usize = std::mem::size_of::<usize>();
-        while pos + STEP_SIZE + END_OFFSET < self.input_size  {
+        while self.cur + pos + STEP_SIZE + END_OFFSET < self.input_size  {
             let diff = read_usize_ptr(first.add(pos)) ^ read_usize_ptr(second.add(pos));
 
             if diff == 0{
@@ -135,7 +135,7 @@ impl Encoder {
 
         // compare 4 bytes block
         #[cfg(target_pointer_width = "64")]{
-            if pos + 4 + END_OFFSET < self.input_size  {
+            if self.cur + pos + 4 + END_OFFSET < self.input_size  {
                 let diff = read_u32_ptr(first.add(pos)) ^ read_u32_ptr(second.add(pos));
 
                 if diff == 0{
@@ -147,7 +147,7 @@ impl Encoder {
         }
         
         // compare 2 bytes block
-        if pos + 2 + END_OFFSET < self.input_size  {
+        if self.cur + pos + 2 + END_OFFSET < self.input_size  {
             let diff = read_u16_ptr(first.add(pos)) ^ read_u16_ptr(second.add(pos));
 
             if diff == 0{
@@ -158,19 +158,41 @@ impl Encoder {
         }
 
         // TODO add end_pos_check, last 5 bytes should be literals
-        if first.read() == second.read(){
+        if self.cur + pos + 1 + END_OFFSET < self.input_size  && first.read() == second.read(){
             pos +=1;
         }
 
         pos
     }
 
-    // #[inline]
-    // fn write_to_ouput(&mut self) {
-
-    // }
-
     /// Complete the encoding into `self.output`.
+    #[inline]
+    fn handle_last_literals(&mut self, start:usize, out_ptr_start: *mut u8) -> std::io::Result<usize> {
+
+        let lit_len = self.input_size - start;
+        // copy the last literals
+        let token = if lit_len < 0xF {
+            // Since we can fit the literals length into it, there is no need for saturation.
+            (lit_len as u8) << 4
+        } else {
+            // We were unable to fit the literals into it, so we saturate to 0xF. We will later
+            // write the extensional value through LSIC encoding.
+            0xF0
+        };
+        push_unsafe(&mut self.output_ptr, token);
+        if lit_len >= 0xF {
+            self.write_integer(lit_len - 0xF)?;
+        }
+
+        // Now, write the actual literals.
+        unsafe{
+            wild_copy_from_src(self.input.add(start), self.output_ptr, lit_len); // TODO add wildcopy check 8byte
+            self.output_ptr = self.output_ptr.add(lit_len);
+        }
+        return Ok(self.output_ptr as usize - out_ptr_start as usize);
+
+    }
+
     #[inline(never)]
     fn complete(&mut self) -> std::io::Result<usize> {
         let out_ptr_start = self.output_ptr;
@@ -197,7 +219,6 @@ impl Encoder {
             copy_into_vec(&mut self.output_ptr, self.input, self.input_size);
             return Ok(self.output_ptr as usize - out_ptr_start as usize);
         }
-
         let mut start = self.cur;
         let hash = self.get_cur_hash();
         unsafe{*self.dict.get_unchecked_mut(hash) = self.cur};
@@ -215,64 +236,34 @@ impl Encoder {
 
             let mut next_cur = self.cur;
             let mut candidate;
-            loop {
 
+            while {
+                
                 non_match_count += 1;
                 step_size = non_match_count >> LZ4_SKIPTRIGGER;
 
                 let hash = forward_hash;
                 self.cur = next_cur;
                 next_cur += step_size;
-                if self.cur < end_pos_check {
 
-                    // Find a candidate in the dictionary with the hash of the current four bytes.
-                    // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
-                    // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
-                    candidate = unsafe{*self.dict.get_unchecked(hash)};
-                    unsafe{*self.dict.get_unchecked_mut(hash) = self.cur};
-                    forward_hash = self.get_hash_at(next_cur);
-                    // Three requirements to the candidate exists:
-                    // - We should not return a position which is merely a hash collision, so w that the
-                    //   candidate actually matches what we search for.
-                    // - We can address up to 16-bit offset, hence we are only able to address the candidate if
-                    //   its offset is less than or equals to 0xFFFF.
-
-                    if candidate + MAX_DISTANCE > self.cur && 
-                        self.get_batch(candidate) == self.get_batch(self.cur)
-                    {
-
-                        // is_match = true;
-                        // offset = (self.cur - candidate) as u16;
-                        break;
-                    }
-
-                }else {
-                    // self.cur = self.input_size;
-                    let lit_len = self.input_size - start;
-                    // copy the last literals
-                    let token = if lit_len < 0xF {
-                        // Since we can fit the literals length into it, there is no need for saturation.
-                        (lit_len as u8) << 4
-                    } else {
-                        // We were unable to fit the literals into it, so we saturate to 0xF. We will later
-                        // write the extensional value through LSIC encoding.
-                        0xF0
-                    };
-                    push_unsafe(&mut self.output_ptr, token);
-                    if lit_len >= 0xF {
-                        self.write_integer(lit_len - 0xF)?;
-                    }
-
-                    // Now, write the actual literals.
-                    unsafe{
-                        wild_copy_from_src(self.input.add(start), self.output_ptr, lit_len); // TODO add wildcopy check 8byte
-                        self.output_ptr = self.output_ptr.add(lit_len);
-                    }
-                    return  Ok(self.output_ptr as usize - out_ptr_start as usize);
-                    // break;
+                if self.cur > end_pos_check {
+                    return self.handle_last_literals(start, out_ptr_start);
                 }
+                // Find a candidate in the dictionary with the hash of the current four bytes.
+                // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
+                // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
+                candidate = unsafe{*self.dict.get_unchecked(hash)};
+                unsafe{*self.dict.get_unchecked_mut(hash) = self.cur};
+                forward_hash = self.get_hash_at(next_cur);
 
-            };
+                // Two requirements to the candidate exists:
+                // - We should not return a position which is merely a hash collision, so w that the
+                //   candidate actually matches what we search for.
+                // - We can address up to 16-bit offset, hence we are only able to address the candidate if
+                //   its offset is less than or equals to 0xFFFF.
+                (candidate + MAX_DISTANCE) < self.cur ||
+                self.get_batch(candidate) != self.get_batch(self.cur)
+            }{}
 
             let offset = (self.cur - candidate) as u16;
             let match_length = unsafe{ self.count_same_bytes(self.input.add(self.cur+MINMATCH), self.input.add(candidate + MINMATCH)) };
@@ -290,7 +281,6 @@ impl Encoder {
             };
 
             // Generate the lower half of the token, the duplicates length.
-                
             self.cur += match_length + 4;
             // self.go_forward_2(match_length + 4);
             token |= if match_length < 0xF {
@@ -371,7 +361,7 @@ fn push_unsafe(output: &mut *mut u8, el: u8) {
 #[inline(never)]
 pub fn compress(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
-    let mut vec = Vec::with_capacity(10 + (input.len() as f64 * 1.1) as usize);
+    let mut vec = Vec::with_capacity(16 + (input.len() as f64 * 1.1) as usize);
 
     let bytes_written = compress_into(input, &mut vec).unwrap();
     unsafe{

@@ -173,7 +173,8 @@ fn compare_compression() {
 // the last 5 bytes need to be literals, so the last match block is not allowed to match to the end
 #[test]
 fn test_end_offset() {
-    inverse("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAA");
+    inverse("AAAAAAAAAAAAAAAAAAAAAAAAaAAAAAAAAAAAAAAAAAAAAAAAA");
+    // inverse("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAA");
 }
 
 #[test]

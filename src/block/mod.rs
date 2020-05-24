@@ -53,7 +53,7 @@ pub(crate) fn hash(sequence:u32) -> u32 {
 fn wild_copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
     unsafe{
         let dst_ptr_end = dst_ptr.add(num_items);
-        while dst_ptr < dst_ptr_end {
+        while (dst_ptr as usize) < dst_ptr_end as usize {
             std::ptr::copy_nonoverlapping(source, dst_ptr, 16);
             source = source.add(16);
             dst_ptr = dst_ptr.add(16);
