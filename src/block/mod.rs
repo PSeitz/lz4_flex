@@ -15,7 +15,7 @@ pub mod decompress_unchecked;
 const MFLIMIT: u32 = 16;
 
 /// The last 5 bytes of input are always literals. Therefore, the last sequence contains at least 5 bytes. 
-const END_OFFSET: usize = 5;
+const END_OFFSET: usize = 7;
 
 const LZ4_SKIPTRIGGER: usize = 6;
 

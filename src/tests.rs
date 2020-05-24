@@ -126,7 +126,7 @@ fn yopa() {
 
 #[test]
 fn compare_compression() {
-    const INPUT: &'static [u8] = b"find the find mkay find mkay find and so on find find";
+    const INPUT: &'static [u8] = b"AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBAAAAAAAAAAAAAAAAAAAAAAAAaAAAAAAAAAAAAAAAAAAAAAAAA";
     let compressed = compress(INPUT);
     println!("Compression Ratio 34K {:?}", compressed.len() as f64/ INPUT.len()  as f64);
     let _decompressed = decompress(&compressed).unwrap();
@@ -169,6 +169,12 @@ fn compare_compression() {
 //     // let bytes_written = compress_into_2(input, &mut vec).unwrap();
 
 // }
+
+// the last 5 bytes need to be literals, so the last match block is not allowed to match to the end
+#[test]
+fn test_end_offset() {
+    inverse("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAA");
+}
 
 #[test]
 fn shakespear() {
