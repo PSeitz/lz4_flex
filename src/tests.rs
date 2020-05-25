@@ -98,44 +98,50 @@ fn inverse(s: &str) {
 fn yopa() {
     const COMPRESSION10MB: &'static [u8] = include_bytes!("../benches/dickens.txt");
     let compressed = compress(COMPRESSION10MB);
-    println!("Compression Ratio 10MB {:?}", compressed.len() as f64/ COMPRESSION10MB.len()  as f64);
+    // println!("Compression Ratio 10MB {:?}", compressed.len() as f64/ COMPRESSION10MB.len()  as f64);
     let _decompressed = decompress(&compressed).unwrap();
 
-    let compressed = lz4_cpp_block_compress(COMPRESSION10MB, None, false).unwrap();
-    println!("Cpp Compression Ratio 10MB {:?}", compressed.len() as f64/ COMPRESSION10MB.len()  as f64);
+    let _compressed = lz4_cpp_block_compress(COMPRESSION10MB, None, false).unwrap();
+    // println!("Cpp Compression Ratio 10MB {:?}", compressed.len() as f64/ COMPRESSION10MB.len()  as f64);
 
     const COMPRESSION66K: &'static [u8] = include_bytes!("../benches/compression_65k.txt");
     let compressed = compress(COMPRESSION66K);
-    println!("Compression Ratio 66K {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as f64);
+    // println!("Compression Ratio 66K {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as f64);
     let _decompressed = decompress(&compressed).unwrap();
 
-    let compressed = lz4_cpp_block_compress(COMPRESSION66K, None, false).unwrap();
-    println!("Cpp Compression Ratio 66K {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as f64);
+    let _compressed = lz4_cpp_block_compress(COMPRESSION66K, None, false).unwrap();
+    // println!("Cpp Compression Ratio 66K {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as f64);
 
     const COMPRESSION34K: &'static [u8] = include_bytes!("../benches/compression_34k.txt");
     let compressed = compress(COMPRESSION34K);
-    println!("Compression Ratio 34K {:?}", compressed.len() as f64/ COMPRESSION34K.len()  as f64);
+    // println!("Compression Ratio 34K {:?}", compressed.len() as f64/ COMPRESSION34K.len()  as f64);
     let _decompressed = decompress(&compressed).unwrap();
 
-    let compressed = lz4_cpp_block_compress(COMPRESSION34K, None, false).unwrap();
-    println!("Cpp Compression Ratio 34K {:?}", compressed.len() as f64/ COMPRESSION34K.len()  as f64);
+    let _compressed = lz4_cpp_block_compress(COMPRESSION34K, None, false).unwrap();
+    // println!("Cpp Compression Ratio 34K {:?}", compressed.len() as f64/ COMPRESSION34K.len() as f64);
 
-    let compressed = lz4_rust_compress(COMPRESSION34K);
-    println!("lz4_rust_compress Compression Ratio 34K {:?}", compressed.len() as f64/ COMPRESSION34K.len()  as f64);
+    let _compressed = lz4_rust_compress(COMPRESSION34K);
+    // println!("lz4_rust_compress Compression Ratio 34K {:?}", compressed.len() as f64/ COMPRESSION34K.len()  as f64);
 }
 
 #[test]
 fn compare_compression() {
-    const INPUT: &'static [u8] = b"AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBAAAAAAAAAAAAAAAAAAAAAAAAaAAAAAAAAAAAAAAAAAAAAAAAA";
+    // const INPUT: &'static [u8] = b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+    const INPUT: &'static [u8] =include_bytes!("../benches/compression_65k.txt");
     let compressed = compress(INPUT);
-    println!("Compression Ratio 34K {:?}", compressed.len() as f64/ INPUT.len()  as f64);
-    let _decompressed = decompress(&compressed).unwrap();
+    // println!("{:?}", compressed);
+    // println!("Compression Ratio 34K {:?}", compressed.len() as f64/ INPUT.len()  as f64);
+    let decompressed = decompress(&compressed).unwrap();
+    assert_eq!(decompressed, INPUT);
 
     let compressed = lz4_cpp_block_compress(INPUT, None, false).unwrap();
-    println!("Cpp Compression Ratio 34K {:?}", compressed.len() as f64/ INPUT.len()  as f64);
+    // println!("{:?}", compressed);
+    // println!("Cpp Compression Ratio 34K {:?}", compressed.len() as f64/ INPUT.len()  as f64);
+    let decompressed = decompress(&compressed).unwrap();
 
-    let compressed = lz4_rust_compress(INPUT);
-    println!("lz4_rust_compress Compression Ratio 34K {:?}", compressed.len() as f64/ INPUT.len()  as f64);
+    assert_eq!(decompressed, INPUT);
+    let _compressed = lz4_rust_compress(INPUT);
+    // println!("lz4_rust_compress Compression Ratio 34K {:?}", compressed.len() as f64/ INPUT.len()  as f64);
 }
 
 // #[test]

@@ -164,6 +164,8 @@ impl<'a> Decoder<'a> {
             literal += self.read_integer()? as usize;
         }
 
+        // println!("literal length {:?}", literal);
+
         // Now we know the literal length. The number will be used to indicate how long the
         // following literal copied to the output buffer is.
 
@@ -213,6 +215,8 @@ impl<'a> Decoder<'a> {
             // read the extra integer.
             match_length += self.read_integer()? as usize;
         }
+
+        // println!("match_length {:?}", match_length);
 
         // We now copy from the already decompressed buffer. This allows us for storing duplicates
         // by simply referencing the other location.

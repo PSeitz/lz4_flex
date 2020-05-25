@@ -50,16 +50,14 @@ fn wild_copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: us
     }
 }
 
-
 /// An LZ4 encoder.
 struct Encoder{
     /// The raw uncompressed input.
     input: *const u8,
+    /// The size of the input.
     input_size: usize,
     /// The compressed output.
     output_ptr: *mut u8,
-    /// The number of bytes from the input that are encoded.
-    cur: usize,
     /// Shift the hash value for the dictionary to the right, so match the dictionary size.
     dict_bitshift: u8,
     /// The dictionary of previously encoded sequences.
@@ -75,10 +73,10 @@ impl Encoder {
     /// Get the hash of the current four bytes below the cursor.
     ///
     /// This is guaranteed to be below `DICTIONARY_SIZE`.
-    #[inline]
-    fn get_cur_hash(&self) -> usize {
-        hash(self.get_batch(self.cur)) as usize >> self.dict_bitshift
-    }
+    // #[inline]
+    // fn get_cur_hash(&self) -> usize {
+    //     hash(self.get_batch(self.cur)) as usize >> self.dict_bitshift
+    // }
 
     #[inline]
     fn get_hash_at(&self, pos: usize) -> usize {
@@ -116,53 +114,59 @@ impl Encoder {
     }
 
     /// Read the batch at the cursor.
-    #[inline(never)]
-    unsafe fn count_same_bytes(&self, first: *const u8, second: *const u8) -> usize {
-        let mut pos = 0;
+    #[inline]
+    unsafe fn count_same_bytes(&self, first: *const u8, mut second:  *const u8, cur: &mut usize) -> usize {
+        let start = *cur;
 
         // compare 4/8 bytes blocks depending on the arch
         const STEP_SIZE: usize = std::mem::size_of::<usize>();
-        while self.cur + pos + STEP_SIZE + END_OFFSET < self.input_size  {
-            let diff = read_usize_ptr(first.add(pos)) ^ read_usize_ptr(second.add(pos));
+        while *cur + STEP_SIZE + END_OFFSET < self.input_size  {
+            let diff = read_usize_ptr(first.add(*cur)) ^ read_usize_ptr(second);
 
             if diff == 0{
-                pos += STEP_SIZE;
+                *cur += STEP_SIZE;
+                second = second.add(STEP_SIZE);
                 continue;
             }else {
-                return pos + get_common_bytes(diff) as usize;
+                *cur += get_common_bytes(diff) as usize;
+                return *cur - start;
             }
         }
 
         // compare 4 bytes block
         #[cfg(target_pointer_width = "64")]{
-            if self.cur + pos + 4 + END_OFFSET < self.input_size  {
-                let diff = read_u32_ptr(first.add(pos)) ^ read_u32_ptr(second.add(pos));
+            if *cur + 4 + END_OFFSET < self.input_size  {
+                let diff = read_u32_ptr(first.add(*cur)) ^ read_u32_ptr(second);
 
                 if diff == 0{
-                    return pos + 4;
+                    *cur += 4;
+                    return *cur - start;
                 }else {
-                    return pos + (diff.trailing_zeros() >> 3) as usize
+                    *cur += (diff.trailing_zeros() >> 3) as usize;
+                    return *cur - start;
                 }
             }
         }
         
         // compare 2 bytes block
-        if self.cur + pos + 2 + END_OFFSET < self.input_size  {
-            let diff = read_u16_ptr(first.add(pos)) ^ read_u16_ptr(second.add(pos));
+        if *cur + 2 + END_OFFSET < self.input_size  {
+            let diff = read_u16_ptr(first.add(*cur)) ^ read_u16_ptr(second);
 
             if diff == 0{
-                return pos + 2;
+                *cur += 2;
+                return *cur - start;
             }else {
-                return pos + (diff.trailing_zeros() >> 3) as usize
+                *cur += (diff.trailing_zeros() >> 3) as usize;
+                return *cur - start;
             }
         }
 
         // TODO add end_pos_check, last 5 bytes should be literals
-        if self.cur + pos + 1 + END_OFFSET < self.input_size  && first.read() == second.read(){
-            pos +=1;
+        if *cur + 1 + END_OFFSET < self.input_size  && first.add(*cur).read() == second.read(){
+            *cur += 1;
         }
 
-        pos
+        *cur - start
     }
 
     /// Complete the encoding into `self.output`.
@@ -183,7 +187,7 @@ impl Encoder {
         if lit_len >= 0xF {
             self.write_integer(lit_len - 0xF)?;
         }
-
+        // println!("lit_len {:?}", lit_len);
         // Now, write the actual literals.
         unsafe{
             wild_copy_from_src(self.input.add(start), self.output_ptr, lit_len); // TODO add wildcopy check 8byte
@@ -219,11 +223,16 @@ impl Encoder {
             copy_into_vec(&mut self.output_ptr, self.input, self.input_size);
             return Ok(self.output_ptr as usize - out_ptr_start as usize);
         }
-        let mut start = self.cur;
-        let hash = self.get_cur_hash();
-        unsafe{*self.dict.get_unchecked_mut(hash) = self.cur};
-        self.cur += 1;
-        let mut forward_hash = self.get_cur_hash();
+
+        let mut candidate;
+        let mut cur = 0;
+        let mut start = cur;
+        let hash = self.get_hash_at(cur);
+        unsafe{*self.dict.get_unchecked_mut(hash) = cur};
+        cur += 1;
+        let mut forward_hash = self.get_hash_at(cur);
+
+
 
         let end_pos_check = self.input_size - MFLIMIT as usize;
         loop {
@@ -234,26 +243,25 @@ impl Encoder {
             // The number of bytes before our cursor, where the duplicate starts.
             // let mut offset: u16 = 0;
 
-            let mut next_cur = self.cur;
-            let mut candidate;
+            let mut next_cur = cur;
+            
 
             while {
                 
                 non_match_count += 1;
                 step_size = non_match_count >> LZ4_SKIPTRIGGER;
 
-                let hash = forward_hash;
-                self.cur = next_cur;
+                cur = next_cur;
                 next_cur += step_size;
 
-                if self.cur > end_pos_check {
+                if cur > end_pos_check {
                     return self.handle_last_literals(start, out_ptr_start);
                 }
                 // Find a candidate in the dictionary with the hash of the current four bytes.
                 // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
                 // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
-                candidate = unsafe{*self.dict.get_unchecked(hash)};
-                unsafe{*self.dict.get_unchecked_mut(hash) = self.cur};
+                candidate = unsafe{*self.dict.get_unchecked(forward_hash)};
+                unsafe{*self.dict.get_unchecked_mut(forward_hash) = cur};
                 forward_hash = self.get_hash_at(next_cur);
 
                 // Two requirements to the candidate exists:
@@ -261,15 +269,15 @@ impl Encoder {
                 //   candidate actually matches what we search for.
                 // - We can address up to 16-bit offset, hence we are only able to address the candidate if
                 //   its offset is less than or equals to 0xFFFF.
-                (candidate + MAX_DISTANCE) < self.cur ||
-                self.get_batch(candidate) != self.get_batch(self.cur)
+                (candidate + MAX_DISTANCE) < cur ||
+                self.get_batch(candidate) != self.get_batch(cur)
             }{}
 
-            let offset = (self.cur - candidate) as u16;
-            let match_length = unsafe{ self.count_same_bytes(self.input.add(self.cur+MINMATCH), self.input.add(candidate + MINMATCH)) };
+            // let offset = (cur - candidate) as u16;
             // The length (in bytes) of the literals section.
-            let lit_len = self.cur - start;
-
+            let lit_len = cur - start;
+            cur += MINMATCH;
+            
             // Generate the higher half of the token.
             let mut token = if lit_len < 0xF {
                 // Since we can fit the literals length into it, there is no need for saturation.
@@ -280,8 +288,24 @@ impl Encoder {
                 0xF0
             };
 
+            let match_length = unsafe{ self.count_same_bytes(self.input, self.input.add(candidate + MINMATCH), &mut cur) };
+
+            // println!("lit_len {:?} match_length {:?}", lit_len, match_length);
+            // println!("cur                {:?}", (&cur as *const usize) as usize);
+            // println!("start              {:?}", (&start as *const usize) as usize);
+            // println!("forward_hash       {:?}", (&forward_hash as *const usize) as usize);
+            // println!("end_pos_check      {:?}", (&end_pos_check as *const usize) as usize);
+            // println!("step_size          {:?}", (&step_size as *const usize) as usize);
+            // println!("non_match_count    {:?}", (&non_match_count as *const usize) as usize);
+            // println!("next_cur           {:?}", (&next_cur as *const usize) as usize);
+            // println!("candidate          {:?}", (&candidate as *const usize) as usize);
+            // // println!("offset             {:?}", (&offset as *const u16) as usize);
+            // println!("lit_len            {:?}", (&lit_len as *const usize) as usize);
+            // // println!("{:?}", (&var2 as *const i32) as usize);
+            // println!("{:?}", (&var1 as *const i32) as usize - base_ptr );
+
             // Generate the lower half of the token, the duplicates length.
-            self.cur += match_length + 4;
+            // cur += match_length + MINMATCH;
             // self.go_forward_2(match_length + 4);
             token |= if match_length < 0xF {
                 // We could fit it in.
@@ -308,7 +332,7 @@ impl Encoder {
 
             // write the offset in little endian.
             unsafe{
-                std::ptr::copy_nonoverlapping(&offset.to_le() as *const u16 as *const u8, self.output_ptr, 2);
+                std::ptr::copy_nonoverlapping(&((cur - candidate) as u16).to_le() as *const u16 as *const u8, self.output_ptr, 2);
                 self.output_ptr = self.output_ptr.add(2);
             } 
             // If we were unable to fit the duplicates length into the token, write the
@@ -316,7 +340,7 @@ impl Encoder {
             if match_length >= 0xF {
                 self.write_integer(match_length - 0xF)?;
             }
-            start = self.cur;
+            start = cur;
             forward_hash = self.get_hash_at(next_cur);
         }
         // Ok(self.output_ptr as usize - out_ptr_start as usize)
@@ -344,7 +368,7 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
         input_size: input.len(),
         output_ptr: output.as_mut_ptr(),
         dict_bitshift: dict_bitshift,
-        cur: 0,
+        // cur: 0,
         dict,
     }.complete()
 }
