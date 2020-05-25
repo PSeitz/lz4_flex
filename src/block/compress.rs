@@ -202,11 +202,10 @@ impl Encoder {
             let mut step_size;
             let mut non_match_count = 1 << LZ4_SKIPTRIGGER;
             // The number of bytes before our cursor, where the duplicate starts.
-
             let mut next_cur = cur;
 
             while {
-                
+
                 non_match_count += 1;
                 step_size = non_match_count >> LZ4_SKIPTRIGGER;
 
@@ -214,6 +213,10 @@ impl Encoder {
                 next_cur += step_size;
 
                 if cur > end_pos_check {
+                    // let filled_slots =  self.dict.iter().filter(|v| **v == 0).count();
+                    // let unfilled_slots =  self.dict.iter().filter(|v| **v != 0).count();
+                    // println!("filled_slots {:?}", filled_slots);
+                    // println!("unfilled_slots {:?}", unfilled_slots);
                     return self.handle_last_literals(start, out_ptr_start);
                 }
                 // Find a candidate in the dictionary with the hash of the current four bytes.
@@ -247,13 +250,16 @@ impl Encoder {
 
             let offset = (cur - candidate) as u16;
             cur += MINMATCH;
-            let match_length = unsafe{ self.count_same_bytes(self.input, self.input.add(candidate + MINMATCH), &mut cur) };
+            let duplicate_length = unsafe{ self.count_same_bytes(self.input, self.input.add(candidate + MINMATCH), &mut cur) };
+
+            let hash = self.get_hash_at(cur - 2);
+            unsafe{*self.dict.get_unchecked_mut(hash) = cur - 2};
 
             // Generate the lower half of the token, the duplicates length.
-            // cur += match_length + MINMATCH;
-            token |= if match_length < 0xF {
+            // cur += duplicate_length + MINMATCH;
+            token |= if duplicate_length < 0xF {
                 // We could fit it in.
-                match_length as u8
+                duplicate_length as u8
             } else {
                 // We were unable to fit it in, so we default to 0xF, which will later be extended
                 // by LSIC encoding.
@@ -281,8 +287,8 @@ impl Encoder {
             } 
             // If we were unable to fit the duplicates length into the token, write the
             // extensional part through LSIC.
-            if match_length >= 0xF {
-                self.write_integer(match_length - 0xF)?;
+            if duplicate_length >= 0xF {
+                self.write_integer(duplicate_length - 0xF)?;
             }
             start = cur;
             forward_hash = self.get_hash_at(cur);
@@ -300,8 +306,8 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
         1_000..=4_000 => (512, 7),
         4_000..=8_000 => (1024, 6),
         8_000..=16_000 => (2048, 5),
-        16_000..=100_000 => (4096, 4),
-        100_000..=400_000 => (8192, 3),
+        16_000..=30_000 => (8192, 3),
+        // 100_000..=400_000 => (8192, 3),
         _ => (16384, 2),
     };
     let dict = vec![0; dict_size];
