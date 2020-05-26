@@ -27,6 +27,8 @@ fn main(){
 ```
 
 ## Benchmarks
-The benchmark is run with criterion on set of test files are in the benches folder benches. Currently 3 implementations are compared, this one, the redox version and the c++ version via rust bindings
+The benchmark is run with criterion on set of test files are in the folder benches. 
+
+Currently 3 implementations are compared, this one, the redox version and the c++ version via rust bindings
 
 `cargo bench`
