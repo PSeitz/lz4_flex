@@ -43,12 +43,37 @@ const FASTLOOP_SAFE_DISTANCE : usize = 64;
 static LZ4_64KLIMIT: u32 = (64 * 1024) + (MFLIMIT - 1);
 
 
+// hashes and right shifts to a maximum value of 16bit, 65535
 pub(crate) fn hash(sequence:u32) -> u32 {
     let res = (sequence.wrapping_mul(2654435761_u32))
             >> (1 + (MINMATCH as u32 * 8) - (LZ4_HASHLOG + 1));
     res
 }
+#[test]
+fn test_hash() {
+    println!("{:?}", hash(500_200));
+    // let table_size = 65536;
+    // let mut counter: Vec<u32> = vec![0; 65536];
 
+    // for i in 0..u32::MAX {
+    //     let val = hash(i);
+    //     counter[val as usize] += 1;
+    // }
+
+    // let sum = counter.iter().map(|el|*el).sum::<u32>() / table_size;
+    // let _avg = sum / table_size;
+    // let unused_fields = counter.iter().filter(|el|**el == 0).count();
+    // println!("unused_fields {:?}", unused_fields);
+
+    // counter.sort();
+    // println!("blub");
+    // println!("counter[0] {:?}", counter[0]);
+    // println!("counter[1] {:?}", counter[1]);
+    // println!("counter[2] {:?}", counter[2]);
+    // println!("counter[3] {:?}", counter[3]);
+    // println!("counter[30000] {:?}", counter[30000]);
+    // println!("{:?}", counter.iter().last());
+}
 
 fn wild_copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
     unsafe{
@@ -57,6 +82,17 @@ fn wild_copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: us
             std::ptr::copy_nonoverlapping(source, dst_ptr, 16);
             source = source.add(16);
             dst_ptr = dst_ptr.add(16);
+        }
+    }
+}
+
+fn wild_copy_from_src_8(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
+    unsafe{
+        let dst_ptr_end = dst_ptr.add(num_items);
+        while (dst_ptr as usize) < dst_ptr_end as usize {
+            std::ptr::copy_nonoverlapping(source, dst_ptr, 8);
+            source = source.add(8);
+            dst_ptr = dst_ptr.add(8);
         }
     }
 }

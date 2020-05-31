@@ -45,3 +45,10 @@ name = "profile_comp"
 [[bench]]
 name = "bench"
 harness = false
+
+
+[features]
+# no features by default
+default = []
+
+safe-decode = []

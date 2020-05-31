@@ -77,13 +77,13 @@ fn inverse(s: &str) {
     // compress with rust, decompress with rust
     let compressed = compress(s.as_bytes());
     // println!("Compressed '{}' into {:?}", s, compressed);
-    let decompressed = decompress(&compressed).unwrap();
+    let decompressed = decompress(&compressed, s.len()).unwrap();
     // println!("Decompressed it into {:?}", str::from_utf8(&decompressed).unwrap());
     assert_eq!(decompressed, s.as_bytes());
 
     // compress with lz4 cpp, decompress with rust
     let compressed = lz4_cpp_block_compress(s.as_bytes(), None, false).unwrap();
-    let decompressed = decompress(&compressed).unwrap();
+    let decompressed = decompress(&compressed, s.len()).unwrap();
     assert_eq!(decompressed, s.as_bytes());
 
     if s.len() != 0 {
@@ -99,7 +99,7 @@ fn yopa() {
     const COMPRESSION10MB: &'static [u8] = include_bytes!("../benches/dickens.txt");
     let compressed = compress(COMPRESSION10MB);
     // println!("Compression Ratio 10MB {:?}", compressed.len() as f64/ COMPRESSION10MB.len()  as f64);
-    let _decompressed = decompress(&compressed).unwrap();
+    let _decompressed = decompress(&compressed, COMPRESSION10MB.len() ).unwrap();
 
     let _compressed = lz4_cpp_block_compress(COMPRESSION10MB, None, false).unwrap();
     // println!("Cpp Compression Ratio 10MB {:?}", compressed.len() as f64/ COMPRESSION10MB.len()  as f64);
@@ -107,7 +107,7 @@ fn yopa() {
     const COMPRESSION66K: &'static [u8] = include_bytes!("../benches/compression_65k.txt");
     let compressed = compress(COMPRESSION66K);
     // println!("Compression Ratio 66K {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as f64);
-    let _decompressed = decompress(&compressed).unwrap();
+    let _decompressed = decompress(&compressed, COMPRESSION66K.len()).unwrap();
 
     let _compressed = lz4_cpp_block_compress(COMPRESSION66K, None, false).unwrap();
     // println!("Cpp Compression Ratio 66K {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as f64);
@@ -115,7 +115,7 @@ fn yopa() {
     const COMPRESSION34K: &'static [u8] = include_bytes!("../benches/compression_34k.txt");
     let compressed = compress(COMPRESSION34K);
     // println!("Compression Ratio 34K {:?}", compressed.len() as f64/ COMPRESSION34K.len()  as f64);
-    let _decompressed = decompress(&compressed).unwrap();
+    let _decompressed = decompress(&compressed, COMPRESSION34K.len()).unwrap();
 
     let _compressed = lz4_cpp_block_compress(COMPRESSION34K, None, false).unwrap();
     // println!("Cpp Compression Ratio 34K {:?}", compressed.len() as f64/ COMPRESSION34K.len() as f64);
@@ -135,13 +135,13 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
     let compressed = compress(input);
     // println!("{:?}", compressed);
     println!("Compression Ratio {:?} {:?}", name, compressed.len() as f64/ input.len()  as f64);
-    let decompressed = decompress(&compressed).unwrap();
+    let decompressed = decompress(&compressed, input.len()).unwrap();
     assert_eq!(decompressed, input);
 
     let compressed = lz4_cpp_block_compress(input, None, false).unwrap();
     // println!("{:?}", compressed);
     println!("Cpp Compression Ratio {:?} {:?}", name, compressed.len() as f64/ input.len()  as f64);
-    let decompressed = decompress(&compressed).unwrap();
+    let decompressed = decompress(&compressed, input.len()).unwrap();
 
     assert_eq!(decompressed, input);
     let compressed = lz4_rust_compress(input);
@@ -188,10 +188,19 @@ fn test_end_offset() {
 }
 
 #[test]
-fn shakespear() {
+fn shakespear1() {
     inverse("to live or not to live");
+}
+#[test]
+fn shakespear2() {
     inverse("Love is a wonderful terrible thing");
+}
+#[test]
+fn shakespear3() {
     inverse("There is nothing either good or bad, but thinking makes it so.");
+}
+#[test]
+fn shakespear4() {
     inverse("I burn, I pine, I perish.");
 }
 
@@ -252,7 +261,7 @@ fn big_compression() {
         s.push((n as u8).wrapping_mul(0xA).wrapping_add(33) ^ 0xA2);
     }
 
-    assert_eq!(&decompress(&compress(&s)).unwrap(), &s);
+    assert_eq!(&decompress(&compress(&s), s.len()).unwrap(), &s);
 }
 
 

@@ -39,10 +39,10 @@ fn main() {
             io::stdin().read_to_end(&mut vec).expect("Failed to read stdin");
 
             // Decompress the input.
-            let decompressed = lz4::decompress(&vec).expect("Compressed data contains errors");
+            // let decompressed = lz4::decompress(&vec).expect("Compressed data contains errors");
 
-            // Write the decompressed buffer to stdout.
-            io::stdout().write(&decompressed).expect("Failed to write to stdout");
+            // // Write the decompressed buffer to stdout.
+            // io::stdout().write(&decompressed).expect("Failed to write to stdout");
         },
         // If no valid arguments are given, we print the help page.
         _ => {
