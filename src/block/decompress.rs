@@ -131,7 +131,7 @@ fn is_safe_distance(input_pos: usize, in_len: usize) -> bool {
 }
 
 fn block_copy_from_src(source: *const u8, dst_ptr: *mut u8, num_items: usize) {
-    debug_assert!(num_items > 24);
+    debug_assert!(num_items <= 24);
     unsafe{
         let dst_ptr_end = dst_ptr.add(num_items);
         if (dst_ptr as usize) < dst_ptr_end as usize {
