@@ -22,8 +22,8 @@ quick_error! {
 }
 
 
-const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/dickens.txt");
-// const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/compression_34k.txt");
+// const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/dickens.txt");
+const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/compression_34k.txt");
 // const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/compression_66k_JSON.txt");
 // 
 fn main() {
@@ -63,6 +63,8 @@ struct Decoder<'a> {
     literal_unused: u32,
     literal_full: u32,
     literal_fit: u32,
+    token_not_fit: u32,
+    token_fit: u32,
 }
 
 impl<'a> Decoder<'a> {
@@ -391,6 +393,14 @@ impl<'a> Decoder<'a> {
             // Now, we read the literals section.
             self.read_literal_section()?;
 
+            let literal = (self.token >> 4) as usize;
+            let match_length = ((self.token & 0xF)) as usize;
+            if match_length == 15 || literal == 15{
+                self.token_not_fit += 1;
+            }else{
+                self.token_fit += 1;
+            }
+
             // If the input stream is emptied, we break out of the loop. This is only the case
             // in the end of the stream, since the block is intact otherwise.
             if in_len == self.input_pos { break; }
@@ -407,6 +417,8 @@ impl<'a> Decoder<'a> {
         dbg!(self.literal_unused);
         dbg!(self.literal_full);
         dbg!(self.literal_fit);
+        dbg!(self.token_not_fit);
+        dbg!(self.token_fit);
 
         Ok(())
     }
@@ -428,6 +440,8 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         literal_unused: 0,
         literal_full: 0,
         literal_fit: 0,
+        token_not_fit: 0,
+        token_fit: 0,
     }.complete()?;
 
     Ok(())
