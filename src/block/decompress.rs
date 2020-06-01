@@ -168,14 +168,15 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
     while in_len > input_pos {
         // Read the token. The token is the first byte in a block. It is divided into two 4-bit
         // subtokens, the higher and the lower.
-
-        // check alread done in move_cursor
         // This token contains to 4-bit "fields", a higher and a lower, representing the literals'
         // length and the back reference's length, respectively. LSIC is used if either are their
         // maximal values.
         let token = unsafe{*input.get_unchecked(input_pos)};
         input_pos+=1;
 
+        // Checking for hot-loop.
+        // In most cases the metadata does fit in a single 1byte token (statistically) and we are in a safe-distance to the end.
+        // This enables some optmized handling.
         if does_token_fit(token) && is_safe_distance(input_pos, end_pos_check) {
             let literal_length = (token >> 4) as usize;
 
