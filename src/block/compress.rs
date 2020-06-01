@@ -108,7 +108,6 @@ unsafe fn count_same_bytes(
     *cur - start
 }
 
-
 /// Write an integer to the output in LSIC format.
 #[inline]
 fn write_integer(output_ptr: &mut *mut u8, mut n: usize) -> std::io::Result<()> {
@@ -226,11 +225,13 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
             next_cur += step_size;
 
             if cur > end_pos_check {
-                // let filled_slots =  dict.iter().filter(|v| **v == 0).count();
-                // let unfilled_slots =  dict.iter().filter(|v| **v != 0).count();
-                // println!("filled_slots {:?}", filled_slots);
-                // println!("unfilled_slots {:?}", unfilled_slots);
-                return handle_last_literals(&mut output_ptr, input, input_size, start, out_ptr_start);
+                return handle_last_literals(
+                    &mut output_ptr,
+                    input,
+                    input_size,
+                    start,
+                    out_ptr_start,
+                );
             }
             // Find a candidate in the dictionary with the hash of the current four bytes.
             // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
@@ -304,7 +305,6 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
         start = cur;
         forward_hash = get_hash_at(input, cur, dict_bitshift);
     }
-
 }
 
 #[inline]

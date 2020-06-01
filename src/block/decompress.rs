@@ -165,7 +165,6 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
     let in_len = input.len() - 1;
     let end_pos_check = input.len().saturating_sub(18);
     loop {
-
         #[cfg(feature = "safe-decode")]
         {
             if input.len() < input_pos + 1 {
