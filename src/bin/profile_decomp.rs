@@ -128,21 +128,13 @@ impl<'a> Decoder<'a> {
     #[inline]
     fn read_u16(&mut self) -> Result<u16, Error> {
         // We use byteorder to read an u16 in little endian.
-        
-        #[cfg(feature = "safe-decode")]{
-            let num = LittleEndian::read_u16(&self.input[self.input_pos ..]);
-            self.input_pos+=2;
-            Ok(num)
-        }
 
-        #[cfg(not(feature = "safe-decode"))]{
-            let mut num: u16 = 0;
-            unsafe{
-                std::ptr::copy_nonoverlapping(self.input.as_ptr().add(self.input_pos), &mut num as *mut u16 as *mut u8, 2);
-            }
-            self.input_pos+=2;
-            Ok(num)
+        let mut num: u16 = 0;
+        unsafe{
+            std::ptr::copy_nonoverlapping(self.input.as_ptr().add(self.input_pos), &mut num as *mut u16 as *mut u8, 2);
         }
+        self.input_pos+=2;
+        Ok(num)
 
         // self.input_pos+=2;
         // Ok(num)

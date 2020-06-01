@@ -1,12 +1,16 @@
 //! The decompression algorithm.
 use crate::block::wild_copy_from_src_8;
-use crate::block::wild_copy_from_src;
+
 
 
 quick_error! {
     /// An error representing invalid compressed data.
     #[derive(Debug)]
     pub enum Error {
+        /// Literal is out of bounds of the input
+        LiteralOutOfBounds {
+            description("Literal is out of bounds of the input.")
+        }
         /// Expected another byte, but none found.
         ExpectedAnotherByte {
             description("Expected another byte, found none.")
@@ -70,7 +74,7 @@ fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, Error>  {
         
         #[cfg(feature = "safe-decode")]
         {
-            if input.len() < input_pos + 1 {
+            if input.len() < *input_pos + 1 {
                 return Err(Error::ExpectedAnotherByte);
             };
         }
@@ -171,9 +175,8 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         input_pos+=1;
 
         if does_token_fit(token) && is_safe_distance(input_pos, end_pos_check) {
-            let literal_length = (token >> 4) as usize;
-            let match_length = (4 + (token & 0xF)) as usize;
 
+            let literal_length = (token >> 4) as usize;
             unsafe{block_copy_from_src(input.as_ptr().add(input_pos), output_ptr, literal_length)};
             input_pos+=literal_length;
             unsafe{output_ptr = output_ptr.add(literal_length);}
@@ -181,6 +184,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
             let offset = read_u16(input, &mut input_pos);
             let start_ptr = unsafe{output_ptr.sub(offset as usize)};
 
+            let match_length = (4 + (token & 0xF)) as usize;
             // Write the duplicate segment to the output buffer.
             if (output_ptr as usize) < unsafe{start_ptr.add(match_length)} as usize {
                 duplicate_overlapping(&mut output_ptr, start_ptr, match_length);
@@ -197,10 +201,11 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         // Now, we read the literals section.
         // Literal Section
         // read_literal_section();
-        let mut literal_length = (token >> 4) as usize;
+        // let mut literal_length = (token >> 4) as usize;
         // If the initial value is 15, it is indicated that another byte will be read and added to
         // it.
         
+        let mut literal_length = (token >> 4) as usize;
         if literal_length == 15 {
             // The literal_length length took the maximal value, indicating that there is more than 15
             // literal_length bytes. We read the extra integer.
@@ -209,7 +214,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
 
         if cfg!(feature = "safe-decode"){
             if input.len() < input_pos + literal_length {
-                return Err(Error::ExpectedAnotherByte);
+                return Err(Error::LiteralOutOfBounds);
             };
         }
         unsafe{
@@ -225,7 +230,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
 
         // Read duplicate section
         if cfg!(feature = "safe-decode"){
-            if input_pos + 2 >= input.len() {
+            if input_pos + 2 > input.len() {
                 return Err(Error::OffsetOutOfBounds);
             }
         };
@@ -235,10 +240,11 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         // initial length is derived from the second part of the token (the lower nibble), we read
         // earlier. Since having a match length of less than 4 would mean negative compression
         // ratio, we start at 4.
-        let mut match_length = (4 + (token & 0xF)) as usize;
+        // let mut match_length = (4 + (token & 0xF)) as usize;
 
         // The intial match length can maximally be 19. As with the literal length, this indicates
         // that there are more bytes to read.
+        let mut match_length = (4 + (token & 0xF)) as usize;
         if match_length == 4 + 15 {
             // The match length took the maximal value, indicating that there is more bytes. We
             // read the extra integer.
@@ -252,10 +258,10 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         // overflow checks, which we will catch later.
         let start_ptr = unsafe{output_ptr.sub(offset as usize)};
 
-        // We'll do a bound check to avoid panicking.
+        // We'll do a bound check to in safe-decode.
         #[cfg(feature = "safe-decode")]
         {
-            if (start_ptr as usize) < (output_ptr as usize) {
+            if (start_ptr as usize) >= (output_ptr as usize) {
                 return Err(Error::OffsetOutOfBounds)
             };
         }
