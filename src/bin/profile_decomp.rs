@@ -16,8 +16,6 @@ fn main() {
 }
 
 
-use byteorder::{ByteOrder};
-
 quick_error! {
     /// An error representing invalid compressed data.
     #[derive(Debug)]
@@ -295,8 +293,7 @@ pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, Err
 #[inline]
 fn copy_on_self(out_ptr: &mut *mut u8, start: *const u8, num_items: usize) {
     unsafe {
-        // std::ptr::copy_nonoverlapping(start, *out_ptr, num_items);
-        
+        std::ptr::copy_nonoverlapping(start, *out_ptr, num_items);
         *out_ptr = out_ptr.add(num_items);
     }
 }

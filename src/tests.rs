@@ -76,9 +76,7 @@ const COMPRESSION34K: &'static [u8] = include_bytes!("../benches/compression_34k
 fn inverse(s: &str) {
     // compress with rust, decompress with rust
     let compressed = compress(s.as_bytes());
-    // println!("Compressed '{}' into {:?}", s, compressed);
     let decompressed = decompress(&compressed, s.len()).unwrap();
-    // println!("Decompressed it into {:?}", str::from_utf8(&decompressed).unwrap());
     assert_eq!(decompressed, s.as_bytes());
 
     // compress with lz4 cpp, decompress with rust
@@ -228,6 +226,8 @@ fn short() {
     inverse("k");
     inverse(".");
     inverse("ajsdh");
+    inverse("aaaaaa");
+    inverse("aaaaaabcbcbcbc");
 }
 
 #[test]

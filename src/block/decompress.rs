@@ -1,12 +1,14 @@
 //! The decompression algorithm.
 use crate::block::wild_copy_from_src_8;
 
-
-
 quick_error! {
     /// An error representing invalid compressed data.
     #[derive(Debug)]
     pub enum Error {
+        /// Literal is out of bounds of the input
+        OutputTooSmall {
+            description("Output is too small for the decompressed data")
+        }
         /// Literal is out of bounds of the input
         LiteralOutOfBounds {
             description("Literal is out of bounds of the input.")
@@ -118,9 +120,9 @@ fn check_token() {
     assert_eq!(does_token_fit(0b10110000), true);
 }
 
-#[inline]
 /// The token consists of two parts, the literal length (upper 4 bits) and match_length (lower 4 bits)
-/// if the literal length and match_length are both below 15, we don't need to read additional data
+/// if the literal length and match_length are both below 15, we don't need to read additional data, so the token does fit the metadata.
+#[inline]
 fn does_token_fit(token: u8) -> bool {
     !(
         (token & FIT_TOKEN_MASK_LITERAL) == FIT_TOKEN_MASK_LITERAL
@@ -154,7 +156,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
     let mut output_ptr = output.as_mut_ptr();
     
     #[cfg(feature = "safe-decode")]
-    let output_start = output_ptr;
+    let output_start = output_ptr as usize;
 
     if input.is_empty() {
         return Err(Error::ExpectedAnotherByte);
@@ -175,8 +177,18 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         input_pos+=1;
 
         if does_token_fit(token) && is_safe_distance(input_pos, end_pos_check) {
-
             let literal_length = (token >> 4) as usize;
+
+            #[cfg(feature = "safe-decode")]
+            {
+                if input.len() < input_pos + literal_length {
+                    return Err(Error::LiteralOutOfBounds);
+                };
+                if output.len() < (output_ptr as usize - output_start + literal_length) {
+                    return Err(Error::OutputTooSmall);
+                };
+            }
+
             unsafe{block_copy_from_src(input.as_ptr().add(input_pos), output_ptr, literal_length)};
             input_pos+=literal_length;
             unsafe{output_ptr = output_ptr.add(literal_length);}
@@ -200,11 +212,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
 
         // Now, we read the literals section.
         // Literal Section
-        // read_literal_section();
-        // let mut literal_length = (token >> 4) as usize;
-        // If the initial value is 15, it is indicated that another byte will be read and added to
-        // it.
-        
+        // If the initial value is 15, it is indicated that another byte will be read and added to it
         let mut literal_length = (token >> 4) as usize;
         if literal_length == 15 {
             // The literal_length length took the maximal value, indicating that there is more than 15
@@ -212,7 +220,8 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
             literal_length += read_integer(input, &mut input_pos)? as usize;
         }
 
-        if cfg!(feature = "safe-decode"){
+        #[cfg(feature = "safe-decode")]
+        {
             if input.len() < input_pos + literal_length {
                 return Err(Error::LiteralOutOfBounds);
             };
@@ -229,11 +238,12 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         if in_len <= input_pos { break; }
 
         // Read duplicate section
-        if cfg!(feature = "safe-decode"){
-            if input_pos + 2 > input.len() {
+        #[cfg(feature = "safe-decode")]
+        {
+            if input_pos + 2 >= input.len() {
                 return Err(Error::OffsetOutOfBounds);
             }
-        };
+        }
         let offset = read_u16(input, &mut input_pos);
         // Obtain the initial match length. The match length is the length of the duplicate segment
         // which will later be copied from data previously decompressed into the output buffer. The
@@ -291,41 +301,20 @@ fn copy_on_self(out_ptr: &mut *mut u8, start: *const u8, num_items: usize) {
     }
 }
 
-// #[test]
-// // #[inline(never)]
-// fn test_copy_on_self() {
-//     let mut data: Vec<u8>= vec![10];
-//     copy_on_self(&mut data.as_mut_ptr(), 0, 1);
-//     assert_eq!(data, [10, 10]);
-// }
-
-
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
-    // #[inline(never)]
-    fn aaaaaaaaaaa_lots_of_aaaaaaaaa() {
-        assert_eq!(decompress(&[0x11, b'a', 1, 0], "aaaaaa".len()).unwrap(), b"aaaaaa");
-    }
-
-    #[test]
-    // #[inline(never)]
-    fn multiple_repeated_blocks() {
-        assert_eq!(decompress(&[0x11, b'a', 1, 0, 0x22, b'b', b'c', 2, 0], "aaaaaabcbcbcbc".len()).unwrap(), b"aaaaaabcbcbcbc");
-    }
-
-    #[test]
-    // #[inline(never)]
     fn all_literal() {
         assert_eq!(decompress(&[0x30, b'a', b'4', b'9'], 3).unwrap(), b"a49");
     }
 
-    // #[test]
-    // // #[inline(never)]
-    // fn offset_oob() {
-    //     decompress(&[0x10, b'a', 2, 0]).unwrap_err();
-    //     decompress(&[0x40, b'a', 1, 0]).unwrap_err();
-    // }
+    // this error test is only valid in safe-decode.
+    #[cfg(feature = "safe-decode")]
+    #[test]
+    fn offset_oob() {
+        decompress(&[0x10, b'a', 2, 0], 4).unwrap_err();
+        decompress(&[0x40, b'a', 1, 0], 4).unwrap_err();
+    }
 }

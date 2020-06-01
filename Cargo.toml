@@ -49,6 +49,6 @@ harness = false
 
 [features]
 # no features by default
-default = []
+default = ["safe-decode"]
 
 safe-decode = []

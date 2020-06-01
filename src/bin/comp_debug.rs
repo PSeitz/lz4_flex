@@ -6,9 +6,6 @@ fn main() {
 
 
     let compressed = lz4_flex::compress(s.as_bytes());
-    lz4_flex::decompress(&compressed, s.len());
-
-
+    lz4_flex::decompress(&compressed, s.len()).unwrap();
 
 }
-
