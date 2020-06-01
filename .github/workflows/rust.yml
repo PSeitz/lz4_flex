@@ -19,5 +19,5 @@ jobs:
       run: cargo test --verbose 
     - name: Run tests safe-decode
       run: cargo test --verbose --features safe-decode
-    - name: Run tests no-default-features (unsafe-decode)
+    - name: Run tests no-default-features (no safe-decode)
       run: cargo test --verbose --no-default-features
