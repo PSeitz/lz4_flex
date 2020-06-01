@@ -30,9 +30,9 @@ fn duplicate(output_ptr: &mut *mut u8, start: *const u8, match_length: usize) {
     // self-referential copies: http://ticki.github.io/img/lz4_runs_encoding_diagram.svg
     // `reserve` enough space on the vector to safely copy self referential data.
     // Check overlap copy
-    if (*output_ptr as usize) < unsafe{start.add(match_length)} as usize {
+    if (*output_ptr as usize) < unsafe { start.add(match_length) } as usize {
         duplicate_overlapping(output_ptr, start, match_length);
-    }else{
+    } else {
         copy_on_self(output_ptr, start, match_length);
     }
 }
@@ -66,14 +66,14 @@ fn duplicate_overlapping(output_ptr: &mut *mut u8, mut start: *const u8, match_l
 /// 4 is the first non-0xFF byte.
 // #[inline(never)]
 #[inline]
-fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, Error>  {
+fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, Error> {
     // We start at zero and count upwards.
-    let mut n:u32 = 0;
+    let mut n: u32 = 0;
     // If this byte takes value 255 (the maximum value it can take), another byte is read
     // and added to the sum. This repeats until a byte lower than 255 is read.
     while {
         // We add the next byte until we get a byte which we add to the counting variable.
-        
+
         #[cfg(feature = "safe-decode")]
         {
             if input.len() < *input_pos + 1 {
@@ -81,8 +81,8 @@ fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, Error>  {
             };
         }
         // check alread done in move_cursor
-        let extra = *unsafe{input.get_unchecked(*input_pos)};
-        *input_pos+=1;
+        let extra = *unsafe { input.get_unchecked(*input_pos) };
+        *input_pos += 1;
         n += extra as u32;
 
         // We continue if we got 255.
@@ -98,13 +98,16 @@ fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, Error>  {
 /// Read a little-endian 16-bit integer from the input stream.
 #[inline]
 fn read_u16(input: &[u8], input_pos: &mut usize) -> u16 {
-
     let mut num: u16 = 0;
-    unsafe{
-        std::ptr::copy_nonoverlapping(input.as_ptr().add(*input_pos), &mut num as *mut u16 as *mut u8, 2);
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            input.as_ptr().add(*input_pos),
+            &mut num as *mut u16 as *mut u8,
+            2,
+        );
     }
 
-    *input_pos+=2;
+    *input_pos += 2;
     u16::from_le(num)
 }
 
@@ -124,11 +127,8 @@ fn check_token() {
 /// if the literal length and match_length are both below 15, we don't need to read additional data, so the token does fit the metadata.
 #[inline]
 fn does_token_fit(token: u8) -> bool {
-    !(
-        (token & FIT_TOKEN_MASK_LITERAL) == FIT_TOKEN_MASK_LITERAL
-        ||
-        (token & FIT_TOKEN_MASK_MATCH) == FIT_TOKEN_MASK_MATCH
-    )
+    !((token & FIT_TOKEN_MASK_LITERAL) == FIT_TOKEN_MASK_LITERAL
+        || (token & FIT_TOKEN_MASK_MATCH) == FIT_TOKEN_MASK_MATCH)
 }
 
 #[inline]
@@ -139,7 +139,7 @@ fn is_safe_distance(input_pos: usize, in_len: usize) -> bool {
 #[inline]
 fn block_copy_from_src(source: *const u8, dst_ptr: *mut u8, num_items: usize) {
     debug_assert!(num_items <= 24);
-    unsafe{
+    unsafe {
         let dst_ptr_end = dst_ptr.add(num_items);
         if (dst_ptr as usize) < dst_ptr_end as usize {
             std::ptr::copy_nonoverlapping(source, dst_ptr, 24);
@@ -147,14 +147,13 @@ fn block_copy_from_src(source: *const u8, dst_ptr: *mut u8, num_items: usize) {
     }
 }
 
-
 /// Decompress all bytes of `input` into `output`.
 #[inline]
 pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> {
     // Decode into our vector.
     let mut input_pos = 0;
     let mut output_ptr = output.as_mut_ptr();
-    
+
     #[cfg(feature = "safe-decode")]
     let output_start = output_ptr as usize;
 
@@ -171,8 +170,8 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         // This token contains to 4-bit "fields", a higher and a lower, representing the literals'
         // length and the back reference's length, respectively. LSIC is used if either are their
         // maximal values.
-        let token = unsafe{*input.get_unchecked(input_pos)};
-        input_pos+=1;
+        let token = unsafe { *input.get_unchecked(input_pos) };
+        input_pos += 1;
 
         // Checking for hot-loop.
         // In most cases the metadata does fit in a single 1byte token (statistically) and we are in a safe-distance to the end.
@@ -190,18 +189,22 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
                 };
             }
 
-            unsafe{block_copy_from_src(input.as_ptr().add(input_pos), output_ptr, literal_length)};
-            input_pos+=literal_length;
-            unsafe{output_ptr = output_ptr.add(literal_length);}
+            unsafe {
+                block_copy_from_src(input.as_ptr().add(input_pos), output_ptr, literal_length)
+            };
+            input_pos += literal_length;
+            unsafe {
+                output_ptr = output_ptr.add(literal_length);
+            }
 
             let offset = read_u16(input, &mut input_pos);
-            let start_ptr = unsafe{output_ptr.sub(offset as usize)};
+            let start_ptr = unsafe { output_ptr.sub(offset as usize) };
 
             let match_length = (4 + (token & 0xF)) as usize;
             // Write the duplicate segment to the output buffer.
-            if (output_ptr as usize) < unsafe{start_ptr.add(match_length)} as usize {
+            if (output_ptr as usize) < unsafe { start_ptr.add(match_length) } as usize {
                 duplicate_overlapping(&mut output_ptr, start_ptr, match_length);
-            }else{
+            } else {
                 unsafe {
                     block_copy_from_src(start_ptr, output_ptr, match_length);
                     output_ptr = output_ptr.add(match_length);
@@ -228,19 +231,22 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
                     return Err(Error::LiteralOutOfBounds);
                 };
             }
-            unsafe{
-                
-                    std::ptr::copy_nonoverlapping(input.as_ptr().add(input_pos), output_ptr, literal_length);
-                    output_ptr = output_ptr.add(literal_length);
-               
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    input.as_ptr().add(input_pos),
+                    output_ptr,
+                    literal_length,
+                );
+                output_ptr = output_ptr.add(literal_length);
             }
-            input_pos+=literal_length;
+            input_pos += literal_length;
         }
-
 
         // If the input stream is emptied, we break out of the loop. This is only the case
         // in the end of the stream, since the block is intact otherwise.
-        if in_len <= input_pos { break; }
+        if in_len <= input_pos {
+            break;
+        }
 
         // Read duplicate section
         #[cfg(feature = "safe-decode")]
@@ -271,20 +277,18 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
 
         // Calculate the start of this duplicate segment. We use wrapping subtraction to avoid
         // overflow checks, which we will catch later.
-        let start_ptr = unsafe{output_ptr.sub(offset as usize)};
+        let start_ptr = unsafe { output_ptr.sub(offset as usize) };
 
         // We'll do a bound check to in safe-decode.
         #[cfg(feature = "safe-decode")]
         {
             if (start_ptr as usize) >= (output_ptr as usize) {
-                return Err(Error::OffsetOutOfBounds)
+                return Err(Error::OffsetOutOfBounds);
             };
         }
         duplicate(&mut output_ptr, start_ptr, match_length);
-
     }
     Ok(())
-
 }
 
 /// Decompress all bytes of `input`.
@@ -292,7 +296,9 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
 pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, Error> {
     // Allocate a vector to contain the decompressed stream.
     let mut vec = Vec::with_capacity(uncompressed_size + 8);
-    unsafe{vec.set_len(uncompressed_size);}
+    unsafe {
+        vec.set_len(uncompressed_size);
+    }
     decompress_into(input, &mut vec)?;
 
     Ok(vec)

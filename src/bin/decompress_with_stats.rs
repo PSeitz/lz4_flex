@@ -1,5 +1,5 @@
 //! The decompression algorithm.
-use byteorder::{LittleEndian, ByteOrder};
+use byteorder::{ByteOrder, LittleEndian};
 
 #[macro_use]
 extern crate quick_error;
@@ -21,22 +21,16 @@ quick_error! {
     }
 }
 
-
 // const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/dickens.txt");
 const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/compression_34k.txt");
 // const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/compression_66k_JSON.txt");
-// 
+//
 fn main() {
-
     let compressed = lz4_flex::compress(COMPRESSION10MB as &[u8]);
     // for _ in 0..100000 {
-        decompress(&compressed).unwrap();
+    decompress(&compressed).unwrap();
     // }
-    
 }
-
-
-
 
 /// A LZ4 decoder.
 ///
@@ -80,7 +74,7 @@ impl<'a> Decoder<'a> {
             // let res = &input[self.input_pos..self.input_pos+n];
             // Shift the stream to left, so that it is no longer the first byte.
             // *input = &input[n..];
-            self.input_pos+=n;
+            self.input_pos += n;
             // Return the former first byte.
             // res
             Ok(())
@@ -114,12 +108,13 @@ impl<'a> Decoder<'a> {
         // We cannot simply use memcpy or `extend_from_slice`, because these do not allow
         // self-referential copies: http://ticki.github.io/img/lz4_runs_encoding_diagram.svg
         // `reserve` enough space on the vector to safely copy self referential data.
-        if self.output.len() < start+match_length { // TODO handle special case
+        if self.output.len() < start + match_length {
+            // TODO handle special case
             for i in start..start + match_length {
                 let b = self.output[i];
                 self.output.push(b);
             }
-        }else{
+        } else {
             copy_on_self(&mut self.output, start, match_length);
         }
     }
@@ -139,17 +134,17 @@ impl<'a> Decoder<'a> {
     /// is encoded to _255 + 255 + 255 + 4 = 769_. The bytes after the first 4 is ignored, because
     /// 4 is the first non-0xFF byte.
     // #[inline(never)]
-    fn read_integer(&mut self) -> Result<u32, Error>  {
+    fn read_integer(&mut self) -> Result<u32, Error> {
         // We start at zero and count upwards.
-        let mut n:u32 = 0;
+        let mut n: u32 = 0;
         // If this byte takes value 255 (the maximum value it can take), another byte is read
         // and added to the sum. This repeats until a byte lower than 255 is read.
         while {
             // We add the next byte until we get a byte which we add to the counting variable.
             // self.move_cursor(&self.input, 1)?;
             // check alread done in move_cursor
-            let extra = *unsafe{self.input.get_unchecked(self.input_pos)};
-            self.input_pos+=1;
+            let extra = *unsafe { self.input.get_unchecked(self.input_pos) };
+            self.input_pos += 1;
             n += extra as u32;
 
             // We continue if we got 255.
@@ -162,8 +157,8 @@ impl<'a> Decoder<'a> {
     // #[inline(never)]
     fn read_u16(&mut self) -> Result<u16, Error> {
         // We use byteorder to read an u16 in little endian.
-        
-        let num = LittleEndian::read_u16(&self.input[self.input_pos ..]);
+
+        let num = LittleEndian::read_u16(&self.input[self.input_pos..]);
 
         self.move_cursor(&self.input, 2)?;
         Ok(num)
@@ -180,7 +175,7 @@ impl<'a> Decoder<'a> {
     ///    token, if it takes the highest value (15).
     /// 2. The literals themself.
     // #[inline(never)]
-    fn read_literal_section(&mut self) -> Result<(), Error>  {
+    fn read_literal_section(&mut self) -> Result<(), Error> {
         // The higher token is the literals part of the token. It takes a value from 0 to 15.
         let mut literal = (self.token >> 4) as usize;
 
@@ -189,7 +184,6 @@ impl<'a> Decoder<'a> {
             15 => self.literal_full += 1,
             _ => self.literal_fit += 1,
         }
-
 
         // If the initial value is 15, it is indicated that another byte will be read and added to
         // it.
@@ -204,11 +198,10 @@ impl<'a> Decoder<'a> {
         // following literal copied to the output buffer is.
 
         // Read the literals segment and output them without processing.
-        let block = &self.input[self.input_pos..self.input_pos+literal];
+        let block = &self.input[self.input_pos..self.input_pos + literal];
         self.move_cursor(&self.input, literal)?;
         Self::output(&mut self.output, block);
         Ok(())
-
     }
 
     /// Read the duplicates section of the block.
@@ -232,13 +225,11 @@ impl<'a> Decoder<'a> {
         // ratio, we start at 4.
         let mut match_length = (4 + (self.token & 0xF)) as usize;
 
-
         match match_length {
             0 => self.match_unused += 1,
             19 => self.match_full += 1,
             _ => self.match_fit += 1,
         }
-
 
         // The intial match length can maximally be 19. As with the literal length, this indicates
         // that there are more bytes to read.
@@ -248,8 +239,8 @@ impl<'a> Decoder<'a> {
             match_length += self.read_integer()? as usize;
         }
 
-        if match_length < 256  {
-            self.match_7bit_fit +=1;
+        if match_length < 256 {
+            self.match_7bit_fit += 1;
         }
 
         // We now copy from the already decompressed buffer. This allows us for storing duplicates
@@ -269,9 +260,6 @@ impl<'a> Decoder<'a> {
             Err(Error::OffsetOutOfBounds)
         }
     }
-
-
-   
 
     /// Complete the decompression by reading all the blocks.
     ///
@@ -304,7 +292,6 @@ impl<'a> Decoder<'a> {
         //     self.token = unsafe{*self.input.get_unchecked(self.input_pos)};
         //     self.input_pos+=1;
 
-
         //     // Now, we read the literals section.
         //     let mut literal = (self.token >> 4) as usize;
         //     if literal == 15 {
@@ -318,7 +305,6 @@ impl<'a> Decoder<'a> {
         //     let block = &self.input[self.input_pos..self.input_pos+literal];
         //     self.input_pos+=literal;
         //     Self::output(&mut self.output, block);
-
 
         //     // unsafe{std::ptr::copy_nonoverlapping(self.input.as_ptr().add(self.input_pos), self.output.as_mut_ptr(), literal);}
         //     // self.input_pos+=literal;
@@ -363,9 +349,6 @@ impl<'a> Decoder<'a> {
         //             extra == 0xFF
         //         } {}
 
-
-
-
         //         // match_length += self.read_integer()? as usize;
         //     }
 
@@ -388,22 +371,24 @@ impl<'a> Decoder<'a> {
             self.move_cursor(&self.input, 1)?;
 
             // check alread done in move_cursor
-            self.token = unsafe{*self.input.get_unchecked(self.input_pos - 1)};
+            self.token = unsafe { *self.input.get_unchecked(self.input_pos - 1) };
 
             // Now, we read the literals section.
             self.read_literal_section()?;
 
             let literal = (self.token >> 4) as usize;
-            let match_length = ((self.token & 0xF)) as usize;
-            if match_length == 15 || literal == 15{
+            let match_length = (self.token & 0xF) as usize;
+            if match_length == 15 || literal == 15 {
                 self.token_not_fit += 1;
-            }else{
+            } else {
                 self.token_fit += 1;
             }
 
             // If the input stream is emptied, we break out of the loop. This is only the case
             // in the end of the stream, since the block is intact otherwise.
-            if in_len == self.input_pos { break; }
+            if in_len == self.input_pos {
+                break;
+            }
 
             // Now, we read the duplicates section.
             self.read_duplicate_section()?;
@@ -442,7 +427,8 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         literal_fit: 0,
         token_not_fit: 0,
         token_fit: 0,
-    }.complete()?;
+    }
+    .complete()?;
 
     Ok(())
 }
@@ -458,13 +444,15 @@ pub fn decompress(input: &[u8]) -> Result<Vec<u8>, Error> {
     Ok(vec)
 }
 
-
 // #[inline(never)]
 fn copy_on_self(vec: &mut Vec<u8>, start: usize, num_items: usize) {
     vec.reserve(num_items);
     unsafe {
-        std::ptr::copy_nonoverlapping(vec.as_ptr().add(start), vec.as_mut_ptr().add(vec.len()), num_items);
+        std::ptr::copy_nonoverlapping(
+            vec.as_ptr().add(start),
+            vec.as_mut_ptr().add(vec.len()),
+            num_items,
+        );
         vec.set_len(vec.len() + num_items);
     }
 }
-

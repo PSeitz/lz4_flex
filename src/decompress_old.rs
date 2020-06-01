@@ -1,6 +1,6 @@
 //! The decompression algorithm.
 
-use byteorder::{LittleEndian, ByteOrder};
+use byteorder::{ByteOrder, LittleEndian};
 
 quick_error! {
     /// An error representing invalid compressed data.
@@ -49,7 +49,7 @@ impl<'a> Decoder<'a> {
             // let res = &input[self.input_pos..self.input_pos+n];
             // Shift the stream to left, so that it is no longer the first byte.
             // *input = &input[n..];
-            self.input_pos+=n;
+            self.input_pos += n;
             // Return the former first byte.
             // res
             Ok(())
@@ -83,12 +83,13 @@ impl<'a> Decoder<'a> {
         // We cannot simply use memcpy or `extend_from_slice`, because these do not allow
         // self-referential copies: http://ticki.github.io/img/lz4_runs_encoding_diagram.svg
         // `reserve` enough space on the vector to safely copy self referential data.
-        if self.output.len() < start+match_length { // TODO handle special case
+        if self.output.len() < start + match_length {
+            // TODO handle special case
             for i in start..start + match_length {
                 let b = self.output[i];
                 self.output.push(b);
             }
-        }else{
+        } else {
             copy_on_self(&mut self.output, start, match_length);
         }
     }
@@ -108,7 +109,7 @@ impl<'a> Decoder<'a> {
     /// is encoded to _255 + 255 + 255 + 4 = 769_. The bytes after the first 4 is ignored, because
     /// 4 is the first non-0xFF byte.
     // #[inline(never)]
-    fn read_integer(&mut self) -> Result<usize, Error>  {
+    fn read_integer(&mut self) -> Result<usize, Error> {
         // We start at zero and count upwards.
         let mut n = 0;
         // If this byte takes value 255 (the maximum value it can take), another byte is read
@@ -117,8 +118,8 @@ impl<'a> Decoder<'a> {
             // We add the next byte until we get a byte which we add to the counting variable.
             // self.move_cursor(&self.input, 1)?;
             // check alread done in move_cursor
-            let extra = unsafe{self.input.get_unchecked(self.input_pos)};
-            self.input_pos+=1;
+            let extra = unsafe { self.input.get_unchecked(self.input_pos) };
+            self.input_pos += 1;
             n += *extra as usize;
 
             // We continue if we got 255.
@@ -132,8 +133,8 @@ impl<'a> Decoder<'a> {
     // #[inline(never)]
     fn read_u16(&mut self) -> Result<u16, Error> {
         // We use byteorder to read an u16 in little endian.
-        
-        let num = LittleEndian::read_u16(&self.input[self.input_pos ..]);
+
+        let num = LittleEndian::read_u16(&self.input[self.input_pos..]);
 
         self.move_cursor(&self.input, 2)?;
         Ok(num)
@@ -150,7 +151,7 @@ impl<'a> Decoder<'a> {
     ///    token, if it takes the highest value (15).
     /// 2. The literals themself.
     // #[inline(never)]
-    fn read_literal_section(&mut self) -> Result<(), Error>  {
+    fn read_literal_section(&mut self) -> Result<(), Error> {
         // The higher token is the literals part of the token. It takes a value from 0 to 15.
         let mut literal = (self.token >> 4) as usize;
         // If the initial value is 15, it is indicated that another byte will be read and added to
@@ -165,11 +166,10 @@ impl<'a> Decoder<'a> {
         // following literal copied to the output buffer is.
 
         // Read the literals segment and output them without processing.
-        let block = &self.input[self.input_pos..self.input_pos+literal];
+        let block = &self.input[self.input_pos..self.input_pos + literal];
         self.move_cursor(&self.input, literal)?;
         Self::output(&mut self.output, block);
         Ok(())
-
     }
 
     /// Read the duplicates section of the block.
@@ -251,14 +251,16 @@ impl<'a> Decoder<'a> {
             self.move_cursor(&self.input, 1)?;
 
             // check alread done in move_cursor
-            self.token = unsafe{*self.input.get_unchecked(self.input_pos - 1)};
+            self.token = unsafe { *self.input.get_unchecked(self.input_pos - 1) };
 
             // Now, we read the literals section.
             self.read_literal_section()?;
 
             // If the input stream is emptied, we break out of the loop. This is only the case
             // in the end of the stream, since the block is intact otherwise.
-            if in_len == self.input_pos { break; }
+            if in_len == self.input_pos {
+                break;
+            }
 
             // Now, we read the duplicates section.
             self.read_duplicate_section()?;
@@ -277,7 +279,8 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         input_pos: 0,
         output: output,
         token: 0,
-    }.complete()?;
+    }
+    .complete()?;
 
     Ok(())
 }
@@ -293,12 +296,15 @@ pub fn decompress(input: &[u8]) -> Result<Vec<u8>, Error> {
     Ok(vec)
 }
 
-
 // #[inline(never)]
 fn copy_on_self(vec: &mut Vec<u8>, start: usize, num_items: usize) {
     vec.reserve(num_items);
     unsafe {
-        std::ptr::copy_nonoverlapping(vec.as_ptr().add(start), vec.as_mut_ptr().add(vec.len()), num_items);
+        std::ptr::copy_nonoverlapping(
+            vec.as_ptr().add(start),
+            vec.as_mut_ptr().add(vec.len()),
+            num_items,
+        );
         vec.set_len(vec.len() + num_items);
     }
 }
@@ -306,11 +312,10 @@ fn copy_on_self(vec: &mut Vec<u8>, start: usize, num_items: usize) {
 #[test]
 // #[inline(never)]
 fn test_copy_on_self() {
-    let mut data: Vec<u8>= vec![10];
+    let mut data: Vec<u8> = vec![10];
     copy_on_self(&mut data, 0, 1);
     assert_eq!(data, [10, 10]);
 }
-
 
 #[cfg(test)]
 mod test {
@@ -325,7 +330,10 @@ mod test {
     #[test]
     // #[inline(never)]
     fn multiple_repeated_blocks() {
-        assert_eq!(decompress(&[0x11, b'a', 1, 0, 0x22, b'b', b'c', 2, 0]).unwrap(), b"aaaaaabcbcbcbc");
+        assert_eq!(
+            decompress(&[0x11, b'a', 1, 0, 0x22, b'b', b'c', 2, 0]).unwrap(),
+            b"aaaaaabcbcbcbc"
+        );
     }
 
     #[test]

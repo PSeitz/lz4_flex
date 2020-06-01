@@ -1,10 +1,9 @@
 extern crate criterion;
 
 use self::criterion::*;
-use lz4::block::{compress as lz4_linked_block_compress};
+use lz4::block::compress as lz4_linked_block_compress;
 
 // use lz4_flex::{decompress, decompress_into, compress, compress_into};
-
 
 const COMPRESSION1K: &'static [u8] = include_bytes!("compression_1k.txt");
 const COMPRESSION34K: &'static [u8] = include_bytes!("compression_34k.txt");
@@ -13,7 +12,13 @@ const COMPRESSION66K: &'static [u8] = include_bytes!("compression_66k_JSON.txt")
 const COMPRESSION95K_VERY_GOOD_LOGO: &'static [u8] = include_bytes!("../logo.jpg");
 // const COMPRESSION10MB: &'static [u8] = include_bytes!("dickens.txt");
 
-const ALL: &[&[u8]] = &[COMPRESSION1K as &[u8], COMPRESSION34K as &[u8], COMPRESSION65K as &[u8], COMPRESSION66K as &[u8], COMPRESSION95K_VERY_GOOD_LOGO as &[u8]];
+const ALL: &[&[u8]] = &[
+    COMPRESSION1K as &[u8],
+    COMPRESSION34K as &[u8],
+    COMPRESSION65K as &[u8],
+    COMPRESSION66K as &[u8],
+    COMPRESSION95K_VERY_GOOD_LOGO as &[u8],
+];
 // const ALL: [&[u8]; 4] = [COMPRESSION1K as &[u8], COMPRESSION34K as &[u8], COMPRESSION65K as &[u8], COMPRESSION10MB as &[u8]];
 // const ALL: [&[u8]; 1] = [COMPRESSION66K as &[u8]];
 // const ALL: [&[u8]; 1] = [COMPRESSION65K as &[u8]];
@@ -25,15 +30,20 @@ fn bench_compression_throughput(c: &mut Criterion) {
         let input_bytes = input.len() as u64;
         group.throughput(Throughput::Bytes(input_bytes));
 
-        group.bench_with_input(BenchmarkId::new("lz4_flexx", input_bytes), &input,
-            |b, i| b.iter(|| lz4_flex::compress(&i) ));
-        group.bench_with_input(BenchmarkId::new("lz4_rust", input_bytes), &input,
-            |b, i| b.iter(|| lz4_compress::compress(&i) ));
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flexx", input_bytes),
+            &input,
+            |b, i| b.iter(|| lz4_flex::compress(&i)),
+        );
+        group.bench_with_input(BenchmarkId::new("lz4_rust", input_bytes), &input, |b, i| {
+            b.iter(|| lz4_compress::compress(&i))
+        });
 
-        group.bench_with_input(BenchmarkId::new("lz4_linked", input_bytes), &input,
-            |b, i| b.iter(|| {
-                lz4_linked_block_compress(&i, None, false)
-            } ));
+        group.bench_with_input(
+            BenchmarkId::new("lz4_linked", input_bytes),
+            &input,
+            |b, i| b.iter(|| lz4_linked_block_compress(&i, None, false)),
+        );
     }
 
     group.finish();
@@ -41,7 +51,7 @@ fn bench_compression_throughput(c: &mut Criterion) {
 
 fn bench_decompression_throughput(c: &mut Criterion) {
     let mut group = c.benchmark_group("Decompress");
-     
+
     for input in ALL.iter() {
         let input_bytes = input.len() as u64;
         group.throughput(Throughput::Bytes(input_bytes));
@@ -55,7 +65,6 @@ fn bench_decompression_throughput(c: &mut Criterion) {
         // io::copy(&mut read, &mut encoder).unwrap();
         // let (_comp_lz4, _result) = encoder.finish();
         // let comp_lz4: &[u8] = comp_lz4;
-
 
         let comp_lz4 = lz4::block::compress(&input, None, true).unwrap();
 
@@ -72,19 +81,28 @@ fn bench_decompression_throughput(c: &mut Criterion) {
         //     writer.write_all(&input).unwrap();
         // }
 
-        group.bench_with_input(BenchmarkId::new("lz4_flexx", input_bytes), &comp_flex,
-            |b, i| b.iter(|| lz4_flex::decompress(&i, input.len()) ));
-        group.bench_with_input(BenchmarkId::new("lz4_rust", input_bytes), &comp2,
-            |b, i| b.iter(|| lz4_compress::decompress(&i) ));
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flexx", input_bytes),
+            &comp_flex,
+            |b, i| b.iter(|| lz4_flex::decompress(&i, input.len())),
+        );
+        group.bench_with_input(BenchmarkId::new("lz4_rust", input_bytes), &comp2, |b, i| {
+            b.iter(|| lz4_compress::decompress(&i))
+        });
 
-        group.bench_with_input(BenchmarkId::new("lz4_linked", input_bytes), &comp_lz4,
-            |b, i| b.iter(|| {
-                let output = lz4::block::decompress(&i, None);
-                output
-            } ));
+        group.bench_with_input(
+            BenchmarkId::new("lz4_linked", input_bytes),
+            &comp_lz4,
+            |b, i| {
+                b.iter(|| {
+                    let output = lz4::block::decompress(&i, None);
+                    output
+                })
+            },
+        );
         // group.bench_with_input(BenchmarkId::new("brotli", input_bytes), &brotli,
         //     |b, i| b.iter(|| {
-                
+
         //         let mut output:Vec<u8> = vec![];
         //         // let mut writer = brotli::Compressor::new(&mut output, 4096 /* buffer size */, 2 as u32, 20);
 
@@ -104,5 +122,9 @@ fn bench_decompression_throughput(c: &mut Criterion) {
 }
 
 // criterion_group!(benches, bench_simple, bench_nested, bench_throughput);
-criterion_group!(benches, bench_decompression_throughput, bench_compression_throughput);
+criterion_group!(
+    benches,
+    bench_decompression_throughput,
+    bench_compression_throughput
+);
 criterion_main!(benches);

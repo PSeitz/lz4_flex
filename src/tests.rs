@@ -3,10 +3,10 @@
 // extern crate test;
 
 // use crate::block::compress::compress_into_2;
+use crate::{compress, decompress};
+use lz4::block::{compress as lz4_cpp_block_compress, decompress as lz4_cpp_block_decompress};
+use lz4_compress::compress as lz4_rust_compress;
 use std::str;
-use crate::{decompress, compress};
-use lz4::block::{compress as lz4_cpp_block_compress,decompress as lz4_cpp_block_decompress};
-use lz4_compress::{compress as lz4_rust_compress};
 
 const COMPRESSION1K: &'static [u8] = include_bytes!("../benches/compression_1k.txt");
 const COMPRESSION34K: &'static [u8] = include_bytes!("../benches/compression_34k.txt");
@@ -97,7 +97,7 @@ fn yopa() {
     const COMPRESSION10MB: &'static [u8] = include_bytes!("../benches/dickens.txt");
     let compressed = compress(COMPRESSION10MB);
     // println!("Compression Ratio 10MB {:?}", compressed.len() as f64/ COMPRESSION10MB.len()  as f64);
-    let _decompressed = decompress(&compressed, COMPRESSION10MB.len() ).unwrap();
+    let _decompressed = decompress(&compressed, COMPRESSION10MB.len()).unwrap();
 
     let _compressed = lz4_cpp_block_compress(COMPRESSION10MB, None, false).unwrap();
     // println!("Cpp Compression Ratio 10MB {:?}", compressed.len() as f64/ COMPRESSION10MB.len()  as f64);
@@ -132,18 +132,30 @@ fn compare_compression() {
 fn print_compression_ration(input: &'static [u8], name: &str) {
     let compressed = compress(input);
     // println!("{:?}", compressed);
-    println!("Compression Ratio {:?} {:?}", name, compressed.len() as f64/ input.len()  as f64);
+    println!(
+        "Compression Ratio {:?} {:?}",
+        name,
+        compressed.len() as f64 / input.len() as f64
+    );
     let decompressed = decompress(&compressed, input.len()).unwrap();
     assert_eq!(decompressed, input);
 
     let compressed = lz4_cpp_block_compress(input, None, false).unwrap();
     // println!("{:?}", compressed);
-    println!("Cpp Compression Ratio {:?} {:?}", name, compressed.len() as f64/ input.len()  as f64);
+    println!(
+        "Cpp Compression Ratio {:?} {:?}",
+        name,
+        compressed.len() as f64 / input.len() as f64
+    );
     let decompressed = decompress(&compressed, input.len()).unwrap();
 
     assert_eq!(decompressed, input);
     let compressed = lz4_rust_compress(input);
-    println!("lz4_rust_compress Compression Ratio {:?} {:?}", name, compressed.len() as f64/ input.len()  as f64);
+    println!(
+        "lz4_rust_compress Compression Ratio {:?} {:?}",
+        name,
+        compressed.len() as f64 / input.len() as f64
+    );
 }
 
 // #[test]
@@ -152,7 +164,6 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
 //     let compressed = compress(COMPRESSION66K);
 //     println!("Compression Ratio 66K {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as f64);
 //     let _decompressed = decompress(&compressed).unwrap();
-
 
 //     let mut vec = Vec::with_capacity(10 + (COMPRESSION66K.len() as f64 * 1.1) as usize);
 //     let input = COMPRESSION66K;
@@ -242,7 +253,7 @@ fn nulls() {
 
 #[test]
 fn compression_works() {
-    let s =r#"An iterator that knows its exact length.
+    let s = r#"An iterator that knows its exact length.
         Many Iterators don't know how many times they will iterate, but some do. If an iterator knows how many times it can iterate, providing access to that information can be useful. For example, if you want to iterate backwards, a good start is to know where the end is.
         When implementing an ExactSizeIterator, you must also implement Iterator. When doing so, the implementation of size_hint must return the exact size of the iterator.
         The len method has a default implementation, so you usually shouldn't implement it. However, you may be able to provide a more performant implementation than the default, so overriding it in this case makes sense."#;
@@ -264,19 +275,26 @@ fn big_compression() {
     assert_eq!(&decompress(&compress(&s), s.len()).unwrap(), &s);
 }
 
-
 #[cfg(test)]
 mod test_compression {
     use super::*;
 
     fn print_ratio(text: &str, val1: usize, val2: usize) {
-        println!("{:?} {:.2}", text, val1 as f32/val2 as f32);
+        println!("{:?} {:.2}", text, val1 as f32 / val2 as f32);
     }
 
     #[test]
     fn test_comp_flex() {
-        print_ratio("Ratio 1k", COMPRESSION1K.len(), compress(COMPRESSION1K).len());
-        print_ratio("Ratio 34k", COMPRESSION34K.len(), compress(COMPRESSION34K).len());
+        print_ratio(
+            "Ratio 1k",
+            COMPRESSION1K.len(),
+            compress(COMPRESSION1K).len(),
+        );
+        print_ratio(
+            "Ratio 34k",
+            COMPRESSION34K.len(),
+            compress(COMPRESSION34K).len(),
+        );
     }
 
     mod lz4_linked {
@@ -284,7 +302,10 @@ mod test_compression {
         use std::io;
         fn get_compressed_size(mut input: &[u8]) -> usize {
             let mut cache = vec![];
-            let mut encoder = lz4::EncoderBuilder::new().level(2).build(&mut cache).unwrap();
+            let mut encoder = lz4::EncoderBuilder::new()
+                .level(2)
+                .build(&mut cache)
+                .unwrap();
             io::copy(&mut input, &mut encoder).unwrap();
             let (output, _result) = encoder.finish();
             output.len()
@@ -292,11 +313,16 @@ mod test_compression {
 
         #[test]
         fn test_comp_lz4_linked() {
-            print_ratio("Ratio 1k", COMPRESSION1K.len(), get_compressed_size(COMPRESSION1K));
-            print_ratio("Ratio 34k", COMPRESSION34K.len(), get_compressed_size(COMPRESSION34K));
-
+            print_ratio(
+                "Ratio 1k",
+                COMPRESSION1K.len(),
+                get_compressed_size(COMPRESSION1K),
+            );
+            print_ratio(
+                "Ratio 34k",
+                COMPRESSION34K.len(),
+                get_compressed_size(COMPRESSION34K),
+            );
         }
     }
-
-    
 }
