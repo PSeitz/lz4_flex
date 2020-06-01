@@ -214,24 +214,28 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         // Literal Section
         // If the initial value is 15, it is indicated that another byte will be read and added to it
         let mut literal_length = (token >> 4) as usize;
-        if literal_length == 15 {
-            // The literal_length length took the maximal value, indicating that there is more than 15
-            // literal_length bytes. We read the extra integer.
-            literal_length += read_integer(input, &mut input_pos)? as usize;
+        if literal_length != 0 {
+            if literal_length == 15 {
+                // The literal_length length took the maximal value, indicating that there is more than 15
+                // literal_length bytes. We read the extra integer.
+                literal_length += read_integer(input, &mut input_pos)? as usize;
+            }
+
+            #[cfg(feature = "safe-decode")]
+            {
+                if input.len() < input_pos + literal_length {
+                    return Err(Error::LiteralOutOfBounds);
+                };
+            }
+            unsafe{
+                
+                    std::ptr::copy_nonoverlapping(input.as_ptr().add(input_pos), output_ptr, literal_length);
+                    output_ptr = output_ptr.add(literal_length);
+               
+            }
+            input_pos+=literal_length;
         }
 
-        #[cfg(feature = "safe-decode")]
-        {
-            if input.len() < input_pos + literal_length {
-                return Err(Error::LiteralOutOfBounds);
-            };
-        }
-        unsafe{
-            std::ptr::copy_nonoverlapping(input.as_ptr().add(input_pos), output_ptr, literal_length);
-            output_ptr = output_ptr.add(literal_length);
-        }
-
-        input_pos+=literal_length;
 
         // If the input stream is emptied, we break out of the loop. This is only the case
         // in the end of the stream, since the block is intact otherwise.

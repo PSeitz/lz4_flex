@@ -14,8 +14,6 @@ mod tests;
 pub use block::decompress::{decompress_into, decompress};
 pub use block::compress::{compress_into, compress};
 
-pub use block::decompress_unchecked::{decompress_into as decompress_into_unchecked, decompress as decompress_unchecked};
-
 pub use decompress_old::{decompress_into as decompress_old_into, decompress as decompress_old};
 
 const ONLY_HIGH_BIT_U8: u16 = 0b_1000_0000_0000_0000;

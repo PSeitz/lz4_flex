@@ -33,11 +33,6 @@ fn bench_compression_throughput(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("lz4_linked", input_bytes), &input,
             |b, i| b.iter(|| {
                 lz4_linked_block_compress(&i, None, false)
-                // let mut cache = vec![];
-                // let mut encoder = lz4::EncoderBuilder::new().level(0).build(&mut cache).unwrap();
-                // let mut read = **i;
-                // io::copy(&mut read, &mut encoder).unwrap();
-                // let (_output, _result) = encoder.finish();
             } ));
     }
 
@@ -79,22 +74,13 @@ fn bench_decompression_throughput(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("lz4_flexx", input_bytes), &comp_flex,
             |b, i| b.iter(|| lz4_flex::decompress(&i, input.len()) ));
-        // group.bench_with_input(BenchmarkId::new("lz4_flexx_unchecked", input_bytes), &comp_flex,
-        //     |b, i| b.iter(|| lz4_flex::decompress_unchecked(&i) ));
         group.bench_with_input(BenchmarkId::new("lz4_rust", input_bytes), &comp2,
             |b, i| b.iter(|| lz4_compress::decompress(&i) ));
 
         group.bench_with_input(BenchmarkId::new("lz4_linked", input_bytes), &comp_lz4,
             |b, i| b.iter(|| {
-                    
                 let output = lz4::block::decompress(&i, None);
                 output
-
-                // let mut output:Vec<u8> = vec![];
-                // let mut waa = *i;
-                // let mut decoder = lz4::Decoder::new(&mut waa).unwrap();
-                // io::copy(&mut decoder, &mut output).unwrap();
-                // output
             } ));
         // group.bench_with_input(BenchmarkId::new("brotli", input_bytes), &brotli,
         //     |b, i| b.iter(|| {
