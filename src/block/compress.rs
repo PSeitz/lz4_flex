@@ -4,13 +4,14 @@
 //! high performance. It has fixed memory usage, which contrary to other approachs, makes it less
 //! memory hungry.
 use crate::block::hash;
-use crate::block::wild_copy_from_src;
 use crate::block::END_OFFSET;
 use crate::block::LZ4_MIN_LENGTH;
-use crate::block::LZ4_SKIPTRIGGER;
 use crate::block::MAX_DISTANCE;
 use crate::block::MFLIMIT;
 use crate::block::MINMATCH;
+
+/// Increase step size after 1<<4 non matches
+const INCREASE_STEPSIZE_BITSHIFT: usize = 4;
 
 /// Duplication dictionary size.
 ///
@@ -128,7 +129,7 @@ fn write_integer(output_ptr: &mut *mut u8, mut n: usize) -> std::io::Result<()> 
     Ok(())
 }
 
-/// Complete the encoding into `self.output`.
+/// Handle the last bytes from the input as literals
 #[inline]
 fn handle_last_literals(
     output_ptr: &mut *mut u8,
@@ -138,7 +139,7 @@ fn handle_last_literals(
     out_ptr_start: *mut u8,
 ) -> std::io::Result<usize> {
     let lit_len = input_size - start;
-    // copy the last literals
+    
     let token = token_from_literal(lit_len);
     push_unsafe(output_ptr, token);
     if lit_len >= 0xF {
@@ -146,7 +147,7 @@ fn handle_last_literals(
     }
     // Now, write the actual literals.
     unsafe {
-        wild_copy_from_src(input.add(start), *output_ptr, lit_len); // TODO add wildcopy check 8byte
+        std::ptr::copy_nonoverlapping(input.add(start), *output_ptr, lit_len);
         *output_ptr = output_ptr.add(lit_len);
     }
     Ok(*output_ptr as usize - out_ptr_start as usize)
@@ -208,18 +209,18 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
     let mut start = cur;
 
     cur += 1;
-    let mut forward_hash = get_hash_at(input, cur, dict_bitshift);
+    // let mut forward_hash = get_hash_at(input, cur, dict_bitshift);
 
     loop {
         // Read the next block into two sections, the literals and the duplicates.
         let mut step_size;
-        let mut non_match_count = 1 << LZ4_SKIPTRIGGER;
+        let mut non_match_count = 1 << INCREASE_STEPSIZE_BITSHIFT;
         // The number of bytes before our cursor, where the duplicate starts.
         let mut next_cur = cur;
 
         while {
             non_match_count += 1;
-            step_size = non_match_count >> LZ4_SKIPTRIGGER;
+            step_size = non_match_count >> INCREASE_STEPSIZE_BITSHIFT;
 
             cur = next_cur;
             next_cur += step_size;
@@ -236,9 +237,10 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
             // Find a candidate in the dictionary with the hash of the current four bytes.
             // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
             // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
-            candidate = unsafe { *dict.get_unchecked(forward_hash) };
-            unsafe { *dict.get_unchecked_mut(forward_hash) = cur };
-            forward_hash = get_hash_at(input, next_cur, dict_bitshift);
+            let hash = get_hash_at(input, cur, dict_bitshift);
+            candidate = unsafe { *dict.get_unchecked(hash) };
+            unsafe { *dict.get_unchecked_mut(hash) = cur };
+            
 
             // Two requirements to the candidate exists:
             // - We should not return a position which is merely a hash collision, so w that the
@@ -284,7 +286,8 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
 
         // Now, write the actual literals.
         unsafe {
-            wild_copy_from_src(input.add(start), output_ptr, lit_len); // TODO add wildcopy check 8byte
+            // TODO check wildcopy 8byte
+            std::ptr::copy_nonoverlapping(input.add(start), output_ptr, lit_len);
             output_ptr = output_ptr.add(lit_len);
         }
 
@@ -303,7 +306,7 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
             write_integer(&mut output_ptr, duplicate_length - 0xF)?;
         }
         start = cur;
-        forward_hash = get_hash_at(input, cur, dict_bitshift);
+        // forward_hash = get_hash_at(input, cur, dict_bitshift);
     }
 }
 
@@ -378,28 +381,11 @@ fn read_u16_ptr(input: *const u8) -> u16 {
     }
     num
 }
-// #[inline]
-// fn read_u64(input: &[u8]) -> usize {
-//     let mut num:usize = 0;
-//     unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut usize as *mut u8, 8);}
-//     num
-// }
-// fn read_u32(input: &[u8]) -> u32 {
-//     let mut num:u32 = 0;
-//     unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut u32 as *mut u8, 4);}
-//     num
-// }
-
-// fn read_u16(input: &[u8]) -> u16 {
-//     let mut num:u16 = 0;
-//     unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut u16 as *mut u8, 2);}
-//     num
-// }
 
 #[inline]
 fn get_common_bytes(diff: usize) -> u32 {
     let tr_zeroes = diff.trailing_zeros();
-    // right shift by 3, because we are only interested in 8 bit blocks
+    // right shift by 3, because we are only interested in 8 bit blocks (1 byte)
     tr_zeroes >> 3
 }
 
