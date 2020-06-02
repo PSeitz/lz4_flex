@@ -335,19 +335,7 @@ fn copy_into_vec(out_ptr: &mut *mut u8, start: *const u8, num_items: usize) {
         // vec.set_len(vec.len() + num_items);
     }
 }
-// fn copy_into_vec(vec: &mut Vec<u8>, start: *const u8, num_items: usize) {
-//     // vec.reserve(num_items);
-//     unsafe {
-//         std::ptr::copy_nonoverlapping(start, vec.as_mut_ptr().add(vec.len()), num_items);
-//         vec.set_len(vec.len() + num_items);
-//     }
-// }
 
-// fn read_u64_ptr(input: *const u8) -> usize {
-//     let mut num:usize = 0;
-//     unsafe{std::ptr::copy_nonoverlapping(input, &mut num as *mut usize as *mut u8, 8);}
-//     num
-// }
 #[inline]
 fn read_u32_ptr(input: *const u8) -> u32 {
     let mut num: u32 = 0;
@@ -422,43 +410,38 @@ fn test_get_common_bytes() {
     assert_eq!(get_common_bytes(diff as usize), 0);
 }
 
-// #[test]
-// fn test_count_same_bytes() {
-//     // 8byte aligned block
-//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4];
-//     assert_eq!(count_same_bytes(&first, &second), 16);
+#[test]
+fn test_count_same_bytes() {
+    // 8byte aligned block, zeros and ones are added because the end/offset
+    let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    assert_eq!(unsafe{count_same_bytes(first.as_ptr(), second.as_ptr(), &mut 0, first.len())}, 16);
 
-//     // 4byte aligned block
-//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4];
-//     assert_eq!(count_same_bytes(&first, &second), 20);
+    // 4byte aligned block
+    let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
+    let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    assert_eq!(unsafe{count_same_bytes(first.as_ptr(), second.as_ptr(), &mut 0, first.len())}, 20);
 
-//     // 2byte aligned block
-//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4];
-//     assert_eq!(count_same_bytes(&first, &second), 22);
+    // 2byte aligned block
+    let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
+    let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    assert_eq!(unsafe{count_same_bytes(first.as_ptr(), second.as_ptr(), &mut 0, first.len())}, 22);
 
-//     // 1byte aligned block
-//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5];
-//     assert_eq!(count_same_bytes(&first, &second), 23);
+    // 1byte aligned block
+    let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
+    let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    assert_eq!(unsafe{count_same_bytes(first.as_ptr(), second.as_ptr(), &mut 0, first.len())}, 23);
 
-//     // 1byte aligned block - last byte different
-//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 6];
-//     assert_eq!(count_same_bytes(&first, &second), 22);
+    // 1byte aligned block - last byte different
+    let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
+    let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 6, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    assert_eq!(unsafe{count_same_bytes(first.as_ptr(), second.as_ptr(), &mut 0, first.len())}, 22);
 
-//     // 1byte aligned block
-//     let first:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 9, 5] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 6];
-//     assert_eq!(count_same_bytes(&first, &second), 21);
-// }
-
-// #[test]
-// fn yoops() {
-//     const COMPRESSION66K: &'static [u8] = include_bytes!("../../benches/compression_66k_JSON.txt");
-// }
+    // 1byte aligned block
+    let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 9, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
+    let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 6, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    assert_eq!(unsafe{count_same_bytes(first.as_ptr(), second.as_ptr(), &mut 0, first.len())}, 21);
+}
 
 #[test]
 fn test_bug() {
