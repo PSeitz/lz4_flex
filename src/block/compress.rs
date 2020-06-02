@@ -208,22 +208,18 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
     let mut cur = 0;
     let mut start = cur;
 
-    cur += 1;
-    // let mut forward_hash = get_hash_at(input, cur, dict_bitshift);
-
     loop {
         // Read the next block into two sections, the literals and the duplicates.
         let mut step_size;
         let mut non_match_count = 1 << INCREASE_STEPSIZE_BITSHIFT;
         // The number of bytes before our cursor, where the duplicate starts.
-        let mut next_cur = cur;
 
+        // Searching for duplicates
         while {
+            // Count non matches to accelerate stepsize after each 1<<INCREASE_STEPSIZE_BITSHIFT non-matches
             non_match_count += 1;
             step_size = non_match_count >> INCREASE_STEPSIZE_BITSHIFT;
-
-            cur = next_cur;
-            next_cur += step_size;
+            cur += step_size;
 
             if cur > end_pos_check {
                 return handle_last_literals(
@@ -306,7 +302,6 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
             write_integer(&mut output_ptr, duplicate_length - 0xF)?;
         }
         start = cur;
-        // forward_hash = get_hash_at(input, cur, dict_bitshift);
     }
 }
 
