@@ -42,9 +42,7 @@ static LZ4_64KLIMIT: u32 = (64 * 1024) + (MFLIMIT - 1);
 
 // hashes and right shifts to a maximum value of 16bit, 65535
 pub(crate) fn hash(sequence: u32) -> u32 {
-    let res =
-        (sequence.wrapping_mul(2654435761_u32)) >> (1 + (MINMATCH as u32 * 8) - (LZ4_HASHLOG + 1));
-    res
+    (sequence.wrapping_mul(2654435761_u32)) >> (1 + (MINMATCH as u32 * 8) - (LZ4_HASHLOG + 1))
 }
 
 fn wild_copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {

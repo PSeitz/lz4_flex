@@ -149,7 +149,7 @@ fn handle_last_literals(
         wild_copy_from_src(input.add(start), *output_ptr, lit_len); // TODO add wildcopy check 8byte
         *output_ptr = output_ptr.add(lit_len);
     }
-    return Ok(*output_ptr as usize - out_ptr_start as usize);
+    Ok(*output_ptr as usize - out_ptr_start as usize)
 }
 
 /// Compress all bytes of `input` into `output`.
@@ -166,11 +166,11 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
     // Shift the hash value for the dictionary to the right, so match the dictionary size.
     let (dict_size, dict_bitshift) = match input.len() {
         0..=500 => (128, 9),
-        500..=1_000 => (256, 8),
-        1_000..=4_000 => (512, 7),
-        4_000..=8_000 => (1024, 6),
-        8_000..=16_000 => (2048, 5),
-        16_000..=30_000 => (8192, 3),
+        501..=1_000 => (256, 8),
+        1_001..=4_000 => (512, 7),
+        4_001..=8_000 => (1024, 6),
+        8_001..=16_000 => (2048, 5),
+        16_001..=30_000 => (8192, 3),
         // 100_000..=400_000 => (8192, 3),
         _ => (16384, 2),
     };

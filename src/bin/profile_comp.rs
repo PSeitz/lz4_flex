@@ -1,7 +1,7 @@
 /// Duplicate code here for analysis with VTune
 extern crate lz4_flex;
 
-const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/dickens.txt");
+const COMPRESSION10MB: &[u8] = include_bytes!("../../benches/dickens.txt");
 
 fn main() {
     // use cpuprofiler::PROFILER;
@@ -28,9 +28,7 @@ const END_OFFSET: usize = 5;
 // static LZ4_64KLIMIT: u32 = (64 * 1024) + (MFLIMIT - 1);
 
 pub(crate) fn hash(sequence: u32) -> u32 {
-    let res =
-        (sequence.wrapping_mul(2654435761_u32)) >> (1 + (MINMATCH as u32 * 8) - (LZ4_HASHLOG + 1));
-    res
+    (sequence.wrapping_mul(2654435761_u32)) >> (1 + (MINMATCH as u32 * 8) - (LZ4_HASHLOG + 1))
 }
 
 fn wild_copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
@@ -201,7 +199,8 @@ impl Encoder {
             wild_copy_from_src(self.input.add(start), self.output_ptr, lit_len); // TODO add wildcopy check 8byte
             self.output_ptr = self.output_ptr.add(lit_len);
         }
-        return Ok(self.output_ptr as usize - out_ptr_start as usize);
+
+        Ok(self.output_ptr as usize - out_ptr_start as usize)
     }
 
     #[inline(never)]
@@ -360,12 +359,12 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
     // TODO check dictionary sizes for input input_sizes
     let (dict_size, dict_bitshift) = match input.len() {
         0..=500 => (128, 9),
-        500..=1_000 => (256, 8),
-        1_000..=4_000 => (512, 7),
-        4_000..=8_000 => (1024, 6),
-        8_000..=16_000 => (2048, 5),
-        16_000..=100_000 => (4096, 4),
-        100_000..=400_000 => (8192, 3),
+        501..=1_000 => (256, 8),
+        1_001..=4_000 => (512, 7),
+        4_001..=8_000 => (1024, 6),
+        8_001..=16_000 => (2048, 5),
+        16_001..=100_000 => (4096, 4),
+        100_001..=400_000 => (8192, 3),
         _ => (16384, 2),
     };
     let dict = vec![0; dict_size];
@@ -374,7 +373,7 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
         input: input.as_ptr(),
         input_size: input.len(),
         output_ptr: output.as_mut_ptr(),
-        dict_bitshift: dict_bitshift,
+        dict_bitshift,
         // cur: 0,
         dict,
     }

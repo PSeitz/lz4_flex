@@ -3,7 +3,7 @@ extern crate lz4_flex;
 #[macro_use]
 extern crate quick_error;
 
-const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/dickens.txt");
+const COMPRESSION10MB: &[u8] = include_bytes!("../../benches/dickens.txt");
 // const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/compression_66k_JSON.txt");
 
 fn main() {
@@ -187,11 +187,6 @@ impl<'a> Decoder<'a> {
                     literal_length += self.read_integer()? as usize;
                 }
 
-                if cfg!(feature = "safe-decode") {
-                    if self.input.len() < self.input_pos + literal_length {
-                        return Err(Error::ExpectedAnotherByte);
-                    };
-                }
                 unsafe {
                     std::ptr::copy_nonoverlapping(
                         self.input.as_ptr().add(self.input_pos),
@@ -272,7 +267,7 @@ impl<'a> Decoder<'a> {
 pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> {
     // Decode into our vector.
     Decoder {
-        input: input,
+        input,
         input_pos: 0,
         output_ptr: output.as_mut_ptr(),
         #[cfg(feature = "safe-decode")]

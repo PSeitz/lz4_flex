@@ -22,7 +22,7 @@ quick_error! {
 }
 
 // const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/dickens.txt");
-const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/compression_34k.txt");
+const COMPRESSION10MB: &[u8] = include_bytes!("../../benches/compression_34k.txt");
 // const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/compression_66k_JSON.txt");
 //
 fn main() {
@@ -414,9 +414,9 @@ impl<'a> Decoder<'a> {
 pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> {
     // Decode into our vector.
     Decoder {
-        input: input,
+        input,
         input_pos: 0,
-        output: output,
+        output,
         token: 0,
         match_unused: 0,
         match_full: 0,
