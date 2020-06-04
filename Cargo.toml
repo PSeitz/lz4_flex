@@ -44,3 +44,4 @@ harness = false
 default = ["safe-decode"]
 
 safe-decode = []
+safe-encode = []
