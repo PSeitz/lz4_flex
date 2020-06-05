@@ -31,7 +31,6 @@ const MAX_DISTANCE: usize = (1 << MAXD_LOG) - 1;
 const MATCH_LENGTH_MASK: u32 = (1_u32 << 4) - 1; // 0b1111 / 15
 
 const MINMATCH: usize = 4;
-const LZ4_HASHLOG: u32 = 16;
 
 #[allow(dead_code)]
 const FASTLOOP_SAFE_DISTANCE: usize = 64;
@@ -40,21 +39,16 @@ const FASTLOOP_SAFE_DISTANCE: usize = 64;
 #[allow(dead_code)]
 static LZ4_64KLIMIT: u32 = (64 * 1024) + (MFLIMIT - 1);
 
-// hashes and right shifts to a maximum value of 16bit, 65535
-pub(crate) fn hash(sequence: u32) -> u32 {
-    (sequence.wrapping_mul(2654435761_u32)) >> (1 + (MINMATCH as u32 * 8) - (LZ4_HASHLOG + 1))
-}
-
-fn wild_copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
-    unsafe {
-        let dst_ptr_end = dst_ptr.add(num_items);
-        while (dst_ptr as usize) < dst_ptr_end as usize {
-            std::ptr::copy_nonoverlapping(source, dst_ptr, 16);
-            source = source.add(16);
-            dst_ptr = dst_ptr.add(16);
-        }
-    }
-}
+// fn wild_copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
+//     unsafe {
+//         let dst_ptr_end = dst_ptr.add(num_items);
+//         while (dst_ptr as usize) < dst_ptr_end as usize {
+//             std::ptr::copy_nonoverlapping(source, dst_ptr, 16);
+//             source = source.add(16);
+//             dst_ptr = dst_ptr.add(16);
+//         }
+//     }
+// }
 
 fn wild_copy_from_src_8(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
     unsafe {
