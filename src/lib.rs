@@ -10,5 +10,9 @@ mod block;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+#[macro_use] 
+extern crate more_asserts;
+
 pub use block::compress::{compress, compress_into};
 pub use block::decompress::{decompress, decompress_into};

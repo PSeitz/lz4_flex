@@ -96,37 +96,36 @@ fn inverse(s: &str) {
 fn yopa() {
     const COMPRESSION10MB: &'static [u8] = include_bytes!("../benches/dickens.txt");
     let compressed = compress(COMPRESSION10MB);
-    // println!("Compression Ratio 10MB {:?}", compressed.len() as f64/ COMPRESSION10MB.len()  as f64);
-    let _decompressed = decompress(&compressed, COMPRESSION10MB.len()).unwrap();
+    decompress(&compressed, COMPRESSION10MB.len()).unwrap();
 
-    let _compressed = lz4_cpp_block_compress(COMPRESSION10MB, None, false).unwrap();
-    // println!("Cpp Compression Ratio 10MB {:?}", compressed.len() as f64/ COMPRESSION10MB.len()  as f64);
+    lz4_cpp_block_compress(COMPRESSION10MB, None, false).unwrap();
 
     const COMPRESSION66K: &'static [u8] = include_bytes!("../benches/compression_65k.txt");
     let compressed = compress(COMPRESSION66K);
-    // println!("Compression Ratio 66K {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as f64);
-    let _decompressed = decompress(&compressed, COMPRESSION66K.len()).unwrap();
+    decompress(&compressed, COMPRESSION66K.len()).unwrap();
 
-    let _compressed = lz4_cpp_block_compress(COMPRESSION66K, None, false).unwrap();
-    // println!("Cpp Compression Ratio 66K {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as f64);
+    lz4_cpp_block_compress(COMPRESSION66K, None, false).unwrap();
 
     const COMPRESSION34K: &'static [u8] = include_bytes!("../benches/compression_34k.txt");
     let compressed = compress(COMPRESSION34K);
-    // println!("Compression Ratio 34K {:?}", compressed.len() as f64/ COMPRESSION34K.len()  as f64);
-    let _decompressed = decompress(&compressed, COMPRESSION34K.len()).unwrap();
+    decompress(&compressed, COMPRESSION34K.len()).unwrap();
 
-    let _compressed = lz4_cpp_block_compress(COMPRESSION34K, None, false).unwrap();
-    // println!("Cpp Compression Ratio 34K {:?}", compressed.len() as f64/ COMPRESSION34K.len() as f64);
+    lz4_cpp_block_compress(COMPRESSION34K, None, false).unwrap();
 
-    let _compressed = lz4_rust_compress(COMPRESSION34K);
-    // println!("lz4_rust_compress Compression Ratio 34K {:?}", compressed.len() as f64/ COMPRESSION34K.len()  as f64);
+    lz4_rust_compress(COMPRESSION34K);
 }
 
 #[test]
 fn compare_compression() {
     print_compression_ration(include_bytes!("../benches/compression_34k.txt"), "34k");
-    print_compression_ration(include_bytes!("../benches/compression_65k.txt"), "65k");
-    print_compression_ration(include_bytes!("../benches/compression_66k_JSON.txt"), "66k");
+}
+
+#[test]
+fn test_minimum_compression_ratio() {
+    let input = include_bytes!("../benches/compression_34k.txt");
+    let compressed = compress(input);
+    let ratio = compressed.len() as f64 / input.len() as f64;
+    assert_lt!(ratio, 0.58);
 }
 
 fn print_compression_ration(input: &'static [u8], name: &str) {
@@ -194,6 +193,10 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
 fn test_end_offset() {
     inverse("AAAAAAAAAAAAAAAAAAAAAAAAaAAAAAAAAAAAAAAAAAAAAAAAA");
     // inverse("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAA");
+}
+#[test]
+fn small_compressible() {
+    inverse("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBa");
 }
 
 #[test]

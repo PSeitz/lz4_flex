@@ -31,6 +31,7 @@ criterion = "0.3.1"
 lz4-compress = "0.1.1"
 lz4 = "1.23.1"
 brotli = "3.3.0"
+more-asserts = "0.2.1"
 
 [[bin]]
 name = "profile_comp"
