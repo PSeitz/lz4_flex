@@ -75,8 +75,8 @@ const COMPRESSION34K: &'static [u8] = include_bytes!("../benches/compression_34k
 /// Test that the compressed string decompresses to the original string.
 fn inverse(s: &str) {
     // compress with rust, decompress with rust
-    let compressed = compress(s.as_bytes());
-    let decompressed = decompress(&compressed, s.len()).unwrap();
+    let compressed_flex = compress(s.as_bytes());
+    let decompressed = decompress(&compressed_flex, s.len()).unwrap();
     assert_eq!(decompressed, s.as_bytes());
 
     // compress with lz4 cpp, decompress with rust
@@ -86,8 +86,8 @@ fn inverse(s: &str) {
 
     if s.len() != 0 {
         // compress with rust, decompress with lz4 cpp
-        let compressed = compress(s.as_bytes());
-        let decompressed = lz4_cpp_block_decompress(&compressed, Some(s.len() as i32)).unwrap();
+        // let compressed = compress(s.as_bytes());
+        let decompressed = lz4_cpp_block_decompress(&compressed_flex, Some(s.len() as i32)).unwrap();
         assert_eq!(decompressed, s.as_bytes());
     }
 }

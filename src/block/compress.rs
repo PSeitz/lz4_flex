@@ -53,37 +53,53 @@ fn token_from_literal(lit_len: usize) -> u8 {
 
 /// Counts the number of same bytes in two byte streams.
 #[inline]
+#[cfg(feature = "safe-encode")]
+fn count_same_bytes(
+    first: &[u8],
+    second: &[u8],
+    cur: &mut usize,
+) -> usize {
+
+    let cur_slice = &first[*cur.. first.len() - END_OFFSET];
+
+    let mut num = 0;
+
+    for (block1, block2) in cur_slice
+        .chunks_exact(8)
+        .zip(second.chunks_exact(8)) {
+
+        let input_block = read_usize_ptr(block1.as_ptr());
+        let match_block = read_usize_ptr(block2.as_ptr());
+
+        if input_block == match_block {
+            num += 8;
+        }else{
+            let diff = input_block ^ match_block;
+            num += get_common_bytes(diff) as usize;
+            break;
+        }
+    }
+
+    *cur += num;
+    return num;
+
+}
+
+/// Counts the number of same bytes in two byte streams.
+/// Counts the number of same bytes in two byte streams.
+#[inline]
+#[cfg(not(feature = "safe-encode"))]
 fn count_same_bytes(
     first: &[u8],
     mut second: &[u8],
-    // first: *const u8,
-    // mut second: *const u8,
     cur: &mut usize,
-    // input_size: usize,
 ) -> usize {
     let start = *cur;
-
-    // let num_group = first
-    //     .chunks_exact(8)
-    //     .zip(second.chunks_exact(8))
-    //     .take_while(|&(a, b)| a == b)
-    //     .count() * 8;
-
-    // let num = first[num_group..]
-    //     .iter()
-    //     .zip(&second[num_group..])
-    //     .take_while(|&(a, b)| a == b)
-    //     .count();
-
-    // let same_bytes = num + num_group;
-
-    // *cur += same_bytes;
-    // return same_bytes;
 
     // compare 4/8 bytes blocks depending on the arch
     const STEP_SIZE: usize = std::mem::size_of::<usize>();
     while *cur + STEP_SIZE + END_OFFSET < first.len() {
-        let diff = read_usize_ptr(first[*cur..].as_ptr()) ^ read_usize_ptr(second.as_ptr());
+        let diff = read_usize_ptr(unsafe{first.as_ptr().add(*cur)}) ^ read_usize_ptr(second.as_ptr());
 
         if diff == 0 {
             *cur += STEP_SIZE;
@@ -99,7 +115,7 @@ fn count_same_bytes(
     #[cfg(target_pointer_width = "64")]
     {
         if *cur + 4 + END_OFFSET < first.len() {
-            let diff = read_u32_ptr(first[*cur..].as_ptr()) ^ read_u32_ptr(second.as_ptr());
+            let diff = read_u32_ptr(unsafe{first.as_ptr().add(*cur)}) ^ read_u32_ptr(second.as_ptr());
 
             if diff == 0 {
                 *cur += 4;
@@ -113,7 +129,7 @@ fn count_same_bytes(
 
     // compare 2 bytes block
     if *cur + 2 + END_OFFSET < first.len() {
-        let diff = read_u16_ptr(first[*cur..].as_ptr()) ^ read_u16_ptr(second.as_ptr());
+        let diff = read_u16_ptr(unsafe{first.as_ptr().add(*cur)}) ^ read_u16_ptr(second.as_ptr());
 
         if diff == 0 {
             *cur += 2;
@@ -125,7 +141,7 @@ fn count_same_bytes(
     }
 
     // TODO add end_pos_check, last 5 bytes should be literals
-    if *cur + 1 + END_OFFSET < first.len() && unsafe{first[*cur..].as_ptr().read()} == unsafe{second.as_ptr().read()} {
+    if *cur + 1 + END_OFFSET < first.len() && unsafe{first.as_ptr().add(*cur).read()} == unsafe{second.as_ptr().read()} {
         *cur += 1;
     }
 
@@ -139,17 +155,9 @@ fn write_integer(output: &mut Vec<u8>, mut n: usize) -> std::io::Result<()> {
     while n >= 0xFF {
         n -= 0xFF;
         push_byte(output, 0xFF);
-        // unsafe {
-        //     output_ptr.write(0xFF);
-        //     *output_ptr = output_ptr.add(1);
-        // }
     }
 
     // Write the remaining byte.
-    // unsafe {
-    //     output_ptr.write(n as u8);
-    //     *output_ptr = output_ptr.add(1);
-    // }
     push_byte(output, n as u8);
     Ok(())
 }
@@ -224,6 +232,9 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
     let hash = get_hash_at(input, 0, dict_bitshift);
     dict[hash] = 0;
 
+    assert!(LZ4_MIN_LENGTH as usize > END_OFFSET);
+    // let input = &input[..input.len() - END_OFFSET];
+
     let end_pos_check = input_size - MFLIMIT as usize;
     let mut candidate;
     let mut cur = 0;
@@ -278,10 +289,8 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
 
         let offset = (cur - candidate) as u16;
         cur += MINMATCH;
-        let duplicate_length = unsafe {
-            count_same_bytes(input, &input[candidate + MINMATCH..], &mut cur)
-        };
-
+        let duplicate_length = 
+            count_same_bytes(input, &input[candidate + MINMATCH..], &mut cur);
         let hash = get_hash_at(input, cur - 2, dict_bitshift);
         dict[hash] = cur - 2;
 

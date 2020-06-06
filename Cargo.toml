@@ -40,7 +40,6 @@ name = "profile_comp"
 name = "bench"
 harness = false
 
-
 [features]
 default = ["safe-decode"]
 

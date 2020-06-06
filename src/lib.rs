@@ -7,6 +7,7 @@ extern crate byteorder;
 extern crate quick_error;
 
 mod block;
+mod frame;
 #[cfg(test)]
 mod tests;
 
@@ -14,5 +15,6 @@ mod tests;
 #[macro_use] 
 extern crate more_asserts;
 
+pub use frame::compress::{compress as frame_compress};
 pub use block::compress::{compress, compress_into};
 pub use block::decompress::{decompress, decompress_into};
