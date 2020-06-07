@@ -9,6 +9,9 @@ use crate::block::MAX_DISTANCE;
 use crate::block::MFLIMIT;
 use crate::block::MINMATCH;
 
+#[cfg(feature = "safe-encode")]
+use std::convert::TryInto;
+
 /// Increase step size after 1<<4 non matches
 const INCREASE_STEPSIZE_BITSHIFT: usize = 4;
 
@@ -26,12 +29,16 @@ pub fn hash(sequence: u32) -> u32 {
 ///
 /// This will read a native-endian 4-byte integer from some position.
 #[inline]
+#[cfg(not(feature = "safe-encode"))]
 fn get_batch(input: &[u8], n: usize) -> u32 {
-    #[cfg(feature = "safe-encode")]
-    {
-        assert!(input.len() >= n + 4);
-    }
     unsafe{read_u32_ptr(input.as_ptr().add(n))}
+}
+
+#[inline]
+#[cfg(feature = "safe-encode")]
+fn get_batch(input: &[u8], n: usize) -> u32 {
+    let arr: &[u8; 4]  = input[n .. n + 4].try_into().unwrap();
+    as_u32_le(arr)
 }
 
 #[inline]
@@ -68,8 +75,8 @@ fn count_same_bytes(
         .chunks_exact(8)
         .zip(second.chunks_exact(8)) {
 
-        let input_block = read_usize_ptr(block1.as_ptr());
-        let match_block = read_usize_ptr(block2.as_ptr());
+        let input_block = usize::from_le(as_usize_le(block1));
+        let match_block = usize::from_le(as_usize_le(block2));
 
         if input_block == match_block {
             num += 8;
@@ -83,6 +90,28 @@ fn count_same_bytes(
     *cur += num;
     return num;
 
+}
+
+#[inline]
+#[cfg(feature = "safe-encode")]
+fn as_usize_le(array: &[u8]) -> usize {
+    ((array[0] as usize) <<  0) |
+    ((array[1] as usize) <<  8) |
+    ((array[2] as usize) << 16) |
+    ((array[3] as usize) << 24) |
+    ((array[4] as usize) << 32) |
+    ((array[5] as usize) << 40) |
+    ((array[6] as usize) << 48) |
+    ((array[7] as usize) << 56)
+}
+
+#[inline]
+#[cfg(feature = "safe-encode")]
+fn as_u32_le(array: &[u8; 4]) -> u32 {
+    ((array[0] as u32) <<  0) |
+    ((array[1] as u32) <<  8) |
+    ((array[2] as u32) << 16) |
+    ((array[3] as u32) << 24)
 }
 
 /// Counts the number of same bytes in two byte streams.
@@ -373,8 +402,8 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
     vec
 }
 
-
 #[inline]
+#[cfg(not(feature = "safe-encode"))]
 fn read_u32_ptr(input: *const u8) -> u32 {
     let mut num: u32 = 0;
     unsafe {
@@ -382,7 +411,9 @@ fn read_u32_ptr(input: *const u8) -> u32 {
     }
     num
 }
+
 #[inline]
+#[cfg(not(feature = "safe-encode"))]
 fn read_usize_ptr(input: *const u8) -> usize {
     let mut num: usize = 0;
     unsafe {
@@ -395,6 +426,7 @@ fn read_usize_ptr(input: *const u8) -> usize {
     num
 }
 #[inline]
+#[cfg(not(feature = "safe-encode"))]
 fn read_u16_ptr(input: *const u8) -> u16 {
     let mut num: u16 = 0;
     unsafe {
@@ -412,6 +444,7 @@ fn get_common_bytes(diff: usize) -> u32 {
 
 #[test]
 #[cfg(target_pointer_width = "64")]
+#[cfg(not(feature = "safe-encode"))]
 fn test_get_common_bytes() {
     let num1 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 1].as_ptr());
     let num2 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 2].as_ptr());

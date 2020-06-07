@@ -24,13 +24,12 @@ codegen-units = 1
 debug = false
 lto = true
 opt-level = 3
-panic = "unwind"
 
 [dev-dependencies]
-criterion = "0.3.1"
+# criterion = "0.3.1"
 lz4-compress = "0.1.1"
 lz4 = "1.23.1"
-brotli = "3.3.0"
+# brotli = "3.3.0"
 more-asserts = "0.2.1"
 
 [[bin]]
@@ -38,7 +37,7 @@ name = "profile_comp"
 
 [[bench]]
 name = "bench"
-harness = false
+# harness = false
 
 [features]
 default = ["safe-decode"]
