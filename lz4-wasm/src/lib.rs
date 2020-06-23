@@ -11,18 +11,8 @@ use wasm_bindgen::prelude::*;
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[wasm_bindgen]
-extern {
-    fn alert(s: &str);
-}
-
-#[wasm_bindgen]
-pub fn greet() {
-    alert("Hello, lz4-wasm!");
-}
-
-#[wasm_bindgen]
-pub fn compress(input: &str) -> Vec<u8>{
-    compress_prepend_size(input.as_bytes())
+pub fn compress(input: &[u8]) -> Vec<u8>{
+    compress_prepend_size(input)
 }
 
 #[wasm_bindgen]
