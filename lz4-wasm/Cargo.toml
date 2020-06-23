@@ -1,5 +1,5 @@
 [package]
-authors = ["Pascal Seitz <pascal.seitz@sap.com>"]
+authors = ["Pascal Seitz <pascal.seitz@gmail.com>"]
 edition = "2018"
 name = "lz4-wasm"
 version = "0.1.0"
