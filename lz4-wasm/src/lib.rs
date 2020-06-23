@@ -1,5 +1,7 @@
 mod utils;
 
+use lz4_flex::block::compress::compress_prepend_size;
+use lz4_flex::block::decompress::decompress_size_prepended;
 use wasm_bindgen::prelude::*;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
@@ -20,10 +22,10 @@ pub fn greet() {
 
 #[wasm_bindgen]
 pub fn compress(input: &str) -> Vec<u8>{
-    lz4_flex::compress(input.as_bytes())
+    compress_prepend_size(input.as_bytes())
 }
 
 #[wasm_bindgen]
 pub fn decompress(input: &[u8]) -> Vec<u8>{
-    lz4_flex::decompress(input)
+    decompress_size_prepended(input).unwrap()
 }
