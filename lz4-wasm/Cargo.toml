@@ -2,7 +2,7 @@
 authors = ["Pascal Seitz <pascal.seitz@gmail.com>"]
 edition = "2018"
 name = "lz4-wasm"
-version = "0.1.3"
+version = "0.1.4"
 [dependencies]
 wasm-bindgen = "0.2.63"
 
