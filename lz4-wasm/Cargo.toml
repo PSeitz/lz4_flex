@@ -1,0 +1,29 @@
+[package]
+authors = ["Pascal Seitz <pascal.seitz@sap.com>"]
+edition = "2018"
+name = "lz4-wasm"
+version = "0.1.0"
+[dependencies]
+wasm-bindgen = "0.2.63"
+
+[dependencies.console_error_panic_hook]
+optional = true
+version = "0.1.6"
+
+[dependencies.lz4_flex]
+path = "../"
+
+[dependencies.wee_alloc]
+optional = true
+version = "0.4.5"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.13"
+
+[features]
+default = ["console_error_panic_hook"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+[profile.release]
+opt-level = "s"

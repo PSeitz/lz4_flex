@@ -392,14 +392,31 @@ fn copy_literals(output: &mut Vec<u8>, input: &[u8]) {
     }
 }
 
+
+/// Compress all bytes of `input` into `output`.
+#[inline]
+pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
+    // In most cases, the compression won't expand the size, so we set the input size as capacity.
+    let mut compressed = Vec::with_capacity(16 + 4 + (input.len() as f64 * 1.1) as usize);
+    unsafe{compressed.set_len(4)};
+    compress_into(input, &mut compressed).unwrap();
+    let size = input.len() as u32;
+    compressed[0] = size as u8;
+    compressed[1] = (size >> 8) as u8;
+    compressed[2] = (size >> 16) as u8;
+    compressed[3] = (size >> 24) as u8;
+    compressed
+}
+
+
 /// Compress all bytes of `input`.
 #[inline]
 pub fn compress(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
-    let mut vec = Vec::with_capacity(16 + (input.len() as f64 * 1.1) as usize);
+    let mut compressed = Vec::with_capacity(16 + (input.len() as f64 * 1.1) as usize);
 
-    compress_into(input, &mut vec).unwrap();
-    vec
+    compress_into(input, &mut compressed).unwrap();
+    compressed
 }
 
 #[inline]

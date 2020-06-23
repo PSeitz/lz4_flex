@@ -2,6 +2,9 @@
 pub mod compress;
 pub mod decompress;
 
+pub use compress::compress_prepend_size;
+pub use decompress::decompress_size_prepended;
+
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
 /// The last match must start at least 12 bytes before the end of block. The last match is part of the penultimate sequence.
 /// It is followed by the last sequence, which contains only literals.

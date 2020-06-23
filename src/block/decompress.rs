@@ -298,6 +298,21 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
     Ok(())
 }
 
+
+/// Decompress all bytes of `input`.
+#[inline]
+pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, Error> {
+    let uncompressed_size = (input[0] as usize) | (input[1] as usize) << 8 | (input[2] as usize) << 16 | (input[3] as usize) << 24;
+    // Allocate a vector to contain the decompressed stream.
+    let mut vec = Vec::with_capacity(uncompressed_size + 8);
+    unsafe {
+        vec.set_len(uncompressed_size);
+    }
+    decompress_into(&input[4..], &mut vec)?;
+
+    Ok(vec)
+}
+
 /// Decompress all bytes of `input`.
 #[inline]
 pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, Error> {

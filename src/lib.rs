@@ -6,8 +6,8 @@ extern crate byteorder;
 #[macro_use]
 extern crate quick_error;
 
-mod block;
-mod frame;
+pub mod block;
+pub mod frame;
 #[cfg(test)]
 mod tests;
 

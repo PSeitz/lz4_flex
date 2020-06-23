@@ -4,6 +4,7 @@
 
 // use crate::block::compress::compress_into_2;
 use crate::{compress, decompress};
+use crate::block::{compress_prepend_size, decompress_size_prepended};
 use lz4::block::{compress as lz4_cpp_block_compress, decompress as lz4_cpp_block_decompress};
 use lz4_compress::compress as lz4_rust_compress;
 use std::str;
@@ -90,6 +91,17 @@ fn inverse(s: &str) {
         let decompressed = lz4_cpp_block_decompress(&compressed_flex, Some(s.len() as i32)).unwrap();
         assert_eq!(decompressed, s.as_bytes());
     }
+
+    // compress with rust, decompress with rust
+    let compressed_flex = compress(s.as_bytes());
+    let decompressed = decompress(&compressed_flex, s.len()).unwrap();
+    assert_eq!(decompressed, s.as_bytes());
+
+    // compress with rust, decompress with rust, prepend size
+    let compressed_flex = compress_prepend_size(s.as_bytes());
+    let decompressed = decompress_size_prepended(&compressed_flex).unwrap();
+    assert_eq!(decompressed, s.as_bytes());
+
 }
 
 #[test]
