@@ -6,8 +6,8 @@ quick_error! {
     #[derive(Debug)]
     pub enum Error {
         /// Literal is out of bounds of the input
-        OutputTooSmall {
-            description("Output is too small for the decompressed data")
+        OutputTooSmall{expected_size:usize, actual_size:usize} {
+            display("Output ({:?}) is too small for the decompressed data, {:?}", actual_size, expected_size)
         }
         /// Literal is out of bounds of the input
         LiteralOutOfBounds {
@@ -188,11 +188,12 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
 
             #[cfg(feature = "safe-decode")]
             {
+                // Check if literal is out of bounds for the input, and if there is enough space on the output
                 if input.len() < input_pos + literal_length {
                     return Err(Error::LiteralOutOfBounds);
                 };
                 if output.len() < (output_ptr as usize - output_start + literal_length) {
-                    return Err(Error::OutputTooSmall);
+                    return Err(Error::OutputTooSmall{expected_size: (output_ptr as usize - output_start + literal_length), actual_size: output.len()});
                 };
             }
 
@@ -234,8 +235,12 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
 
             #[cfg(feature = "safe-decode")]
             {
+                // Check if literal is out of bounds for the input, and if there is enough space on the output
                 if input.len() < input_pos + literal_length {
                     return Err(Error::LiteralOutOfBounds);
+                };
+                if output.len() < (output_ptr as usize - output_start + literal_length) {
+                    return Err(Error::OutputTooSmall{expected_size: (output_ptr as usize - output_start + literal_length), actual_size: output.len()});
                 };
             }
             unsafe {
@@ -259,6 +264,9 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         #[cfg(feature = "safe-decode")]
         {
             if input_pos + 2 >= input.len() {
+                return Err(Error::OffsetOutOfBounds);
+            }
+            if input_pos + 2 >= output.len() {
                 return Err(Error::OffsetOutOfBounds);
             }
         }
