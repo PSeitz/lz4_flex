@@ -20,7 +20,6 @@ safe-decode is enabled by default. Currently it adds more checks to the unsafe c
 
 safe-encode will switch the compression to completely safe rust code.
 */
-extern crate byteorder;
 #[macro_use]
 extern crate quick_error;
 
