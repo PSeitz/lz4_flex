@@ -12,6 +12,7 @@ include = ["src/**/*", "README.md"]
 [[bench]]
 harness = false
 name = "crit_bench"
+path = "benches/crit_bench.rs"
 
 [[bin]]
 name = "profile_comp"
