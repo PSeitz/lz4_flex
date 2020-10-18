@@ -4,6 +4,7 @@ description = "Pure Rust implementation of raw LZ4 compression/decompression."
 edition = "2018"
 keywords = ["compression", "lz4", "compress", "decompression", "decompress"]
 name = "lz4_flex"
+homepage = "https://github.com/pseitz/lz4_flex"
 repository = "https://github.com/pseitz/lz4_flex"
 license = "MIT"
 version = "0.3.1"
