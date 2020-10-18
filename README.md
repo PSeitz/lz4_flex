@@ -30,6 +30,7 @@ fn main(){
 - Very good logo
 - LZ4 Block format
 - High performance
+- 1s clean release build time
 - feature flags to configure safe/unsafe code usage
 
 ## Benchmarks
