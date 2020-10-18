@@ -2,12 +2,13 @@
 authors = ["Pascal Seitz <pascal.seitz@gmail.com>", "ticki <Ticki@users.noreply.github.com>"]
 description = "Pure Rust implementation of raw LZ4 compression/decompression."
 edition = "2018"
-keywords = ["compression", "lz4", "compress", "decompression", "decompress"]
+keywords = ["compression", "compress", "lz4", "compress", "decompression", "decompress", "fast"]
 name = "lz4_flex"
 homepage = "https://github.com/pseitz/lz4_flex"
 repository = "https://github.com/pseitz/lz4_flex"
+readme = "README.md"
 license = "MIT"
-version = "0.3.2"
+version = "0.3.3"
 include = ["src/lib.rs", "src/frame/**/*", "src/block/**/*", "README.md"]
 
 [[bench]]
