@@ -33,6 +33,16 @@ Currently 3 implementations are compared, this one, the redox version and the c+
 
 `cargo bench`
 
+### Results v0.3 18-10-2020
+Executed on Macbook Pro 2017 i7
+
+![Compress](./compress_bench.svg)
+<img src="./compress_bench.svg">
+
+![Decompress](./decompress_bench.svg)
+<img src="./decompress_bench.svg">
+
+
 
 ## Fuzzer
 This fuzz target fuzzes, and asserts compression and decompression returns the original input.
