@@ -136,13 +136,16 @@ fn is_safe_distance(input_pos: usize, in_len: usize) -> bool {
     input_pos < in_len
 }
 
+/// We copy 24 byte blocks, because aligned copies are faster
+const BLOCK_COPY_SIZE: usize = 24;
+
 #[inline]
 fn block_copy_from_src(source: *const u8, dst_ptr: *mut u8, num_items: usize) {
-    debug_assert!(num_items <= 24);
+    debug_assert!(num_items <= BLOCK_COPY_SIZE);
     unsafe {
         let dst_ptr_end = dst_ptr.add(num_items);
         if (dst_ptr as usize) < dst_ptr_end as usize {
-            std::ptr::copy_nonoverlapping(source, dst_ptr, 24);
+            std::ptr::copy_nonoverlapping(source, dst_ptr, BLOCK_COPY_SIZE);
         }
     }
 }
@@ -209,8 +212,9 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
             let start_ptr = unsafe { output_ptr.sub(offset as usize) };
 
             let match_length = (4 + (token & 0xF)) as usize;
-            // Write the duplicate segment to the output buffer.
-            if (output_ptr as usize) < unsafe { start_ptr.add(match_length) } as usize {
+            // Write the duplicate segment to the output buffer from the output buffer
+            // The blocks can overlap, make sure they are at least BLOCK_COPY_SIZE apart
+            if (output_ptr as usize) < unsafe { start_ptr.add(match_length).add(BLOCK_COPY_SIZE) } as usize {
                 duplicate_overlapping(&mut output_ptr, start_ptr, match_length);
             } else {
                 unsafe {
