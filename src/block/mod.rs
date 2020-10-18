@@ -1,8 +1,12 @@
 //! https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md
 pub mod compress;
+mod compress_hc;
 pub mod decompress;
 
+// TODO compress_prepend_size should accept compression level
 pub use compress::compress_prepend_size;
+pub use compress_hc::compress;
+pub use compress_hc::compress as compress_hc;
 pub use decompress::decompress_size_prepended;
 
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
