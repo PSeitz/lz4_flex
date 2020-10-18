@@ -1,11 +1,11 @@
 extern crate criterion;
 
-use lz_fear::raw::decompress_raw;
-use lz_fear::raw::compress2;
-use lz_fear::raw::U16Table;
-use lz_fear::raw::U32Table;
 use self::criterion::*;
 use lz4::block::compress as lz4_linked_block_compress;
+use lz_fear::raw::compress2;
+use lz_fear::raw::decompress_raw;
+use lz_fear::raw::U16Table;
+use lz_fear::raw::U32Table;
 
 const COMPRESSION1K: &'static [u8] = include_bytes!("compression_1k.txt");
 const COMPRESSION34K: &'static [u8] = include_bytes!("compression_34k.txt");
@@ -32,8 +32,7 @@ fn compress_lz4_fear(input: &[u8]) -> Vec<u8> {
 }
 
 fn bench_compression_throughput(c: &mut Criterion) {
-        let plot_config = PlotConfiguration::default()
-        .summary_scale(AxisScale::Logarithmic);
+    let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
 
     let mut group = c.benchmark_group("Compress");
     group.plot_config(plot_config);
@@ -47,18 +46,20 @@ fn bench_compression_throughput(c: &mut Criterion) {
             &input,
             |b, i| b.iter(|| lz4_flex::compress(&i)),
         );
-        group.bench_with_input(BenchmarkId::new("lz4_redox_rust", input_bytes), &input, |b, i| {
-            b.iter(|| lz4_compress::compress(&i))
-        });
-        group.bench_with_input(BenchmarkId::new("lz4_fear_rust", input_bytes), &input, |b, i| {
-            b.iter(|| compress_lz4_fear(&i))
-        });
-
         group.bench_with_input(
-            BenchmarkId::new("lz4_cpp", input_bytes),
+            BenchmarkId::new("lz4_redox_rust", input_bytes),
             &input,
-            |b, i| b.iter(|| lz4_linked_block_compress(&i, None, false)),
+            |b, i| b.iter(|| lz4_compress::compress(&i)),
         );
+        group.bench_with_input(
+            BenchmarkId::new("lz4_fear_rust", input_bytes),
+            &input,
+            |b, i| b.iter(|| compress_lz4_fear(&i)),
+        );
+
+        group.bench_with_input(BenchmarkId::new("lz4_cpp", input_bytes), &input, |b, i| {
+            b.iter(|| lz4_linked_block_compress(&i, None, false))
+        });
     }
 
     group.finish();
@@ -71,8 +72,7 @@ pub fn decompress_fear(input: &[u8]) -> Vec<u8> {
 }
 
 fn bench_decompression_throughput(c: &mut Criterion) {
-    let plot_config = PlotConfiguration::default()
-        .summary_scale(AxisScale::Logarithmic);
+    let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
 
     let mut group = c.benchmark_group("Decompress");
     group.plot_config(plot_config);
@@ -92,12 +92,16 @@ fn bench_decompression_throughput(c: &mut Criterion) {
             &comp_flex,
             |b, i| b.iter(|| lz4_flex::decompress(&i, input.len())),
         );
-        group.bench_with_input(BenchmarkId::new("lz4_redox_rust", input_bytes), &comp_rust, |b, i| {
-            b.iter(|| lz4_compress::decompress(&i))
-        });
-        group.bench_with_input(BenchmarkId::new("lz4_fear_rust", input_bytes), &comp_fear_rust, |b, i| {
-            b.iter(|| decompress_fear(&i))
-        });
+        group.bench_with_input(
+            BenchmarkId::new("lz4_redox_rust", input_bytes),
+            &comp_rust,
+            |b, i| b.iter(|| lz4_compress::decompress(&i)),
+        );
+        group.bench_with_input(
+            BenchmarkId::new("lz4_fear_rust", input_bytes),
+            &comp_fear_rust,
+            |b, i| b.iter(|| decompress_fear(&i)),
+        );
 
         group.bench_with_input(
             BenchmarkId::new("lz4_cpp", input_bytes),

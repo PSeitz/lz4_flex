@@ -31,13 +31,13 @@ pub fn hash(sequence: u32) -> u32 {
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
 fn get_batch(input: &[u8], n: usize) -> u32 {
-    unsafe{read_u32_ptr(input.as_ptr().add(n))}
+    unsafe { read_u32_ptr(input.as_ptr().add(n)) }
 }
 
 #[inline]
 #[cfg(feature = "safe-encode")]
 fn get_batch(input: &[u8], n: usize) -> u32 {
-    let arr: &[u8; 4]  = input[n .. n + 4].try_into().unwrap();
+    let arr: &[u8; 4] = input[n..n + 4].try_into().unwrap();
     as_u32_le(arr)
 }
 
@@ -61,26 +61,18 @@ fn token_from_literal(lit_len: usize) -> u8 {
 /// Counts the number of same bytes in two byte streams.
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn count_same_bytes(
-    first: &[u8],
-    second: &[u8],
-    cur: &mut usize,
-) -> usize {
-
-    let cur_slice = &first[*cur.. first.len() - END_OFFSET];
+fn count_same_bytes(first: &[u8], second: &[u8], cur: &mut usize) -> usize {
+    let cur_slice = &first[*cur..first.len() - END_OFFSET];
 
     let mut num = 0;
 
-    for (block1, block2) in cur_slice
-        .chunks_exact(8)
-        .zip(second.chunks_exact(8)) {
-
+    for (block1, block2) in cur_slice.chunks_exact(8).zip(second.chunks_exact(8)) {
         let input_block = usize::from_le(as_usize_le(block1));
         let match_block = usize::from_le(as_usize_le(block2));
 
         if input_block == match_block {
             num += 8;
-        }else{
+        } else {
             let diff = input_block ^ match_block;
             num += get_common_bytes(diff) as usize;
             break;
@@ -89,46 +81,42 @@ fn count_same_bytes(
 
     *cur += num;
     return num;
-
 }
 
 #[inline]
 #[cfg(feature = "safe-encode")]
 fn as_usize_le(array: &[u8]) -> usize {
-    ((array[0] as usize) <<  0) |
-    ((array[1] as usize) <<  8) |
-    ((array[2] as usize) << 16) |
-    ((array[3] as usize) << 24) |
-    ((array[4] as usize) << 32) |
-    ((array[5] as usize) << 40) |
-    ((array[6] as usize) << 48) |
-    ((array[7] as usize) << 56)
+    ((array[0] as usize) << 0)
+        | ((array[1] as usize) << 8)
+        | ((array[2] as usize) << 16)
+        | ((array[3] as usize) << 24)
+        | ((array[4] as usize) << 32)
+        | ((array[5] as usize) << 40)
+        | ((array[6] as usize) << 48)
+        | ((array[7] as usize) << 56)
 }
 
 #[inline]
 #[cfg(feature = "safe-encode")]
 fn as_u32_le(array: &[u8; 4]) -> u32 {
-    ((array[0] as u32) <<  0) |
-    ((array[1] as u32) <<  8) |
-    ((array[2] as u32) << 16) |
-    ((array[3] as u32) << 24)
+    ((array[0] as u32) << 0)
+        | ((array[1] as u32) << 8)
+        | ((array[2] as u32) << 16)
+        | ((array[3] as u32) << 24)
 }
 
 /// Counts the number of same bytes in two byte streams.
 /// Counts the number of same bytes in two byte streams.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn count_same_bytes(
-    first: &[u8],
-    mut second: &[u8],
-    cur: &mut usize,
-) -> usize {
+fn count_same_bytes(first: &[u8], mut second: &[u8], cur: &mut usize) -> usize {
     let start = *cur;
 
     // compare 4/8 bytes blocks depending on the arch
     const STEP_SIZE: usize = std::mem::size_of::<usize>();
     while *cur + STEP_SIZE + END_OFFSET < first.len() {
-        let diff = read_usize_ptr(unsafe{first.as_ptr().add(*cur)}) ^ read_usize_ptr(second.as_ptr());
+        let diff =
+            read_usize_ptr(unsafe { first.as_ptr().add(*cur) }) ^ read_usize_ptr(second.as_ptr());
 
         if diff == 0 {
             *cur += STEP_SIZE;
@@ -144,7 +132,8 @@ fn count_same_bytes(
     #[cfg(target_pointer_width = "64")]
     {
         if *cur + 4 + END_OFFSET < first.len() {
-            let diff = read_u32_ptr(unsafe{first.as_ptr().add(*cur)}) ^ read_u32_ptr(second.as_ptr());
+            let diff =
+                read_u32_ptr(unsafe { first.as_ptr().add(*cur) }) ^ read_u32_ptr(second.as_ptr());
 
             if diff == 0 {
                 *cur += 4;
@@ -158,7 +147,8 @@ fn count_same_bytes(
 
     // compare 2 bytes block
     if *cur + 2 + END_OFFSET < first.len() {
-        let diff = read_u16_ptr(unsafe{first.as_ptr().add(*cur)}) ^ read_u16_ptr(second.as_ptr());
+        let diff =
+            read_u16_ptr(unsafe { first.as_ptr().add(*cur) }) ^ read_u16_ptr(second.as_ptr());
 
         if diff == 0 {
             *cur += 2;
@@ -170,7 +160,9 @@ fn count_same_bytes(
     }
 
     // TODO add end_pos_check, last 5 bytes should be literals
-    if *cur + 1 + END_OFFSET < first.len() && unsafe{first.as_ptr().add(*cur).read()} == unsafe{second.as_ptr().read()} {
+    if *cur + 1 + END_OFFSET < first.len()
+        && unsafe { first.as_ptr().add(*cur).read() } == unsafe { second.as_ptr().read() }
+    {
         *cur += 1;
     }
 
@@ -200,7 +192,7 @@ fn handle_last_literals(
     start: usize,
 ) -> std::io::Result<usize> {
     let lit_len = input_size - start;
-    
+
     let token = token_from_literal(lit_len);
     push_byte(output, token);
     // output.push(token);
@@ -287,12 +279,7 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
             next_cur += step_size;
 
             if cur > end_pos_check {
-                return handle_last_literals(
-                    output,
-                    input,
-                    input_size,
-                    start,
-                );
+                return handle_last_literals(output, input, input_size, start);
             }
             // Find a candidate in the dictionary with the hash of the current four bytes.
             // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
@@ -300,7 +287,6 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
             let hash = get_hash_at(input, cur, dict_bitshift);
             candidate = dict[hash];
             dict[hash] = cur;
-            
 
             // Two requirements to the candidate exists:
             // - We should not return a position which is merely a hash collision, so w that the
@@ -318,8 +304,7 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
 
         let offset = (cur - candidate) as u16;
         cur += MINMATCH;
-        let duplicate_length = 
-            count_same_bytes(input, &input[candidate + MINMATCH..], &mut cur);
+        let duplicate_length = count_same_bytes(input, &input[candidate + MINMATCH..], &mut cur);
         let hash = get_hash_at(input, cur - 2, dict_bitshift);
         dict[hash] = cur - 2;
 
@@ -346,7 +331,7 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
         // Now, write the actual literals.
         // TODO check wildcopy 8byte
         // output.extend_from_slice(&input[start .. start + lit_len]);
-        copy_literals(output, &input[start .. start + lit_len]);
+        copy_literals(output, &input[start..start + lit_len]);
 
         // write the offset in little endian.
         push_byte(output, offset as u8);
@@ -373,7 +358,7 @@ fn push_byte(output: &mut Vec<u8>, el: u8) {
 fn push_byte(output: &mut Vec<u8>, el: u8) {
     unsafe {
         std::ptr::write(output.as_mut_ptr().add(output.len()), el);
-        output.set_len(output.len()+1);
+        output.set_len(output.len() + 1);
     }
 }
 
@@ -387,11 +372,14 @@ fn copy_literals(output: &mut Vec<u8>, input: &[u8]) {
 #[cfg(not(feature = "safe-encode"))]
 fn copy_literals(output: &mut Vec<u8>, input: &[u8]) {
     unsafe {
-        std::ptr::copy_nonoverlapping(input.as_ptr(), output.as_mut_ptr().add(output.len()), input.len());
-        output.set_len(output.len()+input.len());
+        std::ptr::copy_nonoverlapping(
+            input.as_ptr(),
+            output.as_mut_ptr().add(output.len()),
+            input.len(),
+        );
+        output.set_len(output.len() + input.len());
     }
 }
-
 
 /// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as litte endian.
 /// Can be used in conjuction with `decompress_size_prepended`
@@ -399,7 +387,7 @@ fn copy_literals(output: &mut Vec<u8>, input: &[u8]) {
 pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
     let mut compressed = Vec::with_capacity(16 + 4 + (input.len() as f64 * 1.1) as usize);
-    unsafe{compressed.set_len(4)};
+    unsafe { compressed.set_len(4) };
     compress_into(input, &mut compressed).unwrap();
     let size = input.len() as u32;
     compressed[0] = size as u8;
@@ -408,7 +396,6 @@ pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
     compressed[3] = (size >> 24) as u8;
     compressed
 }
-
 
 /// Compress all bytes of `input`.
 #[inline]

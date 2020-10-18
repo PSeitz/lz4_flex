@@ -196,7 +196,10 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
                     return Err(Error::LiteralOutOfBounds);
                 };
                 if output.len() < (output_ptr as usize - output_start + literal_length) {
-                    return Err(Error::OutputTooSmall{expected_size: (output_ptr as usize - output_start + literal_length), actual_size: output.len()});
+                    return Err(Error::OutputTooSmall {
+                        expected_size: (output_ptr as usize - output_start + literal_length),
+                        actual_size: output.len(),
+                    });
                 };
             }
 
@@ -214,7 +217,9 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
             let match_length = (4 + (token & 0xF)) as usize;
             // Write the duplicate segment to the output buffer from the output buffer
             // The blocks can overlap, make sure they are at least BLOCK_COPY_SIZE apart
-            if (output_ptr as usize) < unsafe { start_ptr.add(match_length).add(BLOCK_COPY_SIZE) } as usize {
+            if (output_ptr as usize)
+                < unsafe { start_ptr.add(match_length).add(BLOCK_COPY_SIZE) } as usize
+            {
                 duplicate_overlapping(&mut output_ptr, start_ptr, match_length);
             } else {
                 unsafe {
@@ -244,7 +249,10 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
                     return Err(Error::LiteralOutOfBounds);
                 };
                 if output.len() < (output_ptr as usize - output_start + literal_length) {
-                    return Err(Error::OutputTooSmall{expected_size: (output_ptr as usize - output_start + literal_length), actual_size: output.len()});
+                    return Err(Error::OutputTooSmall {
+                        expected_size: (output_ptr as usize - output_start + literal_length),
+                        actual_size: output.len(),
+                    });
                 };
             }
             unsafe {
@@ -310,12 +318,14 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
     Ok(())
 }
 
-
 /// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in litte endian.
 /// Can be used in conjuction with `compress_prepend_size`
 #[inline]
 pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, Error> {
-    let uncompressed_size = (input[0] as usize) | (input[1] as usize) << 8 | (input[2] as usize) << 16 | (input[3] as usize) << 24;
+    let uncompressed_size = (input[0] as usize)
+        | (input[1] as usize) << 8
+        | (input[2] as usize) << 16
+        | (input[3] as usize) << 24;
     // Allocate a vector to contain the decompressed stream.
     let mut vec = Vec::with_capacity(uncompressed_size + 8);
     unsafe {

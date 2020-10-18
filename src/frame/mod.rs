@@ -1,4 +1,3 @@
-
 pub mod compress;
 pub mod decompress;
 
@@ -18,8 +17,7 @@ pub enum BlockSize {
 impl BlockSize {
     pub fn get_size(&self) -> usize {
         match self {
-            &BlockSize::Default |
-            &BlockSize::Max64KB => 64 * 1024,
+            &BlockSize::Default | &BlockSize::Max64KB => 64 * 1024,
             &BlockSize::Max256KB => 256 * 1024,
             &BlockSize::Max1MB => 1 * 1024 * 1024,
             &BlockSize::Max4MB => 4 * 1024 * 1024,
@@ -41,7 +39,6 @@ pub enum ContentChecksum {
     NoChecksum = 0,
     ChecksumEnabled,
 }
-
 
 /// Frame Descriptor
 /// FLG     BD      (Content Size)  (Dictionary ID)     HC
@@ -65,28 +62,28 @@ impl LZ4FFrameInfo {
         assert!((flg_byte & 0b11000000) == 1); // version is always 01
 
         let block_mode = if (flg_byte & 1 << 5) == 1 {
-            BlockMode::Independent 
-        }else {
-            BlockMode::Linked 
+            BlockMode::Independent
+        } else {
+            BlockMode::Linked
         };
         let content_checksum_flag = if (flg_byte & 1 << 2) == 1 {
-            ContentChecksum::ChecksumEnabled 
-        }else {
-            ContentChecksum::NoChecksum 
+            ContentChecksum::ChecksumEnabled
+        } else {
+            ContentChecksum::NoChecksum
         };
 
         // let content_size_included = (flg_byte & 1 << 4) == 1;
 
-        LZ4FFrameInfo{
+        LZ4FFrameInfo {
             block_mode,
             content_checksum_flag,
             block_size_id: BlockSize::Default, // TODO
-            content_size: None, // TODO
+            content_size: None,                // TODO
         }
     }
 
     /// writes flag byte
-    /// 
+    ///
     /// FLG byte
     /// BitNumber   7-6         5                      4               3             2                 1           0
     /// FieldName   Version     Block Independence     Block-Checksum  Content-Size  Content-Checksum  Reserved    DictID
@@ -102,12 +99,11 @@ impl LZ4FFrameInfo {
         res |= (self.content_checksum_flag as u32) << 2;
         // res |= 0 << 4;
         res
-
     }
 
     /// writes block descriptor byte
     /// Block Maximum Size
-    /// 
+    ///
     /// This information is useful to help the decoder allocate memory. Size here refers to the original (uncompressed) data size.
     /// Block Maximum Size is one value among the following table :
     /// 0       1       2       3       4       5       6       7
