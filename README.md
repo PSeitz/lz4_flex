@@ -8,17 +8,18 @@
 
 Pure Rust, high performance implementation of LZ4 compression.
 
-This is based on [redox-os' lz4 compression](https://crates.io/crates/lz4-compress).
-The redox implementation is quite slow with only around 300MB/s decompression, 200MB/s compression and the api ist quite limited.
-This shortcomings are addressed.
-
+## Features
+- Very good logo
+- LZ4 Block format
+- High performance
+- 1s clean release build time
+- feature flags to configure safe/unsafe code usage
 
 Usage: 
 ```rust
-use lz4_compression::prelude::{ decompress, compress };
+use lz4_flex::{compress_prepend_size, decompress_size_prepended};
 
 fn main(){
-    use lz4_flex::{compress_prepend_size, decompress_size_prepended};
     let input: &[u8] = b"Hello people, what's up?";
     let compressed = compress_prepend_size(input);
     let uncompressed = decompress_size_prepended(&compressed).unwrap();
@@ -26,12 +27,7 @@ fn main(){
 }
 ```
 
-## Features
-- Very good logo
-- LZ4 Block format
-- High performance
-- 1s clean release build time
-- feature flags to configure safe/unsafe code usage
+
 
 ## Benchmarks
 The benchmark is run with criterion on set of test files are in the folder benches.
