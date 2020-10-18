@@ -7,6 +7,7 @@ name = "lz4_flex"
 repository = "https://github.com/pseitz/lz4_flex"
 license = "MIT"
 version = "0.3.1"
+include = ["src/**/*", "README.md"]
 [[bench]]
 harness = false
 name = "crit_bench"
