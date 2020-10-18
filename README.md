@@ -26,6 +26,12 @@ fn main(){
 }
 ```
 
+## Features
+- Very good logo
+- LZ4 Block format
+- High performance
+- feature flags to configure safe/unsafe code usage
+
 ## Benchmarks
 The benchmark is run with criterion on set of test files are in the folder benches.
 
