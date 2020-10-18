@@ -8,7 +8,7 @@ repository = "https://github.com/pseitz/lz4_flex"
 license = "MIT"
 version = "0.3.1"
 include = ["src/**/*", "README.md"]
-exclude = ["src/bin/**/*"]
+exclude = ["src/bin/**"]
 
 [[bench]]
 harness = false
