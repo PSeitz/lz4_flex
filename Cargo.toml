@@ -2,7 +2,7 @@
 authors = ["Pascal Seitz <pascal.seitz@gmail.com>", "ticki <Ticki@users.noreply.github.com>"]
 description = "Pure Rust implementation of raw LZ4 compression/decompression."
 edition = "2018"
-keywords = ["compression", "compress", "lz4", "compress", "decompression", "decompress", "fast"]
+keywords = ["compression", "lz4", "compress", "decompression", "decompress"]
 name = "lz4_flex"
 homepage = "https://github.com/pseitz/lz4_flex"
 repository = "https://github.com/pseitz/lz4_flex"
