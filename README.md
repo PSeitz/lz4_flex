@@ -36,6 +36,9 @@ Currently 3 implementations are compared, this one, the redox version and the c+
 ### Results v0.3 18-10-2020
 Executed on Macbook Pro 2017 i7
 
+- lz4_compress_rust: https://crates.io/crates/lz4-compress
+- lz4_cpp: https://crates.io/crates/lz4
+
 ![Compress](./compress_bench.svg)
 <img src="./compress_bench.svg">
 
