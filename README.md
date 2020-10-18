@@ -27,7 +27,7 @@ fn main(){
 ```
 
 ## Benchmarks
-The benchmark is run with criterion on set of test files are in the folder benches. 
+The benchmark is run with criterion on set of test files are in the folder benches.
 
 Currently 3 implementations are compared, this one, the redox version and the c++ version via rust bindings
 
@@ -36,8 +36,9 @@ Currently 3 implementations are compared, this one, the redox version and the c+
 ### Results v0.3 18-10-2020
 Executed on Macbook Pro 2017 i7
 
-- lz4_compress_rust: https://crates.io/crates/lz4-compress
+- lz4_redox_rust: https://crates.io/crates/lz4-compress
 - lz4_cpp: https://crates.io/crates/lz4
+- lz-fear: https://github.com/main--/rust-lz-fear
 
 ![Compress](./compress_bench.svg)
 

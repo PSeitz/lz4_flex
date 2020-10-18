@@ -1,16 +1,40 @@
 [package]
-name = "lz4_flex"
-version = "0.3.0"
 authors = ["Pascal Seitz <pascal.seitz@gmail.com>", "ticki <Ticki@users.noreply.github.com>"]
-edition = "2018"
 description = "Pure Rust implementation of raw LZ4 compression/decompression."
-repository = "https://github.com/pseitz/lz4_flex"
+edition = "2018"
 keywords = ["compression", "lz4", "compress", "decompression", "decompress"]
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+name = "lz4_flex"
+repository = "https://github.com/pseitz/lz4_flex"
+version = "0.3.0"
+[[bench]]
+harness = false
+name = "crit_bench"
+
+[[bin]]
+name = "profile_comp"
 
 [dependencies]
 byteorder = "1.3.4"
 quick-error = "1.2.3"
+
+[dev-dependencies.lz-fear]
+git = "https://github.com/main--/rust-lz-fear"
+
+[dev-dependencies]
+criterion = "0.3.3"
+lz4 = "1.23.1"
+lz4-compress = "0.1.1"
+more-asserts = "0.2.1"
+
+[features]
+default = ["safe-decode"]
+safe-decode = []
+safe-encode = []
+[profile.bench]
+codegen-units = 1
+debug = false
+lto = true
+opt-level = 3
 
 [profile.release]
 codegen-units = 1
@@ -18,32 +42,3 @@ debug = true
 lto = true
 opt-level = 3
 panic = "unwind"
-
-[profile.bench]
-codegen-units = 1
-debug = false
-lto = true
-opt-level = 3
-
-[dev-dependencies]
-criterion = "0.3.3"
-lz4-compress = "0.1.1"
-lz4 = "1.23.1"
-# brotli = "3.3.0"
-more-asserts = "0.2.1"
-
-[[bin]]
-name = "profile_comp"
-
-# [[bench]]
-# name = "bench"
-
-[[bench]]
-name = "crit_bench"
-harness = false
-
-[features]
-default = ["safe-decode"]
-
-safe-decode = []
-safe-encode = []
