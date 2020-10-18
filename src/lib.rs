@@ -11,12 +11,13 @@ let compressed = compress_prepend_size(input);
 let uncompressed = decompress_size_prepended(&compressed).unwrap();
 assert_eq!(input, uncompressed);
 
-# Feature Flags
+```
+
+## Feature Flags
 There are two feature flags: default = safe-encode and safe-decode 
 safe-decode is enabled by default. Currently it adds more checks to the unsafe code, but it still uses unsafe.
 
 safe-encode will switch the compression to completely safe rust code.
-```
 */
 extern crate byteorder;
 #[macro_use]
