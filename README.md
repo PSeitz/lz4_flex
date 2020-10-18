@@ -1,15 +1,16 @@
 ![Rust](https://github.com/PSeitz/lz4_flex/workflows/Rust/badge.svg)
-
+[![Docs](https://docs.rs/lz4_flex/badge.svg)](https://docs.rs/crate/lz4_flex/)
+[![Crates.io](https://img.shields.io/crates/v/lz4_flex.svg)](https://crates.io/crates/lz4_flex)
 
 # lz4_flex
 
 ![lz4_flex_logo](https://raw.githubusercontent.com/PSeitz/lz4_flex/master/logo.jpg)
 
-Pure rust implementation of lz4 compression and decompression.
+Pure Rust, high performance implementation of LZ4 compression.
 
 This is based on [redox-os' lz4 compression](https://crates.io/crates/lz4-compress).
 The redox implementation is quite slow with only around 300MB/s decompression, 200MB/s compression and the api ist quite limited.
-It's planned to address these shortcomings.
+This shortcomings are addressed.
 
 
 Usage: 
@@ -17,12 +18,11 @@ Usage:
 use lz4_compression::prelude::{ decompress, compress };
 
 fn main(){
-    let uncompressed_data: &[u8] = b"Hello people, what's up?";
-
-    let compressed_data = compress(uncompressed_data);
-    let decompressed_data = decompress(&compressed_data).unwrap();
-
-    assert_eq!(uncompressed_data, decompressed_data.as_slice());
+    use lz4_flex::{compress_prepend_size, decompress_size_prepended};
+    let input: &[u8] = b"Hello people, what's up?";
+    let compressed = compress_prepend_size(input);
+    let uncompressed = decompress_size_prepended(&compressed).unwrap();
+    assert_eq!(input, uncompressed);
 }
 ```
 
