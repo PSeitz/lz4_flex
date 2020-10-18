@@ -32,3 +32,8 @@ The benchmark is run with criterion on set of test files are in the folder bench
 Currently 3 implementations are compared, this one, the redox version and the c++ version via rust bindings
 
 `cargo bench`
+
+
+## Fuzzer
+This fuzz target fuzzes, and asserts compression and decompression returns the original input.
+`cargo fuzz run fuzz_target_1`
