@@ -19,7 +19,7 @@ impl BlockSize {
         match self {
             &BlockSize::Default | &BlockSize::Max64KB => 64 * 1024,
             &BlockSize::Max256KB => 256 * 1024,
-            &BlockSize::Max1MB => 1 * 1024 * 1024,
+            &BlockSize::Max1MB => 1024 * 1024,
             &BlockSize::Max4MB => 4 * 1024 * 1024,
         }
     }
@@ -59,14 +59,14 @@ impl LZ4FFrameInfo {
         // read flag bytes
 
         let flg_byte = input[0];
-        assert!((flg_byte & 0b11000000) == 1); // version is always 01
+        assert!((flg_byte & 0b11000000) as usize == 1); // version is always 01
 
-        let block_mode = if (flg_byte & 1 << 5) == 1 {
+        let block_mode = if (flg_byte & 1 << 5) as usize == 1 {
             BlockMode::Independent
         } else {
             BlockMode::Linked
         };
-        let content_checksum_flag = if (flg_byte & 1 << 2) == 1 {
+        let content_checksum_flag = if (flg_byte & 1 << 2) as usize == 1 {
             ContentChecksum::ChecksumEnabled
         } else {
             ContentChecksum::NoChecksum

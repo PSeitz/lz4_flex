@@ -10,7 +10,7 @@ pub fn compress<R: Read, W: Write>(input: &mut R, output: &mut W) -> std::io::Re
     // output
     let mut buf = [0; 4];
     LittleEndian::write_u32(&mut buf, 0x184D2204); // magic number LZ4 Header
-    output.write(&buf)?;
+    output.write_all(&buf)?;
 
     // Flag Byte bits
     let version_bits = 0b01000000; // version "01"
