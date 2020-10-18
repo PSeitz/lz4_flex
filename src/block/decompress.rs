@@ -311,7 +311,8 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
 }
 
 
-/// Decompress all bytes of `input`.
+/// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in litte endian.
+/// Can be used in conjuction with `compress_prepend_size`
 #[inline]
 pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, Error> {
     let uncompressed_size = (input[0] as usize) | (input[1] as usize) << 8 | (input[2] as usize) << 16 | (input[3] as usize) << 24;
@@ -325,7 +326,7 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, Error> {
     Ok(vec)
 }
 
-/// Decompress all bytes of `input`.
+/// Decompress all bytes of `input` into a new vec.
 #[inline]
 pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, Error> {
     // Allocate a vector to contain the decompressed stream.

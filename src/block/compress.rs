@@ -393,7 +393,8 @@ fn copy_literals(output: &mut Vec<u8>, input: &[u8]) {
 }
 
 
-/// Compress all bytes of `input` into `output`.
+/// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as litte endian.
+/// Can be used in conjuction with `decompress_size_prepended`
 #[inline]
 pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
