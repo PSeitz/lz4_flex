@@ -50,3 +50,11 @@ Executed on Macbook Pro 2017 i7
 ## Fuzzer
 This fuzz target fuzzes, and asserts compression and decompression returns the original input.
 `cargo fuzz run fuzz_target_1`
+
+
+
+## TODO
+- Frame format
+- High compression
+- no `unsafe` version for decompression
+
