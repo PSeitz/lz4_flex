@@ -40,10 +40,9 @@ Executed on Macbook Pro 2017 i7
 - lz4_cpp: https://crates.io/crates/lz4
 
 ![Compress](./compress_bench.svg)
-<img src="./compress_bench.svg">
 
 ![Decompress](./decompress_bench.svg)
-<img src="./decompress_bench.svg">
+
 
 
 
