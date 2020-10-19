@@ -6,7 +6,7 @@
 
 ![lz4_flex_logo](https://raw.githubusercontent.com/PSeitz/lz4_flex/master/logo.jpg)
 
-Configurable, pure rust, high performance implementation of LZ4 compression with fast compile times.
+Configurable, pure rust, high performance implementation of LZ4 compression with fast compile times. Originally based on [redox-os' lz4 compression](https://crates.io/crates/lz4-compress), but now a complete rewrite.
 
 ## Features
 - Very good logo
