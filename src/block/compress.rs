@@ -200,14 +200,7 @@ fn handle_last_literals(
         write_integer(output, lit_len - 0xF)?;
     }
     // Now, write the actual literals.
-    #[cfg(feature = "safe-encode")]
-    {
-        copy_literals(output, &input[start..]);
-    }
-    #[cfg(not(feature = "safe-encode"))]
-    {
-        unsafe{copy_literals(output, &input[start..]);}
-    }
+    copy_literals(output, &input[start..]);
     Ok(output.len())
 }
 
@@ -253,14 +246,7 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
         }
 
         // Now, write the actual literals.
-        #[cfg(feature = "safe-encode")]
-        {
-            copy_literals(output, &input);
-        }
-        #[cfg(not(feature = "safe-encode"))]
-        {
-            unsafe{copy_literals(output, &input);}
-        }
+        copy_literals(output, &input);
         return Ok(output.len());
     }
 
@@ -344,15 +330,7 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
 
         // Now, write the actual literals.
         // TODO check wildcopy 8byte
-        // output.extend_from_slice(&input[start .. start + lit_len]);
-        #[cfg(feature = "safe-encode")]
-        {
-            copy_literals(output, &input[start..start + lit_len]);
-        }
-        #[cfg(not(feature = "safe-encode"))]
-        {
-            unsafe{copy_literals(output, &input[start..start + lit_len]);}
-        }
+        copy_literals(output, &input[start..start + lit_len]);
         // write the offset in little endian.
         push_byte(output, offset as u8);
         push_byte(output, (offset >> 8) as u8);
@@ -383,21 +361,8 @@ fn push_byte(output: &mut Vec<u8>, el: u8) {
 }
 
 #[inline]
-#[cfg(feature = "safe-encode")]
 fn copy_literals(output: &mut Vec<u8>, input: &[u8]) {
     output.extend_from_slice(input);
-}
-
-/// When calling this function, output is required to have enough capacity to append input to it.
-#[inline]
-#[cfg(not(feature = "safe-encode"))]
-unsafe fn copy_literals(output: &mut Vec<u8>, input: &[u8]) {
-    std::ptr::copy_nonoverlapping(
-        input.as_ptr(),
-        output.as_mut_ptr().add(output.len()),
-        input.len(),
-    );
-    output.set_len(output.len() + input.len());
 }
 
 /// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as litte endian.
@@ -406,7 +371,7 @@ unsafe fn copy_literals(output: &mut Vec<u8>, input: &[u8]) {
 pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
     let mut compressed = Vec::with_capacity(16 + 4 + (input.len() as f64 * 1.1) as usize);
-    unsafe { compressed.set_len(4) };
+    compressed.extend_from_slice(&[0, 0, 0, 0]);
     compress_into(input, &mut compressed).unwrap();
     let size = input.len() as u32;
     compressed[0] = size as u8;
