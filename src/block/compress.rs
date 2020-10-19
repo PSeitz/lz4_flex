@@ -15,7 +15,7 @@ use std::convert::TryInto;
 /// Increase step size after 1<<4 non matches
 const INCREASE_STEPSIZE_BITSHIFT: usize = 4;
 
-// hashes and right shifts to a maximum value of 16bit, 65535
+/// hashes and right shifts to a maximum value of 16bit, 65535
 pub fn hash(sequence: u32) -> u32 {
     (sequence.wrapping_mul(2654435761_u32)) >> 16
 }
