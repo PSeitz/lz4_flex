@@ -18,8 +18,12 @@ jobs:
     - name: Run tests
       run: cargo test safe-encode
     - name: Run tests --features safe-encode
-      run: cargo test --features safe-encode --verbose 
+      run: cargo test --features safe-encode --verbose
     - name: Run tests safe-decode
       run: cargo test --verbose --features safe-decode
     - name: Run tests no-default-features (no safe-decode)
       run: cargo test --verbose --no-default-features
+    - name: Make Sure safe-encode does not include unsafe in compression
+      run: cargo install expand
+      run: cargo install assert_contains_cli
+      run: cargo expand --features safe-encode --lib block::compress | assert_contains_not unsafe
