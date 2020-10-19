@@ -326,8 +326,8 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, Error> {
         | (input[1] as usize) << 8
         | (input[2] as usize) << 16
         | (input[3] as usize) << 24;
-    // Allocate a vector to contain the decompressed stream.
-    let mut vec = Vec::with_capacity(uncompressed_size + 8);
+    // Allocate a vector to contain the decompressed stream. we may wildcopy out of bounds, so the vector needs to have ad additional BLOCK_COPY_SIZE capacity
+    let mut vec = Vec::with_capacity(uncompressed_size + BLOCK_COPY_SIZE);
     unsafe {
         vec.set_len(uncompressed_size);
     }
@@ -336,11 +336,12 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, Error> {
     Ok(vec)
 }
 
+
 /// Decompress all bytes of `input` into a new vec.
 #[inline]
 pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, Error> {
-    // Allocate a vector to contain the decompressed stream.
-    let mut vec = Vec::with_capacity(uncompressed_size + 8);
+    // Allocate a vector to contain the decompressed stream. we may wildcopy out of bounds, so the vector needs to have ad additional BLOCK_COPY_SIZE capacity
+    let mut vec = Vec::with_capacity(uncompressed_size + BLOCK_COPY_SIZE);
     unsafe {
         vec.set_len(uncompressed_size);
     }

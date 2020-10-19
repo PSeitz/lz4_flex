@@ -33,7 +33,7 @@ lz4-compress = "0.1.1"
 more-asserts = "0.2.1"
 
 [features]
-default = ["safe-decode"]
+default = ["safe-decode", "safe-decode"]
 safe-decode = []
 safe-encode = []
 
