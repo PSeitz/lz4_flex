@@ -1,4 +1,6 @@
 //! https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md
+
+#[cfg_attr(feature = "safe-encode", forbid(unsafe_code))]
 pub mod compress;
 pub mod decompress;
 
