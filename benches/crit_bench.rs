@@ -81,25 +81,25 @@ fn bench_decompression_throughput(c: &mut Criterion) {
         let input_bytes = input.len() as u64;
         group.throughput(Throughput::Bytes(input_bytes));
 
-        let comp_flex = lz4_flex::compress(&input);
-        let comp_fear_rust = compress_lz4_fear(&input);
-        let comp_rust = lz4_compress::compress(&input);
+        // let comp_flex = lz4_flex::compress(&input);
+        // let comp_fear_rust = compress_lz4_fear(&input);
+        // let comp_rust = lz4_compress::compress(&input);
 
-        let comp_lz4 = lz4::block::compress(&input, None, true).unwrap();
+        let comp_lz4 = lz4::block::compress(&input, None, false).unwrap();
 
         group.bench_with_input(
             BenchmarkId::new("lz4_flexx_rust", input_bytes),
-            &comp_flex,
+            &comp_lz4,
             |b, i| b.iter(|| lz4_flex::decompress(&i, input.len())),
         );
         group.bench_with_input(
             BenchmarkId::new("lz4_redox_rust", input_bytes),
-            &comp_rust,
+            &comp_lz4,
             |b, i| b.iter(|| lz4_compress::decompress(&i)),
         );
         group.bench_with_input(
             BenchmarkId::new("lz4_fear_rust", input_bytes),
-            &comp_fear_rust,
+            &comp_lz4,
             |b, i| b.iter(|| decompress_fear(&i)),
         );
 
@@ -108,7 +108,7 @@ fn bench_decompression_throughput(c: &mut Criterion) {
             &comp_lz4,
             |b, i| {
                 b.iter(|| {
-                    let output = lz4::block::decompress(&i, None);
+                    let output = lz4::block::decompress(&i, Some(input.len() as i32));
                     output
                 })
             },

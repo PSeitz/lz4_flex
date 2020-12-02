@@ -4,6 +4,7 @@ use std::io::Read;
 use std::io::Write;
 
 /// Compress all bytes of `input` into `output`.
+#[allow(dead_code)]
 #[inline]
 pub fn compress<R: Read, W: Write>(input: &mut R, output: &mut W) -> std::io::Result<()> {
     // Write Frame header

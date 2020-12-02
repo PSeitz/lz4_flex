@@ -140,6 +140,21 @@ fn test_minimum_compression_ratio() {
     assert_lt!(ratio, 0.585); // TODO check why compression is not deterministic (fails in ci for 0.58)
 }
 
+
+use lz_fear::raw::compress2;
+use lz_fear::raw::U16Table;
+use lz_fear::raw::U32Table;
+
+fn compress_lz4_fear(input: &[u8]) -> Vec<u8> {
+    let mut buf = Vec::new();
+    if input.len() <= 0xFFFF {
+        compress2(input, 0, &mut U16Table::default(), &mut buf).unwrap();
+    } else {
+        compress2(input, 0, &mut U32Table::default(), &mut buf).unwrap();
+    }
+    buf
+}
+
 fn print_compression_ration(input: &'static [u8], name: &str) {
     let compressed = compress(input);
     // println!("{:?}", compressed);
@@ -164,6 +179,14 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
     let compressed = lz4_rust_compress(input);
     println!(
         "lz4_rust_compress Compression Ratio {:?} {:?}",
+        name,
+        compressed.len() as f64 / input.len() as f64
+    );
+
+    assert_eq!(decompressed, input);
+    let compressed = compress_lz4_fear(input);
+    println!(
+        "lz4_fear_compress Compression Ratio {:?} {:?}",
         name,
         compressed.len() as f64 / input.len() as f64
     );

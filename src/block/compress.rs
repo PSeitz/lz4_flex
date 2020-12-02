@@ -3,6 +3,7 @@
 //! We make use of hash tables to find duplicates. This gives a reasonable compression ratio with a
 //! high performance. It has fixed memory usage, which contrary to other approachs, makes it less
 //! memory hungry.
+
 use crate::block::END_OFFSET;
 use crate::block::LZ4_MIN_LENGTH;
 use crate::block::MAX_DISTANCE;

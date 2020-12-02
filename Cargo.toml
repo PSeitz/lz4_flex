@@ -16,6 +16,17 @@ harness = false
 name = "crit_bench"
 path = "benches/crit_bench.rs"
 
+
+# [[bench]]
+# harness = false
+# name = "quickbench"
+# path = "benches/quickbench.rs"
+
+# [[bench]]
+# harness = false
+# name = "bench"
+# path = "benches/bench.rs"
+
 # [[bin]]
 # name = "profile_comp"
 
@@ -23,17 +34,18 @@ path = "benches/crit_bench.rs"
 byteorder = "1.3.4"
 quick-error = "1.2.3"
 
-[dev-dependencies.lz-fear]
-git = "https://github.com/main--/rust-lz-fear"
-
 [dev-dependencies]
 criterion = "0.3.3"
 lz4 = "1.23.1"
 lz4-compress = "0.1.1"
 more-asserts = "0.2.1"
+# quickbench = { path = "../quickbench" }
+
+[dev-dependencies.lz-fear]
+git = "https://github.com/main--/rust-lz-fear"
 
 [features]
-default = ["safe-decode", "safe-decode"]
+default = ["safe-encode", "safe-decode"]
 safe-decode = []
 safe-encode = []
 

@@ -1,8 +1,20 @@
 //! https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md
+
+#[cfg_attr(feature = "safe-encode", forbid(unsafe_code))]
 pub mod compress;
+
+#[cfg_attr(feature = "safe-decode", forbid(unsafe_code))]
+pub mod decompress_safe;
+
+#[cfg(not(feature = "safe-decode"))]
 pub mod decompress;
 
 pub use compress::compress_prepend_size;
+
+#[cfg(feature = "safe-decode")]
+pub use decompress_safe::decompress_size_prepended;
+
+#[cfg(not(feature = "safe-decode"))]
 pub use decompress::decompress_size_prepended;
 
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
@@ -51,6 +63,7 @@ static LZ4_64KLIMIT: u32 = (64 * 1024) + (MFLIMIT - 1);
 //     }
 // }
 
+#[allow(dead_code)]
 fn wild_copy_from_src_8(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
     unsafe {
         let dst_ptr_end = dst_ptr.add(num_items);
@@ -77,3 +90,26 @@ fn wild_copy_from_src_8(mut source: *const u8, mut dst_ptr: *mut u8, num_items: 
 // match [10][4][6][100]  .....      in [10][4][6][40]
 // 3
 //
+
+quick_error! {
+    /// An error representing invalid compressed data.
+    #[derive(Debug)]
+    pub enum DecompressError {
+        /// Literal is out of bounds of the input
+        OutputTooSmall{expected_size:usize, actual_size:usize} {
+            display("Output ({:?}) is too small for the decompressed data, {:?}", actual_size, expected_size)
+        }
+        /// Literal is out of bounds of the input
+        LiteralOutOfBounds {
+            description("Literal is out of bounds of the input.")
+        }
+        /// Expected another byte, but none found.
+        ExpectedAnotherByte {
+            description("Expected another byte, found none.")
+        }
+        /// Deduplication offset out of bounds (not in buffer).
+        OffsetOutOfBounds {
+            description("The offset to copy is not contained in the decompressed buffer.")
+        }
+    }
+}

@@ -34,4 +34,10 @@ extern crate more_asserts;
 
 // use frame::compress::{compress as frame_compress};
 pub use block::compress::{compress, compress_into, compress_prepend_size};
+
+#[cfg(feature = "safe-decode")]
+pub use block::decompress_safe::{decompress, decompress_into, decompress_size_prepended};
+
+#[cfg(not(feature = "safe-decode"))]
 pub use block::decompress::{decompress, decompress_into, decompress_size_prepended};
+

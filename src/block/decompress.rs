@@ -1,29 +1,6 @@
 //! The decompression algorithm.
 use crate::block::wild_copy_from_src_8;
 
-quick_error! {
-    /// An error representing invalid compressed data.
-    #[derive(Debug)]
-    pub enum Error {
-        /// Literal is out of bounds of the input
-        OutputTooSmall{expected_size:usize, actual_size:usize} {
-            display("Output ({:?}) is too small for the decompressed data, {:?}", actual_size, expected_size)
-        }
-        /// Literal is out of bounds of the input
-        LiteralOutOfBounds {
-            description("Literal is out of bounds of the input.")
-        }
-        /// Expected another byte, but none found.
-        ExpectedAnotherByte {
-            description("Expected another byte, found none.")
-        }
-        /// Deduplication offset out of bounds (not in buffer).
-        OffsetOutOfBounds {
-            description("The offset to copy is not contained in the decompressed buffer.")
-        }
-    }
-}
-
 #[inline]
 fn duplicate(output_ptr: &mut *mut u8, start: *const u8, match_length: usize) {
     // We cannot simply use memcpy or `extend_from_slice`, because these do not allow
@@ -66,7 +43,7 @@ fn duplicate_overlapping(output_ptr: &mut *mut u8, mut start: *const u8, match_l
 /// 4 is the first non-0xFF byte.
 // #[inline(never)]
 #[inline]
-fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, Error> {
+fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, DecompressError> {
     // We start at zero and count upwards.
     let mut n: u32 = 0;
     // If this byte takes value 255 (the maximum value it can take), another byte is read
@@ -77,7 +54,7 @@ fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, Error> {
         #[cfg(feature = "safe-decode")]
         {
             if input.len() < *input_pos + 1 {
-                return Err(Error::ExpectedAnotherByte);
+                return Err(DecompressError::ExpectedAnotherByte);
             };
         }
         // check alread done in move_cursor
@@ -152,7 +129,7 @@ fn block_copy_from_src(source: *const u8, dst_ptr: *mut u8, num_items: usize) {
 
 /// Decompress all bytes of `input` into `output`.
 #[inline]
-pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> {
+pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), DecompressError> {
     // Decode into our vector.
     let mut input_pos = 0;
     let mut output_ptr = output.as_mut_ptr();
@@ -161,7 +138,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
     let output_start = output_ptr as usize;
 
     if input.is_empty() {
-        return Err(Error::ExpectedAnotherByte);
+        return Err(DecompressError::ExpectedAnotherByte);
     }
     // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer
     // is empty.
@@ -171,7 +148,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         #[cfg(feature = "safe-decode")]
         {
             if input.len() < input_pos + 1 {
-                return Err(Error::LiteralOutOfBounds);
+                return Err(DecompressError::LiteralOutOfBounds);
             };
         }
 
@@ -193,10 +170,10 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
             {
                 // Check if literal is out of bounds for the input, and if there is enough space on the output
                 if input.len() < input_pos + literal_length {
-                    return Err(Error::LiteralOutOfBounds);
+                    return Err(DecompressError::LiteralOutOfBounds);
                 };
                 if output.len() < (output_ptr as usize - output_start + literal_length) {
-                    return Err(Error::OutputTooSmall {
+                    return Err(DecompressError::OutputTooSmall {
                         expected_size: (output_ptr as usize - output_start + literal_length),
                         actual_size: output.len(),
                     });
@@ -246,10 +223,10 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
             {
                 // Check if literal is out of bounds for the input, and if there is enough space on the output
                 if input.len() < input_pos + literal_length {
-                    return Err(Error::LiteralOutOfBounds);
+                    return Err(DecompressError::LiteralOutOfBounds);
                 };
                 if output.len() < (output_ptr as usize - output_start + literal_length) {
-                    return Err(Error::OutputTooSmall {
+                    return Err(DecompressError::OutputTooSmall {
                         expected_size: (output_ptr as usize - output_start + literal_length),
                         actual_size: output.len(),
                     });
@@ -276,10 +253,10 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         #[cfg(feature = "safe-decode")]
         {
             if input_pos + 2 >= input.len() {
-                return Err(Error::OffsetOutOfBounds);
+                return Err(DecompressError::OffsetOutOfBounds);
             }
             if input_pos + 2 >= output.len() {
-                return Err(Error::OffsetOutOfBounds);
+                return Err(DecompressError::OffsetOutOfBounds);
             }
         }
         let offset = read_u16(input, &mut input_pos);
@@ -310,7 +287,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         #[cfg(feature = "safe-decode")]
         {
             if (start_ptr as usize) >= (output_ptr as usize) {
-                return Err(Error::OffsetOutOfBounds);
+                return Err(DecompressError::OffsetOutOfBounds);
             };
         }
         duplicate(&mut output_ptr, start_ptr, match_length);
@@ -321,7 +298,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
 /// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in litte endian.
 /// Can be used in conjuction with `compress_prepend_size`
 #[inline]
-pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, Error> {
+pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressError> {
     let uncompressed_size = (input[0] as usize)
         | (input[1] as usize) << 8
         | (input[2] as usize) << 16
@@ -339,7 +316,7 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, Error> {
 
 /// Decompress all bytes of `input` into a new vec.
 #[inline]
-pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, Error> {
+pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
     // Allocate a vector to contain the decompressed stream. we may wildcopy out of bounds, so the vector needs to have ad additional BLOCK_COPY_SIZE capacity
     let mut vec = Vec::with_capacity(uncompressed_size + BLOCK_COPY_SIZE);
     unsafe {
