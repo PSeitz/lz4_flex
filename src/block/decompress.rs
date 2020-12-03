@@ -1,5 +1,6 @@
 //! The decompression algorithm.
 use crate::block::wild_copy_from_src_8;
+use crate::block::DecompressError;
 
 #[inline]
 fn duplicate(output_ptr: &mut *mut u8, start: *const u8, match_length: usize) {
