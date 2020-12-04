@@ -41,6 +41,7 @@ Currently 3 implementations are compared, this one, the [redox-version](https://
 - lz4_cpp: https://crates.io/crates/lz4
 - lz-fear: https://github.com/main--/rust-lz-fear
 
+Beware that v0.4 charts use linear scaling and v0.3 charts use logarithmic scaling.
 
 ### Results v0.4 04-12-2020
 Since v0.4 the implementation is using no unsafe, this benchmark covers this.
