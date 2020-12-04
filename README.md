@@ -30,7 +30,7 @@ fn main(){
 ## Benchmarks
 The benchmark is run with criterion on set of test files are in the folder benches.
 
-Currently 3 implementations are compared, this one, the [redox-version](https://crates.io/crates/lz4-compress), [lz-fear](https://github.com/main--/rust-lz-fear) and the [c++ version via rust bindings](https://crates.io/crates/lz4)  
+Currently 3 implementations are compared, this one, the [redox-version](https://crates.io/crates/lz4-compress), [lz-fear](https://github.com/main--/rust-lz-fear) and the [c++ version via rust bindings](https://crates.io/crates/lz4). The lz4-flexx version is running in unsafe mode.
 
 `cargo bench`
 
