@@ -16,6 +16,9 @@ Configurable, pure rust, high performance implementation of LZ4 compression with
 - feature flags to configure safe/unsafe code usage
 
 ## Usage: 
+
+By default compression and decompression uses no usafe via the default feature flags "safe-encode" and "safe-decode". If you need more performance you can disable them (e.g. with no-default-features).
+
 ```rust
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
 
@@ -34,18 +37,27 @@ Currently 3 implementations are compared, this one, the [redox-version](https://
 
 `cargo bench`
 
-### Results v0.3 18-10-2020
-Executed on Macbook Pro 2017 i7
-
 - lz4_redox_rust: https://crates.io/crates/lz4-compress
 - lz4_cpp: https://crates.io/crates/lz4
 - lz-fear: https://github.com/main--/rust-lz-fear
 
+
+### Results v0.4 04-12-2020
+Since v0.4 the implementation is using no unsafe, this benchmark covers this.
+
+Executed on Core i7-6700 Win10 WSL.
+
+![Compress](./compress_bench_safe.svg)
+
+![Decompress](./decompress_bench_safe.svg)
+
+### Results v0.3 18-10-2020
+Executed on Macbook Pro 2017 i7
+
+
 ![Compress](./compress_bench.svg)
 
 ![Decompress](./decompress_bench.svg)
-
-
 
 
 ## Fuzzer
