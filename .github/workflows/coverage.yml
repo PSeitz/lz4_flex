@@ -14,15 +14,27 @@ jobs:
 
       - name: Generate code coverage
         run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml
-      - name: Generate code coverage --features safe-encode
-        run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml --features safe-encode
-      - name: Generate code coverage safe-decode
-        run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml --features safe-decode
-      - name: Generate code coverage no-default-features
-        run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml --no-default-features
-
-      - name:                   Upload to codecov.io
+      - name:                   Upload to codecov.io 1
         uses:                   codecov/codecov-action@v1
         with:
-          # token:                ${{secrets.CODECOV_TOKEN}} # not required for public repos
           fail_ci_if_error:     true
+      - name: Generate code coverage --features safe-encode
+        run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml --features safe-encode
+      - name:                   Upload to codecov.io 2
+        uses:                   codecov/codecov-action@v1
+        with:
+          fail_ci_if_error:     true
+      - name: Generate code coverage safe-decode
+        run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml --features safe-decode
+      - name:                   Upload to codecov.io 2
+        uses:                   codecov/codecov-action@v1
+        with:
+          fail_ci_if_error:     true
+      - name: Generate code coverage no-default-features
+        run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml --no-default-features
+      - name:                   Upload to codecov.io 3
+        uses:                   codecov/codecov-action@v1
+        with:
+          fail_ci_if_error:     true
+
+
