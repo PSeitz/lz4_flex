@@ -140,7 +140,6 @@ fn test_minimum_compression_ratio() {
     assert_lt!(ratio, 0.585); // TODO check why compression is not deterministic (fails in ci for 0.58)
 }
 
-
 use lz_fear::raw::compress2;
 use lz_fear::raw::U16Table;
 use lz_fear::raw::U32Table;

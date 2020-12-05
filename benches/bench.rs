@@ -1,4 +1,3 @@
-
 // use quickbench::bench_gen_env;
 
 // const COMPRESSION1K: &'static [u8] = include_bytes!("compression_1k.txt");
@@ -33,9 +32,6 @@
 //     println!("{}", bench_gen_env("DECOMPRESSION66K", compression66_k_compressed.len(),  || &compression66_k_compressed, |xs| lz4_flex::decompress_size_prepended(&xs)));
 //     println!("{}", bench_gen_env("DECOMPRESSION95K_VERY_GOOD_LOGO", compression95_k_very_good_logo_compressed.len(),  || &compression95_k_very_good_logo_compressed, |xs| lz4_flex::decompress_size_prepended(&xs)));
 // }
-
-
-
 
 // #![feature(test)]
 // extern crate test;

@@ -40,4 +40,3 @@ pub use block::decompress_safe::{decompress, decompress_into, decompress_size_pr
 
 #[cfg(not(feature = "safe-decode"))]
 pub use block::decompress::{decompress, decompress_into, decompress_size_prepended};
-
