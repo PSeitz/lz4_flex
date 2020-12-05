@@ -16,7 +16,7 @@ jobs:
     - name: Build
       run: cargo build --verbose
     - name: Run tests
-      run: cargo test safe-encode
+      run: cargo test
     - name: Run tests --features safe-encode
       run: cargo test --features safe-encode --verbose
     - name: Run tests safe-decode
