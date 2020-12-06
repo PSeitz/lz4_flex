@@ -73,5 +73,4 @@ This fuzz target fuzzes, and asserts compression with cpp and decompression retu
 ## TODO
 - Frame format
 - High compression
-- no `unsafe` version for decompression
 
