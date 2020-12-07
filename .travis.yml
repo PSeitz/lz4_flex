@@ -8,10 +8,13 @@ addons:
 # cache: cargo
 rust:
   - nightly
+  
+before_script: |
+  cargo install cargo-tarpaulin
+  
 script:
 - cargo tarpaulin --verbose --timeout 120 --out Xml --no-default-features --features safe-encode --ciserver travis-ci --coveralls $TRAVIS_JOB_ID
 - cargo tarpaulin --verbose --timeout 120 --out Xml --no-default-features --features safe-decode --ciserver travis-ci --coveralls $TRAVIS_JOB_ID
 - cargo tarpaulin --verbose --timeout 120 --out Xml --no-default-features --ciserver travis-ci --coveralls $TRAVIS_JOB_ID
 
-before_cache: |
-  cargo install cargo-tarpaulin
+
