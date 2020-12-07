@@ -102,7 +102,7 @@ fn check_token() {
 }
 
 /// The token consists of two parts, the literal length (upper 4 bits) and match_length (lower 4 bits)
-/// if the literal length and match_length are both below 15, we don't need to read additional data, so the token does fit the metadata.
+/// if the literal length and match_length are both below 15, we don't need to read additional data, so the token does fit the metadata in a single u8.
 #[inline]
 fn does_token_fit(token: u8) -> bool {
     !((token & FIT_TOKEN_MASK_LITERAL) == FIT_TOKEN_MASK_LITERAL
@@ -181,8 +181,11 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
                 };
             }
 
+            // Copy the literal
+            // The literal is at max 14 bytes, and the is_safe_distance check assures
+            // that we are far away enough from the end so we can safely copy 16 bytes 
             unsafe {
-                block_copy_from_src(input.as_ptr().add(input_pos), output_ptr, literal_length)
+                std::ptr::copy_nonoverlapping(input.as_ptr().add(input_pos), output_ptr, 16);
             };
             input_pos += literal_length;
             unsafe {
