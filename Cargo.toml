@@ -28,7 +28,8 @@ path = "benches/crit_bench.rs"
 # path = "benches/bench.rs"
 
 # [[bin]]
-# name = "profile_comp"
+# name = "decompress_with_stats"
+# path = "src/test_bins/decompress_with_stats.rs"
 
 [dependencies]
 byteorder = "1.3.4"

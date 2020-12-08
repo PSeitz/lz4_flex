@@ -114,6 +114,11 @@ fn is_safe_distance(input_pos: usize, in_len: usize) -> bool {
     input_pos < in_len
 }
 
+#[cold]
+unsafe fn copy_24(start_ptr: *const u8, output_ptr: *mut u8) {
+    std::ptr::copy_nonoverlapping(start_ptr, output_ptr, 24);
+}
+
 /// We copy 24 byte blocks, because aligned copies are faster
 const BLOCK_COPY_SIZE: usize = 24;
 
@@ -203,10 +208,17 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
             {
                 duplicate_overlapping(&mut output_ptr, start_ptr, match_length);
             } else {
+
                 unsafe {
-                    block_copy_from_src(start_ptr, output_ptr, match_length);
+                    // match_length is at max 14+4 = 18, so copy_24 covers only the values 17, 18 and is therefore marked as cold
+                    if match_length <= 16 {
+                        std::ptr::copy_nonoverlapping(start_ptr, output_ptr, 16);
+                    }else{
+                        copy_24(start_ptr, output_ptr)
+                    }
                     output_ptr = output_ptr.add(match_length);
-                }
+                };
+                
             }
 
             continue;
@@ -297,6 +309,93 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
         duplicate(&mut output_ptr, start_ptr, match_length);
     }
     Ok(())
+}
+
+#[cold]
+pub fn unlikely_case(output_start: *mut u8, output_ptr: *mut u8, literal_length: u8) -> Result<(), DecompressError> {
+    // Now, we read the literals section.
+    // Literal Section
+    // If the initial value is 15, it is indicated that another byte will be read and added to it
+    let mut literal_length = (token >> 4) as usize;
+    if literal_length != 0 {
+        if literal_length == 15 {
+            // The literal_length length took the maximal value, indicating that there is more than 15
+            // literal_length bytes. We read the extra integer.
+            literal_length += read_integer(input, &mut input_pos)? as usize;
+        }
+
+        #[cfg(feature = "safe-decode")]
+        {
+            // Check if literal is out of bounds for the input, and if there is enough space on the output
+            if input.len() < input_pos + literal_length {
+                return Err(DecompressError::LiteralOutOfBounds);
+            };
+            if output.len() < (output_ptr as usize - output_start + literal_length) {
+                return Err(DecompressError::OutputTooSmall {
+                    expected_size: (output_ptr as usize - output_start + literal_length),
+                    actual_size: output.len(),
+                });
+            };
+        }
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                input.as_ptr().add(input_pos),
+                output_ptr,
+                literal_length,
+            );
+            output_ptr = output_ptr.add(literal_length);
+        }
+        input_pos += literal_length;
+    }
+
+    // If the input stream is emptied, we break out of the loop. This is only the case
+    // in the end of the stream, since the block is intact otherwise.
+    if in_len <= input_pos {
+        break;
+    }
+
+    // Read duplicate section
+    #[cfg(feature = "safe-decode")]
+    {
+        if input_pos + 2 >= input.len() {
+            return Err(DecompressError::OffsetOutOfBounds);
+        }
+        if input_pos + 2 >= output.len() {
+            return Err(DecompressError::OffsetOutOfBounds);
+        }
+    }
+    let offset = read_u16(input, &mut input_pos);
+    // Obtain the initial match length. The match length is the length of the duplicate segment
+    // which will later be copied from data previously decompressed into the output buffer. The
+    // initial length is derived from the second part of the token (the lower nibble), we read
+    // earlier. Since having a match length of less than 4 would mean negative compression
+    // ratio, we start at 4.
+    // let mut match_length = (4 + (token & 0xF)) as usize;
+
+    // The intial match length can maximally be 19. As with the literal length, this indicates
+    // that there are more bytes to read.
+    let mut match_length = (4 + (token & 0xF)) as usize;
+    if match_length == 4 + 15 {
+        // The match length took the maximal value, indicating that there is more bytes. We
+        // read the extra integer.
+        match_length += read_integer(input, &mut input_pos)? as usize;
+    }
+
+    // We now copy from the already decompressed buffer. This allows us for storing duplicates
+    // by simply referencing the other location.
+
+    // Calculate the start of this duplicate segment. We use wrapping subtraction to avoid
+    // overflow checks, which we will catch later.
+    let start_ptr = unsafe { output_ptr.sub(offset as usize) };
+
+    // We'll do a bound check to in safe-decode.
+    #[cfg(feature = "safe-decode")]
+    {
+        if (start_ptr as usize) >= (output_ptr as usize) {
+            return Err(DecompressError::OffsetOutOfBounds);
+        };
+    }
+    duplicate(&mut output_ptr, start_ptr, match_length);
 }
 
 /// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in litte endian.

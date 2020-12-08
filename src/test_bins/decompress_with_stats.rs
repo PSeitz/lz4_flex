@@ -22,8 +22,8 @@ quick_error! {
 }
 
 // const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/dickens.txt");
-const COMPRESSION10MB: &[u8] = include_bytes!("../../benches/compression_34k.txt");
-// const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/compression_66k_JSON.txt");
+// const COMPRESSION10MB: &[u8] = include_bytes!("../../benches/compression_34k.txt");
+const COMPRESSION10MB: &'static [u8] = include_bytes!("../../benches/compression_66k_JSON.txt");
 //
 fn main() {
     let compressed = lz4_flex::compress(COMPRESSION10MB as &[u8]);
@@ -59,6 +59,15 @@ struct Decoder<'a> {
     literal_fit: u32,
     token_not_fit: u32,
     token_fit: u32,
+    offset_length_1: u32,
+    offset_length_2: u32,
+    offset_length_3: u32,
+    offset_length_4: u32,
+    offset_length_5: u32,
+    offset_length_6: u32,
+    offset_length_7: u32,
+    offset_length_8: u32,
+    offset_length_other: u32,
 }
 
 impl<'a> Decoder<'a> {
@@ -252,6 +261,31 @@ impl<'a> Decoder<'a> {
 
         // We'll do a bound check to avoid panicking.
         if start < self.output.len() {
+            if self.output.len() < start + match_length {
+
+                // dbg!(self.offset_length_1);
+                // dbg!(self.offset_length_2);
+                // dbg!(self.offset_length_3);
+                // dbg!(self.offset_length_4);
+                // dbg!(self.offset_length_5);
+                // dbg!(self.offset_length_6);
+                // dbg!(self.offset_length_7);
+                // dbg!(self.offset_length_8);
+                // dbg!(self.offset_length_other);
+
+                match offset {
+                    1 => self.offset_length_1+=1,
+                    2 => self.offset_length_2+=1,
+                    3 => self.offset_length_3+=1,
+                    4 => self.offset_length_4+=1,
+                    5 => self.offset_length_5+=1,
+                    6 => self.offset_length_6+=1,
+                    7 => self.offset_length_7+=1,
+                    8 => self.offset_length_8+=1,
+                    _ => self.offset_length_other+=1,
+                };
+
+            }
             // Write the duplicate segment to the output buffer.
             self.duplicate(start, match_length);
 
@@ -405,6 +439,22 @@ impl<'a> Decoder<'a> {
         dbg!(self.token_not_fit);
         dbg!(self.token_fit);
 
+        dbg!(self.offset_length_1);
+        dbg!(self.offset_length_2);
+        dbg!(self.offset_length_3);
+        dbg!(self.offset_length_4);
+        dbg!(self.offset_length_5);
+        dbg!(self.offset_length_6);
+        dbg!(self.offset_length_7);
+        dbg!(self.offset_length_8);
+        dbg!(self.offset_length_other);
+
+        dbg!(self.literal_unused);
+        dbg!(self.literal_full);
+        dbg!(self.literal_fit);
+        dbg!(self.token_not_fit);
+        dbg!(self.token_fit);
+
         Ok(())
     }
 }
@@ -427,6 +477,15 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> 
         literal_fit: 0,
         token_not_fit: 0,
         token_fit: 0,
+        offset_length_1: 0,
+        offset_length_2: 0,
+        offset_length_3: 0,
+        offset_length_4: 0,
+        offset_length_5: 0,
+        offset_length_6: 0,
+        offset_length_7: 0,
+        offset_length_8: 0,
+        offset_length_other: 0,
     }
     .complete()?;
 
