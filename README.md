@@ -11,7 +11,7 @@ Configurable, pure rust, high performance implementation of LZ4 compression with
 ## Features
 - Very good logo
 - LZ4 Block format
-- High performance
+- Fastest LZ4 implementation in Rust
 - 1s clean release build time
 - feature flags to configure safe/unsafe code usage
 
