@@ -1,5 +1,4 @@
 //! The decompression algorithm.
-// use crate::block::wild_copy_from_src_8;
 
 use crate::block::DecompressError;
 
@@ -27,12 +26,6 @@ fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, DecompressEr
     while {
         // We add the next byte until we get a byte which we add to the counting variable.
 
-        // #[cfg(feature = "safe-decode")]
-        // {
-        //     if input.len() < *input_pos + 1 {
-        //         return Err(Error::ExpectedAnotherByte);
-        //     };
-        // }
         let extra: u8 = input[*input_pos];
         // check alread done in move_cursor
         *input_pos += 1;
@@ -139,12 +132,6 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
             // Write the duplicate segment to the output buffer from the output buffer
             // The blocks can overlap, make sure they are at least BLOCK_COPY_SIZE apart
             duplicate_slice(output, offset, match_length)?;
-
-            // unsafe{
-            //     duplicate(&mut output.as_mut_ptr().add(output.len()), output.as_mut_ptr().add(output.len()).sub(offset), match_length);
-            //     output.set_len(output.len() + match_length);
-            // }
-
             continue;
         }
 
@@ -172,23 +159,12 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
             break;
         }
 
-        // Read duplicate section
-        // #[cfg(feature = "safe-decode")]
-        // {
-        //     if input_pos + 2 >= input.len() {
-        //         return Err(DecompressError::OffsetOutOfBounds);
-        //     }
-        //     if input_pos + 2 >= output.len() {
-        //         return Err(DecompressError::OffsetOutOfBounds);
-        //     }
-        // }
         let offset = read_u16(input, &mut input_pos) as usize;
         // Obtain the initial match length. The match length is the length of the duplicate segment
         // which will later be copied from data previously decompressed into the output buffer. The
         // initial length is derived from the second part of the token (the lower nibble), we read
         // earlier. Since having a match length of less than 4 would mean negative compression
         // ratio, we start at 4.
-        // let mut match_length = (4 + (token & 0xF)) as usize;
 
         // The intial match length can maximally be 19. As with the literal length, this indicates
         // that there are more bytes to read.
@@ -215,19 +191,8 @@ pub fn duplicate_slice(
     match_length: usize,
 ) -> Result<(), DecompressError> {
     if match_length + 16 >= offset {
-        // unsafe{
-        //     duplicate_overlapping(&mut output.as_mut_ptr().add(output.len()), output.as_mut_ptr().add(output.len()).sub(offset), match_length);
-        //     output.set_len(output.len() + match_length);
-        // }
         duplicate_overlapping_slice(output, offset, match_length)?;
 
-    // unsafe{
-    //     let old_len = output.len();
-    //     let mut output_ptr = output.as_mut_ptr().add(output.len());
-    //     let start_ptr = output_ptr.sub(offset as usize);
-    //     duplicate_overlapping(&mut output_ptr, start_ptr, match_length);
-    //     output.set_len(old_len + match_length);
-    // }
     } else {
         let old_len = output.len();
         let mut dst = [0u8; 16];
@@ -235,105 +200,11 @@ pub fn duplicate_slice(
             dst.clone_from_slice(&output[i..i + 16]);
             output.extend_from_slice(&dst);
         }
-        // for i in (output.len() - offset..output.len() - offset + match_length).step_by(16) {
-        //     let old_len = output.len();
-        //     output.resize(old_len + 16, 0);
-        //     let (left, right) = output.split_at_mut(old_len);
-        //     right.copy_from_slice(&left[i..i+16]);
-        // }
-
-        // duplicate_slice
-        // [x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16, x17, x18, x19, x20]
-        //     ^
-        //     offset = 20
-        //     match_length = 20
-        //
-        // step1 resize
-        // [x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16, x17, x18, x19, x20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        //
-        // step2 let (left, right) = split_at_mut(old_len)                                               ^
-        // step3 copy min(16, right.len()) from left.end - offset, to right
-        //
-        //
-        // [x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16, x17, x18, x19, x20, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16, 0, 0, 0, 0]
-        //
-        // move old_len by 16 and repeat                                                                                                                                        ^
-
-        // output.resize(old_len + match_length, 0);
-        // loop {
-        //     let (left, right) = output.split_at_mut(old_len);
-        //     let length = std::cmp::min(left.len(), std::cmp::min(right.len(), 16));
-        //     right[..length].copy_from_slice(&left[left.len() - offset..left.len() - offset + length]);
-        //     old_len +=16;
-        //     if old_len >= output.len(){
-        //         break;
-        //     }
-        // }
-
-        // for i in (output.len() - offset..output.len() - offset + match_length).step_by(16) {
-        //     let old_len = output.len();
-        //     output.resize(old_len + 16, 0);
-        //     let (left, right) = output.split_at_mut(old_len);
-        //     right.copy_from_slice(&left[i..i+16]);
-        // }
         output.truncate(old_len + match_length);
 
-        // unsafe{
-        //     copy_on_self(&mut output.as_mut_ptr().add(output.len()), output.as_mut_ptr().add(output.len()).sub(offset), match_length);
-        //     output.set_len(output.len() + match_length);
-        // }
     }
-    // duplicate_overlapping_slice(output, offset, match_length)?;
     Ok(())
 }
-
-// /// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in litte endian.
-// /// Can be used in conjuction with `compress_prepend_size`
-// #[inline]
-// pub fn duplicate_slice(output: &mut Vec<u8>, offset: usize, match_length: usize) -> Result<(), DecompressError> {
-//     unsafe{
-//         let mut output_ptr = output.as_mut_ptr().add(output.len());
-//         let start_ptr = output_ptr.sub(offset as usize);
-//         duplicate(&mut output_ptr, start_ptr, match_length);
-//         output.set_len(output.len() + match_length );
-//     }
-//     // duplicate_overlapping_slice(output, offset, match_length)?;
-//     Ok(())
-// }
-
-// #[inline]
-// fn duplicate(output_ptr: &mut *mut u8, start: *const u8, match_length: usize) {
-//     // We cannot simply use memcpy or `extend_from_slice`, because these do not allow
-//     // self-referential copies: http://ticki.github.io/img/lz4_runs_encoding_diagram.svg
-//     // `reserve` enough space on the vector to safely copy self referential data.
-//     // Check overlap copy
-//     if (*output_ptr as usize) < unsafe { start.add(match_length) } as usize {
-//         duplicate_overlapping(output_ptr, start, match_length);
-//     } else {
-//         copy_on_self(output_ptr, start, match_length);
-//     }
-// }
-
-// #[inline]
-// fn copy_on_self(out_ptr: &mut *mut u8, start: *const u8, num_items: usize) {
-//     unsafe {
-//         wild_copy_from_src_8(start, *out_ptr, num_items);
-//         *out_ptr = out_ptr.add(num_items);
-//     }
-// }
-
-// /// Copy function, if the data start + match_length overlaps into output_ptr
-// #[inline]
-// fn duplicate_overlapping(output_ptr: &mut *mut u8, mut start: *const u8, match_length: usize) {
-//     for _ in 0..match_length {
-//         unsafe {
-//             let curr = start.read();
-//             output_ptr.write(curr);
-//             *output_ptr = output_ptr.add(1);
-//             start = start.add(1);
-//         }
-//     }
-// }
 
 /// Copy function, if the data start + match_length overlaps into output_ptr
 #[inline]
@@ -342,11 +213,6 @@ fn duplicate_overlapping_slice(
     offset: usize,
     match_length: usize,
 ) -> Result<(), DecompressError> {
-    // let old_length = output.len();
-    // for i in 0..match_length {
-    //     let b = output[old_length - offset + i];
-    //     output.push(b);
-    // }
     if offset == 1 {
         output.resize(output.len() + match_length, output[output.len() - 1]);
         Ok(())
@@ -374,9 +240,6 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
         | (input[3] as usize) << 24;
     // Allocate a vector to contain the decompressed stream. we may wildcopy out of bounds, so the vector needs to have ad additional BLOCK_COPY_SIZE capacity
     let mut vec = Vec::with_capacity(uncompressed_size + BLOCK_COPY_SIZE);
-    // unsafe {
-    //     vec.set_len(uncompressed_size);
-    // }
     decompress_into(&input[4..], &mut vec)?;
 
     Ok(vec)
@@ -387,9 +250,6 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
 pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
     // Allocate a vector to contain the decompressed stream. we may wildcopy out of bounds, so the vector needs to have ad additional BLOCK_COPY_SIZE capacity
     let mut vec = Vec::with_capacity(uncompressed_size + BLOCK_COPY_SIZE);
-    // unsafe {
-    //     vec.set_len(uncompressed_size);
-    // }
     decompress_into(input, &mut vec)?;
 
     Ok(vec)
