@@ -11,13 +11,13 @@ Configurable, pure rust, high performance implementation of LZ4 compression with
 ## Features
 - Very good logo
 - LZ4 Block format
-- Fastest LZ4 implementation in Rust
+- High performance
 - 1s clean release build time
 - feature flags to configure safe/unsafe code usage
 
 ## Usage: 
 
-By default compression and decompression uses no usafe via the default feature flags "safe-encode" and "safe-decode". If you need more performance you can disable them (e.g. with no-default-features).
+Compression and decompression uses no usafe via the default feature flags "safe-encode" and "safe-decode". If you need more performance you can disable them (e.g. with no-default-features).
 
 ```rust
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
@@ -31,19 +31,25 @@ fn main(){
 ```
 
 ## Benchmarks
-The benchmark is run with criterion on set of test files are in the folder benches.
-
-Currently 3 implementations are compared, this one, the [redox-version](https://crates.io/crates/lz4-compress), [lz-fear](https://github.com/main--/rust-lz-fear) and the [c++ version via rust bindings](https://crates.io/crates/lz4). The lz4-flexx version is running in unsafe mode.
+The benchmark is run with criterion, the test files are in the benches folder.
 
 `cargo bench`
+
+Currently 3 implementations are compared, this one, the [redox-version](https://crates.io/crates/lz4-compress), [lz-fear](https://github.com/main--/rust-lz-fear) and the [c++ version via rust bindings](https://crates.io/crates/lz4). 
+The lz4-flex version is tested with the feature flags safe-decode and safe-encode switched on and off.
 
 - lz4_redox_rust: https://crates.io/crates/lz4-compress
 - lz4_cpp: https://crates.io/crates/lz4
 - lz-fear: https://github.com/main--/rust-lz-fear
 
-Beware that v0.4 charts use linear scaling and v0.3 charts use logarithmic scaling.
+### Results v0.4.1 10-12-2020 (safe-decode and safe-encode off)
+Executed on Core i7-6700 Win10 WSL.
 
-### Results v0.4 04-12-2020
+![Compress](./compress_bench.svg)
+
+![Decompress](./decompress_bench.svg)
+
+### Results v0.4 04-12-2020 (safe-decode and safe-encode on)
 Since v0.4 the implementation is using no unsafe, this benchmark covers this.
 
 Executed on Core i7-6700 Win10 WSL.
@@ -52,13 +58,6 @@ Executed on Core i7-6700 Win10 WSL.
 
 ![Decompress](./decompress_bench_safe.svg)
 
-### Results v0.3 18-10-2020
-Executed on Macbook Pro 2017 i7
-
-
-![Compress](./compress_bench.svg)
-
-![Decompress](./decompress_bench.svg)
 
 
 ## Fuzzer
