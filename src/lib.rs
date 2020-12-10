@@ -14,11 +14,12 @@ assert_eq!(input, uncompressed);
 ```
 
 ## Feature Flags
-There are two feature flags: safe-encode and safe-decode.
+There are 3 feature flags: safe-encode, safe-decode and checked-decode.
 
-safe-decode is enabled by default. Currently it adds more checks to the unsafe code, but it still uses unsafe.
+safe-decode and safe-encode only use safe rust code.
 
-safe-encode will switch the compression to completely safe rust code.
+checked-decode will add aditional checks if safe-decode is not enabled, to avoid out of bounds access.
+
 */
 #[macro_use]
 extern crate quick_error;
@@ -32,7 +33,6 @@ mod tests;
 #[macro_use]
 extern crate more_asserts;
 
-// use frame::compress::{compress as frame_compress};
 pub use block::compress::{compress, compress_into, compress_prepend_size};
 
 #[cfg(feature = "safe-decode")]

@@ -52,7 +52,7 @@ fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, DecompressEr
     while {
         // We add the next byte until we get a byte which we add to the counting variable.
 
-        #[cfg(feature = "safe-decode")]
+        #[cfg(feature = "checked-decode")]
         {
             if input.len() < *input_pos + 1 {
                 return Err(DecompressError::ExpectedAnotherByte);
@@ -140,7 +140,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
     let mut input_pos = 0;
     let mut output_ptr = output.as_mut_ptr();
 
-    #[cfg(feature = "safe-decode")]
+    #[cfg(feature = "checked-decode")]
     let output_start = output_ptr as usize;
 
     if input.is_empty() {
@@ -151,7 +151,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
     let in_len = input.len() - 1;
     let end_pos_check = input.len().saturating_sub(18);
     loop {
-        #[cfg(feature = "safe-decode")]
+        #[cfg(feature = "checked-decode")]
         {
             if input.len() < input_pos + 1 {
                 return Err(DecompressError::LiteralOutOfBounds);
@@ -172,7 +172,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
         if does_token_fit(token) && is_safe_distance(input_pos, end_pos_check) {
             let literal_length = (token >> 4) as usize;
 
-            #[cfg(feature = "safe-decode")]
+            #[cfg(feature = "checked-decode")]
             {
                 // Check if literal is out of bounds for the input, and if there is enough space on the output
                 if input.len() < input_pos + literal_length {
@@ -235,7 +235,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
                 literal_length += read_integer(input, &mut input_pos)? as usize;
             }
 
-            #[cfg(feature = "safe-decode")]
+            #[cfg(feature = "checked-decode")]
             {
                 // Check if literal is out of bounds for the input, and if there is enough space on the output
                 if input.len() < input_pos + literal_length {
@@ -266,7 +266,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
         }
 
         // Read duplicate section
-        #[cfg(feature = "safe-decode")]
+        #[cfg(feature = "checked-decode")]
         {
             if input_pos + 2 >= input.len() {
                 return Err(DecompressError::OffsetOutOfBounds);
@@ -299,8 +299,8 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
         // overflow checks, which we will catch later.
         let start_ptr = unsafe { output_ptr.sub(offset as usize) };
 
-        // We'll do a bound check to in safe-decode.
-        #[cfg(feature = "safe-decode")]
+        // We'll do a bound check to in checked-decode.
+        #[cfg(feature = "checked-decode")]
         {
             if (start_ptr as usize) >= (output_ptr as usize) {
                 return Err(DecompressError::OffsetOutOfBounds);
@@ -359,8 +359,8 @@ mod test {
         assert_eq!(decompress(&[0x30, b'a', b'4', b'9'], 3).unwrap(), b"a49");
     }
 
-    // this error test is only valid in safe-decode.
-    #[cfg(feature = "safe-decode")]
+    // this error test is only valid in checked-decode.
+    #[cfg(feature = "checked-decode")]
     #[test]
     fn offset_oob() {
         decompress(&[0x10, b'a', 2, 0], 4).unwrap_err();

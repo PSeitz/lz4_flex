@@ -1,7 +1,7 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
 
-use lz4_flex::block::decompress::decompress_size_prepended;
+use lz4_flex::decompress_size_prepended;
 use lz4::block::compress as lz4_linked_block_compress;
 
 fuzz_target!(|data: &[u8]| {

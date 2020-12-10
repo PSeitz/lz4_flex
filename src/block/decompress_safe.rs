@@ -96,12 +96,9 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
     let end_pos_check = input.len().saturating_sub(18);
 
     loop {
-        #[cfg(feature = "safe-decode")]
-        {
-            if input.len() < input_pos + 1 {
-                return Err(DecompressError::LiteralOutOfBounds);
-            };
-        }
+        if input.len() < input_pos + 1 {
+            return Err(DecompressError::LiteralOutOfBounds);
+        };
 
         // Read the token. The token is the first byte in a block. It is divided into two 4-bit
         // subtokens, the higher and the lower.
