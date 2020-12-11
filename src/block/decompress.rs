@@ -8,7 +8,7 @@ fn duplicate(output_ptr: &mut *mut u8, start: *const u8, match_length: usize) {
     // self-referential copies: http://ticki.github.io/img/lz4_runs_encoding_diagram.svg
     // `reserve` enough space on the vector to safely copy self referential data.
     // Check overlap copy
-    if (*output_ptr as usize) < unsafe { start.add(match_length) } as usize {
+    if (*output_ptr as usize) <= unsafe { start.add(match_length) } as usize {
         duplicate_overlapping(output_ptr, start, match_length);
     } else {
         copy_on_self(output_ptr, start, match_length);
