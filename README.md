@@ -33,8 +33,6 @@ fn main(){
 ## Benchmarks
 The benchmark is run with criterion, the test files are in the benches folder.
 
-`cargo bench`
-
 Currently 3 implementations are compared, this one, the [redox-version](https://crates.io/crates/lz4-compress), [lz-fear](https://github.com/main--/rust-lz-fear) and the [c++ version via rust bindings](https://crates.io/crates/lz4). 
 The lz4-flex version is tested with the feature flags safe-decode and safe-encode switched on and off.
 
@@ -43,6 +41,8 @@ The lz4-flex version is tested with the feature flags safe-decode and safe-encod
 - lz-fear: https://github.com/main--/rust-lz-fear
 
 ### Results v0.4.1 10-12-2020 (safe-decode and safe-encode off)
+`cargo bench --no-default-features`
+
 Executed on Core i7-6700 Win10 WSL.
 
 ![Compress](./compress_bench.svg)
@@ -50,7 +50,7 @@ Executed on Core i7-6700 Win10 WSL.
 ![Decompress](./decompress_bench.svg)
 
 ### Results v0.4 04-12-2020 (safe-decode and safe-encode on)
-Since v0.4 the implementation is using no unsafe, this benchmark covers this.
+`cargo bench`
 
 Executed on Core i7-6700 Win10 WSL.
 
