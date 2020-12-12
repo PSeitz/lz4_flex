@@ -216,7 +216,7 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
     // Every four bytes are hashed, and in the resulting slot their position in the input buffer
     // is placed. This way we can easily look up a candidate to back references.
     // dict_bitshift
-    // Shift the hash value for the dictionary to the right, so match the dictionary size.
+    // Shift the hash value for the dictionary to the right, to match the dictionary size.
     let (dict_size, dict_bitshift) = match input.len() {
         0..=500 => (128, 9),
         501..=1_000 => (256, 8),
@@ -258,16 +258,16 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
     // let input = &input[..input.len() - END_OFFSET];
 
     let end_pos_check = input_size - MFLIMIT as usize;
-    let mut candidate;
+    
     let mut cur = 0;
     let mut start = cur;
-
     cur += 1;
     // let mut forward_hash = get_hash_at(input, cur, dict_bitshift);
 
     loop {
         // Read the next block into two sections, the literals and the duplicates.
         let mut step_size;
+        let mut candidate;
         let mut non_match_count = 1 << INCREASE_STEPSIZE_BITSHIFT;
         // The number of bytes before our cursor, where the duplicate starts.
         let mut next_cur = cur;

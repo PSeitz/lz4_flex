@@ -8,12 +8,21 @@
 
 Configurable, pure rust, high performance implementation of LZ4 compression with fast compile times. Originally based on [redox-os' lz4 compression](https://crates.io/crates/lz4-compress), but now a complete rewrite.
 
+
+|    Compressor    | Compression | Decompression |
+|------------------|-------------|---------------|
+| lz4_flexx unsafe | 594 MiB/s   | 3733 MiB/s    |
+| lz4_flexx safe   | 546 MiB/s   | 1433 MiB/s    |
+| lz4_cpp          | 914 MiB/s   | 3793 MiB/s    |
+| lz4_fear         | 433 MiB/s   | 836 MiB/s     |
+
+
 ## Features
 - Very good logo
 - LZ4 Block format
 - High performance
 - 1s clean release build time
-- feature flags to configure safe/unsafe code usage
+- Feature flags to configure safe/unsafe code usage
 
 ## Usage: 
 
@@ -72,4 +81,5 @@ This fuzz target fuzzes, and asserts compression with cpp and decompression retu
 ## TODO
 - Frame format
 - High compression
+- Dictionary Compression
 

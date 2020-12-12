@@ -77,6 +77,14 @@ fn is_safe_distance(input_pos: usize, in_len: usize) -> bool {
 /// We copy 24 byte blocks, because aligned copies are faster
 const BLOCK_COPY_SIZE: usize = 24;
 
+#[cold]
+fn copy_24(output: &mut Vec<u8>, offset: usize) {
+    let mut dst = [0u8; BLOCK_COPY_SIZE];
+    let i = output.len() - offset;
+    dst.clone_from_slice(&output[i..i + BLOCK_COPY_SIZE]);
+    output.extend_from_slice(&dst);
+}
+
 /// Decompress all bytes of `input` into `output`.
 #[inline]
 pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), DecompressError> {
@@ -128,7 +136,24 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
 
             // Write the duplicate segment to the output buffer from the output buffer
             // The blocks can overlap, make sure they are at least BLOCK_COPY_SIZE apart
-            duplicate_slice(output, offset, match_length)?;
+            // duplicate_slice(output, offset, match_length)?;
+
+            if match_length + BLOCK_COPY_SIZE >= offset {
+                duplicate_overlapping_slice(output, offset, match_length)?;
+            }else {
+                let old_len = output.len();
+                if match_length <= 16 {
+                    let mut dst = [0u8; 16];
+                    let i = output.len() - offset;
+                    dst.clone_from_slice(&output[i..i + 16]);
+                    output.extend_from_slice(&dst);
+                }else{
+                    copy_24(output, offset)
+                }
+                output.truncate(old_len + match_length);
+
+            }
+
             continue;
         }
 
@@ -189,8 +214,7 @@ pub fn duplicate_slice(
 ) -> Result<(), DecompressError> {
     if match_length + 16 >= offset {
         duplicate_overlapping_slice(output, offset, match_length)?;
-
-    } else {
+    }else {
         let old_len = output.len();
         let mut dst = [0u8; 16];
         for i in (output.len() - offset..output.len() - offset + match_length).step_by(16) {
@@ -203,7 +227,7 @@ pub fn duplicate_slice(
     Ok(())
 }
 
-/// Copy function, if the data start + match_length overlaps into output_ptr
+/// Copy function, if the data start (end of output - offset) + match_length overlaps into output
 #[inline]
 fn duplicate_overlapping_slice(
     output: &mut Vec<u8>,
@@ -235,8 +259,8 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
         | (input[1] as usize) << 8
         | (input[2] as usize) << 16
         | (input[3] as usize) << 24;
-    // Allocate a vector to contain the decompressed stream. we may wildcopy out of bounds, so the vector needs to have ad additional BLOCK_COPY_SIZE capacity
-    let mut vec = Vec::with_capacity(uncompressed_size + BLOCK_COPY_SIZE);
+    // Allocate a vector to contain the decompressed stream.
+    let mut vec = Vec::with_capacity(uncompressed_size);
     decompress_into(&input[4..], &mut vec)?;
 
     Ok(vec)
@@ -245,10 +269,9 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
 /// Decompress all bytes of `input` into a new vec.
 #[inline]
 pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
-    // Allocate a vector to contain the decompressed stream. we may wildcopy out of bounds, so the vector needs to have ad additional BLOCK_COPY_SIZE capacity
-    let mut vec = Vec::with_capacity(uncompressed_size + BLOCK_COPY_SIZE);
+    // Allocate a vector to contain the decompressed stream.
+    let mut vec = Vec::with_capacity(uncompressed_size);
     decompress_into(input, &mut vec)?;
-
     Ok(vec)
 }
 
