@@ -14,11 +14,12 @@ assert_eq!(input, uncompressed);
 ```
 
 ## Feature Flags
-There are 3 feature flags: safe-encode, safe-decode and checked-decode.
 
-safe-decode and safe-encode only use safe rust code.
+- `safe-encode` uses only safe rust for encode. _enabled by default_
+- `safe-decode` uses only safe rust for encode. _enabled by default_
+- `checked-decode` will add aditional checks if `safe-decode` is not enabled, to avoid out of bounds access
 
-checked-decode will add aditional checks if safe-decode is not enabled, to avoid out of bounds access.
+For maximum performance use `no-default-features`.
 
 */
 #[macro_use]
