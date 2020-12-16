@@ -34,6 +34,8 @@ pub use decompress_safe::decompress_size_prepended;
 #[cfg(not(feature = "safe-decode"))]
 pub use decompress::decompress_size_prepended;
 
+use std::convert::TryInto;
+
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
 /// The last match must start at least 12 bytes before the end of block. The last match is part of the penultimate sequence.
 /// It is followed by the last sequence, which contains only literals.
@@ -126,4 +128,13 @@ quick_error! {
             description("The offset to copy is not contained in the decompressed buffer.")
         }
     }
+}
+
+#[inline]
+fn uncompressed_size(input: &[u8]) -> Result<(usize, &[u8]), DecompressError> {
+    let size = input.get(..4).ok_or(DecompressError::ExpectedAnotherByte)?;
+    let size: &[u8; 4] = size.try_into().unwrap();
+    let uncompressed_size = u32::from_le_bytes(*size) as usize;
+    let rest = &input[4..];
+    Ok((uncompressed_size, rest))
 }
