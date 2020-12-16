@@ -1,6 +1,5 @@
 //! <https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md>
 
-
 /// LZ4 Format
 /// Token 1 byte[Literal Length, Match Length (Neg Offset)]   -- 0-15, 0-15
 /// [Optional Literal Length bytes] [Literal] [Optional Match Length bytes]

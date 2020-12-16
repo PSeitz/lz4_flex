@@ -1,4 +1,3 @@
-
 /// The Hashtable trait used by the compression to store hashed bytes to their position.
 /// `val` can be maximum the size of the input in bytes.
 ///
@@ -9,7 +8,7 @@
 ///
 /// Every four bytes is assigned an entry. When this number is lower, fewer entries exists, and
 /// thus collisions are more likely, hurting the compression ratio.
-/// 
+///
 pub trait HashTable {
     fn get_at(&self, pos: usize) -> usize;
     fn put_at(&mut self, pos: usize, val: usize);
@@ -19,77 +18,84 @@ pub trait HashTable {
 pub struct HashTableUsize {
     dict: Vec<usize>,
     /// Shift the hash value for the dictionary to the right, to match the dictionary size.
-    dict_bitshift: usize
+    dict_bitshift: usize,
 }
 
 impl HashTableUsize {
     #[inline]
     pub fn new(dict_size: usize, dict_bitshift: usize) -> Self {
         let dict = vec![0; dict_size];
-        Self{dict, dict_bitshift}
+        Self {
+            dict,
+            dict_bitshift,
+        }
     }
 }
 
 impl HashTable for HashTableUsize {
     // add code here
     #[inline]
-    fn get_at(&self, hash: usize) -> usize { 
+    fn get_at(&self, hash: usize) -> usize {
         self.dict[hash >> self.dict_bitshift]
     }
     #[inline]
-    fn put_at(&mut self, hash: usize, val: usize) { 
+    fn put_at(&mut self, hash: usize, val: usize) {
         self.dict[hash >> self.dict_bitshift] = val;
     }
 }
-
 
 #[derive(Debug)]
 pub struct HashTableU32 {
     dict: Vec<u32>,
     /// Shift the hash value for the dictionary to the right, to match the dictionary size.
-    dict_bitshift: usize
+    dict_bitshift: usize,
 }
 impl HashTableU32 {
     #[inline]
     pub fn new(dict_size: usize, dict_bitshift: usize) -> Self {
         let dict = vec![0; dict_size];
-        Self{dict, dict_bitshift}
+        Self {
+            dict,
+            dict_bitshift,
+        }
     }
 }
 impl HashTable for HashTableU32 {
     // add code here
     #[inline]
-    fn get_at(&self, hash: usize) -> usize { 
+    fn get_at(&self, hash: usize) -> usize {
         self.dict[hash >> self.dict_bitshift] as usize
     }
     #[inline]
-    fn put_at(&mut self, hash: usize, val: usize) { 
+    fn put_at(&mut self, hash: usize, val: usize) {
         self.dict[hash >> self.dict_bitshift] = val as u32;
     }
 }
-
 
 #[derive(Debug)]
 pub struct HashTableU16 {
     dict: Vec<u16>,
     /// Shift the hash value for the dictionary to the right, to match the dictionary size.
-    dict_bitshift: usize
+    dict_bitshift: usize,
 }
 impl HashTableU16 {
     #[inline]
     pub fn new(dict_size: usize, dict_bitshift: usize) -> Self {
         let dict = vec![0; dict_size];
-        Self{dict, dict_bitshift}
+        Self {
+            dict,
+            dict_bitshift,
+        }
     }
 }
 impl HashTable for HashTableU16 {
     // add code here
     #[inline]
-    fn get_at(&self, hash: usize) -> usize { 
+    fn get_at(&self, hash: usize) -> usize {
         self.dict[hash >> self.dict_bitshift] as usize
     }
     #[inline]
-    fn put_at(&mut self, hash: usize, val: usize) { 
+    fn put_at(&mut self, hash: usize, val: usize) {
         self.dict[hash >> self.dict_bitshift] = val as u16;
     }
 }

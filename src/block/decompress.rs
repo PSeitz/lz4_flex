@@ -177,7 +177,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
 
             // Copy the literal
             // The literal is at max 14 bytes, and the is_safe_distance check assures
-            // that we are far away enough from the end so we can safely copy 16 bytes 
+            // that we are far away enough from the end so we can safely copy 16 bytes
             unsafe {
                 std::ptr::copy_nonoverlapping(input.as_ptr().add(input_pos), output_ptr, 16);
             };
@@ -197,17 +197,15 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
             {
                 duplicate_overlapping(&mut output_ptr, start_ptr, match_length);
             } else {
-
                 unsafe {
                     // match_length is at max 14+4 = 18, so copy_24 covers only the values 17, 18 and is therefore marked as cold
                     if match_length <= 16 {
                         std::ptr::copy_nonoverlapping(start_ptr, output_ptr, 16);
-                    }else{
+                    } else {
                         copy_24(start_ptr, output_ptr)
                     }
                     output_ptr = output_ptr.add(match_length);
                 };
-                
             }
 
             continue;

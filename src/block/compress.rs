@@ -5,8 +5,8 @@
 //! memory hungry.
 
 use crate::block::hashtable::get_table_size;
-use crate::block::hashtable::{HashTableUsize,HashTableU16,HashTableU32};
 use crate::block::hashtable::HashTable;
+use crate::block::hashtable::{HashTableU16, HashTableU32, HashTableUsize};
 use crate::block::END_OFFSET;
 use crate::block::LZ4_MIN_LENGTH;
 use crate::block::MAX_DISTANCE;
@@ -205,7 +205,7 @@ fn handle_last_literals(
 }
 
 /// Compress all bytes of `input` into `output`.
-/// 
+///
 /// T:HashTable is the dictionary of previously encoded sequences.
 ///
 /// This is used to find duplicates in the stream so they are not written multiple times.
@@ -213,7 +213,11 @@ fn handle_last_literals(
 /// Every four bytes are hashed, and in the resulting slot their position in the input buffer
 /// is placed. This way we can easily look up a candidate to back references.
 #[inline]
-pub fn compress_into_with_table<T: HashTable>(input: &[u8], output: &mut Vec<u8>, dict: &mut T) -> std::io::Result<usize> {
+pub fn compress_into_with_table<T: HashTable>(
+    input: &[u8],
+    output: &mut Vec<u8>,
+    dict: &mut T,
+) -> std::io::Result<usize> {
     let input_size = input.len();
     let dict_bitshift = 0;
 
@@ -238,7 +242,7 @@ pub fn compress_into_with_table<T: HashTable>(input: &[u8], output: &mut Vec<u8>
 
     assert!(LZ4_MIN_LENGTH as usize > END_OFFSET);
     let end_pos_check = input_size - MFLIMIT as usize;
-    
+
     let mut cur = 0;
     let mut start = cur;
     cur += 1;
@@ -275,7 +279,8 @@ pub fn compress_into_with_table<T: HashTable>(input: &[u8], output: &mut Vec<u8>
             //   candidate actually matches what we search for.
             // - We can address up to 16-bit offset, hence we are only able to address the candidate if
             //   its offset is less than or equals to 0xFFFF.
-            (candidate as usize + MAX_DISTANCE) < cur || get_batch(input, candidate as usize) != get_batch(input, cur)
+            (candidate as usize + MAX_DISTANCE) < cur
+                || get_batch(input, candidate as usize) != get_batch(input, cur)
         } {}
 
         // The length (in bytes) of the literals section.
@@ -286,7 +291,8 @@ pub fn compress_into_with_table<T: HashTable>(input: &[u8], output: &mut Vec<u8>
 
         let offset = (cur - candidate as usize) as u16;
         cur += MINMATCH;
-        let duplicate_length = count_same_bytes(input, &input[candidate as usize + MINMATCH..], &mut cur);
+        let duplicate_length =
+            count_same_bytes(input, &input[candidate as usize + MINMATCH..], &mut cur);
         let hash = get_hash_at(input, cur - 2, dict_bitshift);
         dict.put_at(hash, cur - 2);
 
@@ -371,21 +377,21 @@ fn copy_literals(output: &mut Vec<u8>, input: &[u8]) {
 /// Returns the maximum output size of the compressed data.
 /// Can be used to preallocate capacity on the output vector
 pub fn get_maximum_output_size(input_len: usize) -> usize {
-    return 16 + 4 + (input_len as f64 * 1.1) as usize
+    return 16 + 4 + (input_len as f64 * 1.1) as usize;
 }
 
-/// Compress all bytes of `input` into `output`. 
+/// Compress all bytes of `input` into `output`.
 /// The method chooses an appropriate hashtable to lookup duplicates and calls `compress_into_with_table`
 #[inline]
 pub fn compress_into(input: &[u8], compressed: &mut Vec<u8>) {
     let (dict_size, dict_bitshift) = get_table_size(input.len());
-     if input.len() < u16::MAX as usize{
+    if input.len() < u16::MAX as usize {
         let mut dict = HashTableU16::new(dict_size, dict_bitshift);
         compress_into_with_table(input, compressed, &mut dict).unwrap();
-    } else if input.len() < u32::MAX as usize{
+    } else if input.len() < u32::MAX as usize {
         let mut dict = HashTableU32::new(dict_size, dict_bitshift);
         compress_into_with_table(input, compressed, &mut dict).unwrap();
-    }else{
+    } else {
         let mut dict = HashTableUsize::new(dict_size, dict_bitshift);
         compress_into_with_table(input, compressed, &mut dict).unwrap();
     }
