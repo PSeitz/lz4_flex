@@ -18,7 +18,7 @@ use crate::block::DecompressError;
 /// 4 is the first non-0xFF byte.
 // #[inline(never)]
 #[inline]
-fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, DecompressError> {
+fn read_integer(input: &[u8], input_pos: &mut usize) -> u32 {
     // We start at zero and count upwards.
     let mut n: u32 = 0;
     // If this byte takes value 255 (the maximum value it can take), another byte is read
@@ -38,7 +38,7 @@ fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, DecompressEr
     // 255, 255, 255, 8
     // 111, 111, 111, 101
 
-    Ok(n)
+    n
 }
 
 /// Read a little-endian 16-bit integer from the input stream.
@@ -164,7 +164,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
             if literal_length == 15 {
                 // The literal_length length took the maximal value, indicating that there is more than 15
                 // literal_length bytes. We read the extra integer.
-                literal_length += read_integer(input, &mut input_pos)? as usize;
+                literal_length += read_integer(input, &mut input_pos) as usize;
             }
 
             if input.len() < input_pos + literal_length {
@@ -193,7 +193,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
         if match_length == 4 + 15 {
             // The match length took the maximal value, indicating that there is more bytes. We
             // read the extra integer.
-            match_length += read_integer(input, &mut input_pos)? as usize;
+            match_length += read_integer(input, &mut input_pos) as usize;
         }
 
         // We now copy from the already decompressed buffer. This allows us for storing duplicates

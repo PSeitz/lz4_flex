@@ -80,13 +80,13 @@ fn count_same_bytes(first: &[u8], second: &[u8], cur: &mut usize) -> usize {
     }
 
     *cur += num;
-    return num;
+    num
 }
 
 #[inline]
 #[cfg(feature = "safe-encode")]
 fn as_usize_le(array: &[u8]) -> usize {
-    ((array[0] as usize) << 0)
+    (array[0] as usize)
         | ((array[1] as usize) << 8)
         | ((array[2] as usize) << 16)
         | ((array[3] as usize) << 24)
@@ -99,7 +99,7 @@ fn as_usize_le(array: &[u8]) -> usize {
 #[inline]
 #[cfg(feature = "safe-encode")]
 fn as_u32_le(array: &[u8; 4]) -> u32 {
-    ((array[0] as u32) << 0)
+    (array[0] as u32)
         | ((array[1] as u32) << 8)
         | ((array[2] as u32) << 16)
         | ((array[3] as u32) << 24)
@@ -171,7 +171,7 @@ fn count_same_bytes(first: &[u8], mut second: &[u8], cur: &mut usize) -> usize {
 
 /// Write an integer to the output in LSIC format.
 #[inline]
-fn write_integer(output: &mut Vec<u8>, mut n: usize) -> std::io::Result<()> {
+fn write_integer(output: &mut Vec<u8>, mut n: usize) {
     // Write the 0xFF bytes as long as the integer is higher than said value.
     while n >= 0xFF {
         n -= 0xFF;
@@ -180,7 +180,6 @@ fn write_integer(output: &mut Vec<u8>, mut n: usize) -> std::io::Result<()> {
 
     // Write the remaining byte.
     push_byte(output, n as u8);
-    Ok(())
 }
 
 /// Handle the last bytes from the input as literals
@@ -190,18 +189,18 @@ fn handle_last_literals(
     input: &[u8],
     input_size: usize,
     start: usize,
-) -> std::io::Result<usize> {
+) -> usize {
     let lit_len = input_size - start;
 
     let token = token_from_literal(lit_len);
     push_byte(output, token);
     // output.push(token);
     if lit_len >= 0xF {
-        write_integer(output, lit_len - 0xF)?;
+        write_integer(output, lit_len - 0xF);
     }
     // Now, write the actual literals.
     copy_literals(output, &input[start..]);
-    Ok(output.len())
+    output.len()
 }
 
 /// Compress all bytes of `input` into `output`.
@@ -229,7 +228,7 @@ pub fn compress_into_with_table<T: HashTable>(
         push_byte(output, token);
         // output.push(token);
         if lit_len >= 0xF {
-            write_integer(output, lit_len - 0xF)?;
+            write_integer(output, lit_len - 0xF);
         }
 
         // Now, write the actual literals.
@@ -265,7 +264,7 @@ pub fn compress_into_with_table<T: HashTable>(
             next_cur += step_size;
 
             if cur > end_pos_check {
-                return handle_last_literals(output, input, input_size, start);
+                return Ok(handle_last_literals(output, input, input_size, start));
             }
             // Find a candidate in the dictionary with the hash of the current four bytes.
             // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
@@ -313,7 +312,7 @@ pub fn compress_into_with_table<T: HashTable>(
         // If we were unable to fit the literals length into the token, write the extensional
         // part through LSIC.
         if lit_len >= 0xF {
-            write_integer(output, lit_len - 0xF)?;
+            write_integer(output, lit_len - 0xF);
         }
 
         // Now, write the actual literals.
@@ -330,7 +329,7 @@ pub fn compress_into_with_table<T: HashTable>(
         // If we were unable to fit the duplicates length into the token, write the
         // extensional part through LSIC.
         if duplicate_length >= 0xF {
-            write_integer(output, duplicate_length - 0xF)?;
+            write_integer(output, duplicate_length - 0xF);
         }
         start = cur;
         // forward_hash = get_hash_at(input, cur, dict_bitshift);
@@ -377,7 +376,7 @@ fn copy_literals(output: &mut Vec<u8>, input: &[u8]) {
 /// Returns the maximum output size of the compressed data.
 /// Can be used to preallocate capacity on the output vector
 pub fn get_maximum_output_size(input_len: usize) -> usize {
-    return 16 + 4 + (input_len as f64 * 1.1) as usize;
+    16 + 4 + (input_len as f64 * 1.1) as usize
 }
 
 /// Compress all bytes of `input` into `output`.
