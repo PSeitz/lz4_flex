@@ -1,6 +1,6 @@
 [package]
 authors = ["Pascal Seitz <pascal.seitz@gmail.com>", "ticki <Ticki@users.noreply.github.com>"]
-description = "Pure Rust implementation of raw LZ4 compression/decompression."
+description = "Fastest LZ4 implementation in Rust, no unsafe by default."
 edition = "2018"
 keywords = ["compression", "lz4", "compress", "decompression", "decompress"]
 name = "lz4_flex"
@@ -62,3 +62,7 @@ panic = "unwind"
 # [[bin]]
 # name = "decompress_with_stats"
 # path = "src/test_bins/decompress_with_stats.rs"
+
+# [[bin]]
+# name = "profile_comp"
+# path = "src/test_bins/profile_comp.rs"

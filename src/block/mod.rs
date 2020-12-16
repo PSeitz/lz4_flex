@@ -1,7 +1,25 @@
 //! <https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md>
 
+
+/// LZ4 Format
+/// Token 1 byte[Literal Length, Match Length (Neg Offset)]   -- 0-15, 0-15
+/// [Optional Literal Length bytes] [Literal] [Optional Match Length bytes]
+///
+/// 100 bytes match length
+///
+/// [Token] 4bit
+/// 15 token
+/// [Optional Match Length bytes] 1byte
+/// 85
+///
+/// Compression
+/// match [10][4][6][100]  .....      in [10][4][6][40]
+/// 3
+///
+
 #[cfg_attr(feature = "safe-encode", forbid(unsafe_code))]
 pub mod compress;
+pub mod hashtable;
 
 #[cfg_attr(feature = "safe-decode", forbid(unsafe_code))]
 pub mod decompress_safe;
@@ -43,6 +61,7 @@ const MAX_DISTANCE: usize = (1 << MAXD_LOG) - 1;
 #[allow(dead_code)]
 const MATCH_LENGTH_MASK: u32 = (1_u32 << 4) - 1; // 0b1111 / 15
 
+/// The minimum length of a duplicate
 const MINMATCH: usize = 4;
 
 #[allow(dead_code)]
@@ -53,6 +72,18 @@ const FASTLOOP_SAFE_DISTANCE: usize = 64;
 static LZ4_64KLIMIT: u32 = (64 * 1024) + (MFLIMIT - 1);
 
 // fn wild_copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
+//     unsafe {
+//         let dst_ptr_end = dst_ptr.add(num_items);
+//         while (dst_ptr as usize) < dst_ptr_end as usize {
+//             std::ptr::copy_nonoverlapping(source, dst_ptr, 16);
+//             source = source.add(16);
+//             dst_ptr = dst_ptr.add(16);
+//         }
+//     }
+// }
+
+// #[allow(dead_code)]
+// fn wild_copy_from_src_16(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
 //     unsafe {
 //         let dst_ptr_end = dst_ptr.add(num_items);
 //         while (dst_ptr as usize) < dst_ptr_end as usize {
@@ -74,22 +105,6 @@ fn wild_copy_from_src_8(mut source: *const u8, mut dst_ptr: *mut u8, num_items: 
         }
     }
 }
-
-// LZ4 Format
-// Token 1 byte[Literal Length, Match Length (Neg Offset)]   -- 15, 15
-// [Optional Literal Length bytes] [Literal] [Optional Match Length bytes]
-
-// 100 bytes match length
-
-// [Token] 4bit
-// 15 token
-// [Optional Match Length bytes] 1byte
-// 85
-
-// Compression
-// match [10][4][6][100]  .....      in [10][4][6][40]
-// 3
-//
 
 quick_error! {
     /// An error representing invalid compressed data.

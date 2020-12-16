@@ -13,7 +13,7 @@ fn main() {
     // PROFILER.lock().unwrap().stop().unwrap();
 }
 
-const LZ4_SKIPTRIGGER: usize = 6;
+// const LZ4_SKIPTRIGGER: usize = 6;
 const MFLIMIT: u32 = 12;
 static LZ4_MIN_LENGTH: u32 = MFLIMIT + 1;
 const MINMATCH: usize = 4;
@@ -27,403 +27,414 @@ const END_OFFSET: usize = 5;
 // #[allow(dead_code)]
 // static LZ4_64KLIMIT: u32 = (64 * 1024) + (MFLIMIT - 1);
 
-pub(crate) fn hash(sequence: u32) -> u32 {
-    (sequence.wrapping_mul(2654435761_u32)) >> (1 + (MINMATCH as u32 * 8) - (LZ4_HASHLOG + 1))
+// pub(crate) fn hash(sequence: u32) -> u32 {
+//     (sequence.wrapping_mul(2654435761_u32)) >> (1 + (MINMATCH as u32 * 8) - (LZ4_HASHLOG + 1))
+// }
+
+// fn wild_copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
+//     // output.reserve(num_items);
+//     unsafe {
+//         // let mut dst_ptr = output.as_mut_ptr().add(output.len());
+//         let dst_ptr_end = dst_ptr.add(num_items);
+
+//         while dst_ptr < dst_ptr_end {
+//             std::ptr::copy_nonoverlapping(source, dst_ptr, 8);
+//             source = source.add(8);
+//             dst_ptr = dst_ptr.add(8);
+//         }
+//     }
+// }
+// use crate::block::END_OFFSET;
+// use crate::block::LZ4_MIN_LENGTH;
+// use crate::block::MAX_DISTANCE;
+// use crate::block::MFLIMIT;
+// use crate::block::MINMATCH;
+
+#[cfg(feature = "safe-encode")]
+use std::convert::TryInto;
+
+/// Increase step size after 1<<INCREASE_STEPSIZE_BITSHIFT non matches
+const INCREASE_STEPSIZE_BITSHIFT: usize = 5;
+
+/// hashes and right shifts to a maximum value of 16bit, 65535
+/// The right shift is done in order to not exceed, the hashtables capacity
+pub fn hash(sequence: u32) -> u32 {
+    (sequence.wrapping_mul(2654435761_u32)) >> 16
 }
 
-fn wild_copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
-    // output.reserve(num_items);
-    unsafe {
-        // let mut dst_ptr = output.as_mut_ptr().add(output.len());
-        let dst_ptr_end = dst_ptr.add(num_items);
+/// Duplication dictionary size.
+///
+/// Every four bytes is assigned an entry. When this number is lower, fewer entries exists, and
+/// thus collisions are more likely, hurting the compression ratio.
 
-        while dst_ptr < dst_ptr_end {
-            std::ptr::copy_nonoverlapping(source, dst_ptr, 8);
-            source = source.add(8);
-            dst_ptr = dst_ptr.add(8);
-        }
+/// Read a 4-byte "batch" from some position.
+///
+/// This will read a native-endian 4-byte integer from some position.
+#[inline]
+#[cfg(not(feature = "safe-encode"))]
+fn get_batch(input: &[u8], n: usize) -> u32 {
+    unsafe { read_u32_ptr(input.as_ptr().add(n)) }
+}
+
+#[inline]
+#[cfg(feature = "safe-encode")]
+fn get_batch(input: &[u8], n: usize) -> u32 {
+    let arr: &[u8; 4] = input[n..n + 4].try_into().unwrap();
+    as_u32_le(arr)
+}
+
+#[inline]
+fn get_hash_at(input: &[u8], pos: usize, dict_bitshift: u8) -> usize {
+    hash(get_batch(input, pos)) as usize >> dict_bitshift
+}
+
+#[inline]
+fn token_from_literal(lit_len: usize) -> u8 {
+    if lit_len < 0xF {
+        // Since we can fit the literals length into it, there is no need for saturation.
+        (lit_len as u8) << 4
+    } else {
+        // We were unable to fit the literals into it, so we saturate to 0xF. We will later
+        // write the extensional value through LSIC encoding.
+        0xF0
     }
 }
 
-/// An LZ4 encoder.
-struct Encoder {
-    /// The raw uncompressed input.
-    input: *const u8,
-    /// The size of the input.
-    input_size: usize,
-    /// The compressed output.
-    output_ptr: *mut u8,
-    /// Shift the hash value for the dictionary to the right, so match the dictionary size.
-    dict_bitshift: u8,
-    /// The dictionary of previously encoded sequences.
-    ///
-    /// This is used to find duplicates in the stream so they are not written multiple times.
-    ///
-    /// Every four bytes are hashed, and in the resulting slot their position in the input buffer
-    /// is placed. This way we can easily look up a candidate to back references.
-    dict: Vec<usize>,
+/// Counts the number of same bytes in two byte streams.
+#[inline]
+#[cfg(feature = "safe-encode")]
+fn count_same_bytes(first: &[u8], second: &[u8], cur: &mut usize) -> usize {
+    let cur_slice = &first[*cur..first.len() - END_OFFSET];
+
+    let mut num = 0;
+
+    for (block1, block2) in cur_slice.chunks_exact(8).zip(second.chunks_exact(8)) {
+        let input_block = usize::from_le(as_usize_le(block1));
+        let match_block = usize::from_le(as_usize_le(block2));
+
+        if input_block == match_block {
+            num += 8;
+        } else {
+            let diff = input_block ^ match_block;
+            num += get_common_bytes(diff) as usize;
+            break;
+        }
+    }
+
+    *cur += num;
+    return num;
 }
 
-impl Encoder {
-    /// Get the hash of the current four bytes below the cursor.
-    ///
-    /// This is guaranteed to be below `DICTIONARY_SIZE`.
-    // #[inline]
-    // fn get_cur_hash(&self) -> usize {
-    //     hash(self.get_batch(self.cur)) as usize >> self.dict_bitshift
-    // }
+#[inline]
+#[cfg(feature = "safe-encode")]
+fn as_usize_le(array: &[u8]) -> usize {
+    ((array[0] as usize) << 0)
+        | ((array[1] as usize) << 8)
+        | ((array[2] as usize) << 16)
+        | ((array[3] as usize) << 24)
+        | ((array[4] as usize) << 32)
+        | ((array[5] as usize) << 40)
+        | ((array[6] as usize) << 48)
+        | ((array[7] as usize) << 56)
+}
 
-    #[inline]
-    fn get_hash_at(&self, pos: usize) -> usize {
-        hash(self.get_batch(pos)) as usize >> self.dict_bitshift
+#[inline]
+#[cfg(feature = "safe-encode")]
+fn as_u32_le(array: &[u8; 4]) -> u32 {
+    ((array[0] as u32) << 0)
+        | ((array[1] as u32) << 8)
+        | ((array[2] as u32) << 16)
+        | ((array[3] as u32) << 24)
+}
+
+/// Counts the number of same bytes in two byte streams.
+/// Counts the number of same bytes in two byte streams.
+#[inline]
+#[cfg(not(feature = "safe-encode"))]
+fn count_same_bytes(first: &[u8], mut second: &[u8], cur: &mut usize) -> usize {
+    let start = *cur;
+
+    // compare 4/8 bytes blocks depending on the arch
+    const STEP_SIZE: usize = std::mem::size_of::<usize>();
+    while *cur + STEP_SIZE + END_OFFSET < first.len() {
+        let diff =
+            read_usize_ptr(unsafe { first.as_ptr().add(*cur) }) ^ read_usize_ptr(second.as_ptr());
+
+        if diff == 0 {
+            *cur += STEP_SIZE;
+            second = &second[STEP_SIZE..];
+            continue;
+        } else {
+            *cur += get_common_bytes(diff) as usize;
+            return *cur - start;
+        }
     }
 
-    /// Read a 4-byte "batch" from some position.
-    ///
-    /// This will read a native-endian 4-byte integer from some position.
-    #[inline]
-    fn get_batch(&self, n: usize) -> u32 {
-        let mut batch: u32 = 0;
-        unsafe {
-            std::ptr::copy_nonoverlapping(self.input.add(n), &mut batch as *mut u32 as *mut u8, 4);
-        }
-        batch
-    }
-
-    /// Write an integer to the output in LSIC format.
-    #[inline]
-    fn write_integer(&mut self, mut n: usize) -> std::io::Result<()> {
-        // Write the 0xFF bytes as long as the integer is higher than said value.
-        while n >= 0xFF {
-            n -= 0xFF;
-            unsafe {
-                self.output_ptr.write(0xFF);
-                self.output_ptr = self.output_ptr.add(1);
-            }
-        }
-
-        // Write the remaining byte.
-        unsafe {
-            self.output_ptr.write(n as u8);
-            self.output_ptr = self.output_ptr.add(1);
-        }
-        Ok(())
-    }
-
-    /// Read the batch at the cursor.
-    #[inline]
-    unsafe fn count_same_bytes(
-        &self,
-        first: *const u8,
-        mut second: *const u8,
-        cur: &mut usize,
-    ) -> usize {
-        let start = *cur;
-
-        // compare 4/8 bytes blocks depending on the arch
-        const STEP_SIZE: usize = std::mem::size_of::<usize>();
-        while *cur + STEP_SIZE + END_OFFSET < self.input_size {
-            let diff = read_usize_ptr(first.add(*cur)) ^ read_usize_ptr(second);
+    // compare 4 bytes block
+    #[cfg(target_pointer_width = "64")]
+    {
+        if *cur + 4 + END_OFFSET < first.len() {
+            let diff =
+                read_u32_ptr(unsafe { first.as_ptr().add(*cur) }) ^ read_u32_ptr(second.as_ptr());
 
             if diff == 0 {
-                *cur += STEP_SIZE;
-                second = second.add(STEP_SIZE);
-                continue;
-            } else {
-                *cur += get_common_bytes(diff) as usize;
-                return *cur - start;
-            }
-        }
-
-        // compare 4 bytes block
-        #[cfg(target_pointer_width = "64")]
-        {
-            if *cur + 4 + END_OFFSET < self.input_size {
-                let diff = read_u32_ptr(first.add(*cur)) ^ read_u32_ptr(second);
-
-                if diff == 0 {
-                    *cur += 4;
-                    return *cur - start;
-                } else {
-                    *cur += (diff.trailing_zeros() >> 3) as usize;
-                    return *cur - start;
-                }
-            }
-        }
-
-        // compare 2 bytes block
-        if *cur + 2 + END_OFFSET < self.input_size {
-            let diff = read_u16_ptr(first.add(*cur)) ^ read_u16_ptr(second);
-
-            if diff == 0 {
-                *cur += 2;
+                *cur += 4;
                 return *cur - start;
             } else {
                 *cur += (diff.trailing_zeros() >> 3) as usize;
                 return *cur - start;
             }
         }
-
-        // TODO add end_pos_check, last 5 bytes should be literals
-        if *cur + 1 + END_OFFSET < self.input_size && first.add(*cur).read() == second.read() {
-            *cur += 1;
-        }
-
-        *cur - start
     }
 
-    /// Complete the encoding into `self.output`.
-    #[inline]
-    fn handle_last_literals(
-        &mut self,
-        start: usize,
-        out_ptr_start: *mut u8,
-    ) -> std::io::Result<usize> {
-        let lit_len = self.input_size - start;
-        // copy the last literals
-        let token = if lit_len < 0xF {
-            // Since we can fit the literals length into it, there is no need for saturation.
-            (lit_len as u8) << 4
+    // compare 2 bytes block
+    if *cur + 2 + END_OFFSET < first.len() {
+        let diff =
+            read_u16_ptr(unsafe { first.as_ptr().add(*cur) }) ^ read_u16_ptr(second.as_ptr());
+
+        if diff == 0 {
+            *cur += 2;
+            return *cur - start;
         } else {
-            // We were unable to fit the literals into it, so we saturate to 0xF. We will later
-            // write the extensional value through LSIC encoding.
-            0xF0
-        };
-        push_unsafe(&mut self.output_ptr, token);
-        if lit_len >= 0xF {
-            self.write_integer(lit_len - 0xF)?;
+            *cur += (diff.trailing_zeros() >> 3) as usize;
+            return *cur - start;
         }
-        // println!("lit_len {:?}", lit_len);
-        // Now, write the actual literals.
-        unsafe {
-            wild_copy_from_src(self.input.add(start), self.output_ptr, lit_len); // TODO add wildcopy check 8byte
-            self.output_ptr = self.output_ptr.add(lit_len);
-        }
-
-        Ok(self.output_ptr as usize - out_ptr_start as usize)
     }
 
-    #[inline(never)]
-    fn complete(&mut self) -> std::io::Result<usize> {
-        let out_ptr_start = self.output_ptr;
-        /* Input too small, no compression (all literals) */
-        if self.input_size < LZ4_MIN_LENGTH as usize {
-            // The length (in bytes) of the literals section.
-            let lit_len = self.input_size;
-            let token = if lit_len < 0xF {
-                // Since we can fit the literals length into it, there is no need for saturation.
-                (lit_len as u8) << 4
-            } else {
-                // We were unable to fit the literals into it, so we saturate to 0xF. We will later
-                // write the extensional value through LSIC encoding.
-                0xF0
-            };
-            push_unsafe(&mut self.output_ptr, token);
-            // self.output.push(token);
-            if lit_len >= 0xF {
-                self.write_integer(lit_len - 0xF)?;
-            }
-
-            // Now, write the actual literals.
-            // self.output.extend_from_slice(&self.input);
-            copy_into_vec(&mut self.output_ptr, self.input, self.input_size);
-            return Ok(self.output_ptr as usize - out_ptr_start as usize);
-        }
-
-        let mut candidate;
-        let mut cur = 0;
-        let mut start = cur;
-        let hash = self.get_hash_at(cur);
-        unsafe { *self.dict.get_unchecked_mut(hash) = cur };
-        cur += 1;
-        let mut forward_hash = self.get_hash_at(cur);
-
-        let end_pos_check = self.input_size - MFLIMIT as usize;
-        loop {
-            // Read the next block into two sections, the literals and the duplicates.
-            let mut step_size;
-            let mut non_match_count = 1 << LZ4_SKIPTRIGGER;
-            // The number of bytes before our cursor, where the duplicate starts.
-            // let mut offset: u16 = 0;
-
-            let mut next_cur = cur;
-
-            while {
-                non_match_count += 1;
-                step_size = non_match_count >> LZ4_SKIPTRIGGER;
-
-                cur = next_cur;
-                next_cur += step_size;
-
-                if cur > end_pos_check {
-                    return self.handle_last_literals(start, out_ptr_start);
-                }
-                // Find a candidate in the dictionary with the hash of the current four bytes.
-                // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
-                // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
-                candidate = unsafe { *self.dict.get_unchecked(forward_hash) };
-                unsafe { *self.dict.get_unchecked_mut(forward_hash) = cur };
-                forward_hash = self.get_hash_at(next_cur);
-
-                // Two requirements to the candidate exists:
-                // - We should not return a position which is merely a hash collision, so w that the
-                //   candidate actually matches what we search for.
-                // - We can address up to 16-bit offset, hence we are only able to address the candidate if
-                //   its offset is less than or equals to 0xFFFF.
-                (candidate + MAX_DISTANCE) < cur || self.get_batch(candidate) != self.get_batch(cur)
-            } {}
-
-            // let offset = (cur - candidate) as u16;
-            // The length (in bytes) of the literals section.
-            let lit_len = cur - start;
-            cur += MINMATCH;
-
-            // Generate the higher half of the token.
-            let mut token = if lit_len < 0xF {
-                // Since we can fit the literals length into it, there is no need for saturation.
-                (lit_len as u8) << 4
-            } else {
-                // We were unable to fit the literals into it, so we saturate to 0xF. We will later
-                // write the extensional value through LSIC encoding.
-                0xF0
-            };
-
-            let match_length = unsafe {
-                self.count_same_bytes(self.input, self.input.add(candidate + MINMATCH), &mut cur)
-            };
-
-            // println!("lit_len {:?} match_length {:?}", lit_len, match_length);
-            // println!("cur                {:?}", (&cur as *const usize) as usize);
-            // println!("start              {:?}", (&start as *const usize) as usize);
-            // println!("forward_hash       {:?}", (&forward_hash as *const usize) as usize);
-            // println!("end_pos_check      {:?}", (&end_pos_check as *const usize) as usize);
-            // println!("step_size          {:?}", (&step_size as *const usize) as usize);
-            // println!("non_match_count    {:?}", (&non_match_count as *const usize) as usize);
-            // println!("next_cur           {:?}", (&next_cur as *const usize) as usize);
-            // println!("candidate          {:?}", (&candidate as *const usize) as usize);
-            // // println!("offset             {:?}", (&offset as *const u16) as usize);
-            // println!("lit_len            {:?}", (&lit_len as *const usize) as usize);
-            // // println!("{:?}", (&var2 as *const i32) as usize);
-            // println!("{:?}", (&var1 as *const i32) as usize - base_ptr );
-
-            // Generate the lower half of the token, the duplicates length.
-            // cur += match_length + MINMATCH;
-            // self.go_forward_2(match_length + 4);
-            token |= if match_length < 0xF {
-                // We could fit it in.
-                match_length as u8
-            } else {
-                // We were unable to fit it in, so we default to 0xF, which will later be extended
-                // by LSIC encoding.
-                0xF
-            };
-
-            // Push the token to the output stream.
-            push_unsafe(&mut self.output_ptr, token);
-            // If we were unable to fit the literals length into the token, write the extensional
-            // part through LSIC.
-            if lit_len >= 0xF {
-                self.write_integer(lit_len - 0xF)?;
-            }
-
-            // Now, write the actual literals.
-            unsafe {
-                wild_copy_from_src(self.input.add(start), self.output_ptr, lit_len); // TODO add wildcopy check 8byte
-                self.output_ptr = self.output_ptr.add(lit_len);
-            }
-
-            // write the offset in little endian.
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    &((cur - candidate) as u16).to_le() as *const u16 as *const u8,
-                    self.output_ptr,
-                    2,
-                );
-                self.output_ptr = self.output_ptr.add(2);
-            }
-            // If we were unable to fit the duplicates length into the token, write the
-            // extensional part through LSIC.
-            if match_length >= 0xF {
-                self.write_integer(match_length - 0xF)?;
-            }
-            start = cur;
-            forward_hash = self.get_hash_at(next_cur);
-        }
-        // Ok(self.output_ptr as usize - out_ptr_start as usize)
+    // TODO add end_pos_check, last 5 bytes should be literals
+    if *cur + 1 + END_OFFSET < first.len()
+        && unsafe { first.as_ptr().add(*cur).read() } == unsafe { second.as_ptr().read() }
+    {
+        *cur += 1;
     }
+
+    *cur - start
+}
+
+/// Write an integer to the output in LSIC format.
+#[inline]
+fn write_integer(output: &mut Vec<u8>, mut n: usize) -> std::io::Result<()> {
+    // Write the 0xFF bytes as long as the integer is higher than said value.
+    while n >= 0xFF {
+        n -= 0xFF;
+        push_byte(output, 0xFF);
+    }
+
+    // Write the remaining byte.
+    push_byte(output, n as u8);
+    Ok(())
+}
+
+/// Handle the last bytes from the input as literals
+#[cold]
+fn handle_last_literals(
+    output: &mut Vec<u8>,
+    input: &[u8],
+    input_size: usize,
+    start: usize,
+) -> std::io::Result<usize> {
+    let lit_len = input_size - start;
+
+    let token = token_from_literal(lit_len);
+    push_byte(output, token);
+    // output.push(token);
+    if lit_len >= 0xF {
+        write_integer(output, lit_len - 0xF)?;
+    }
+    // Now, write the actual literals.
+    copy_literals(output, &input[start..]);
+    Ok(output.len())
 }
 
 /// Compress all bytes of `input` into `output`.
 #[inline(never)]
 pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usize> {
     // TODO check dictionary sizes for input input_sizes
+    // The dictionary of previously encoded sequences.
+    //
+    // This is used to find duplicates in the stream so they are not written multiple times.
+    //
+    // Every four bytes are hashed, and in the resulting slot their position in the input buffer
+    // is placed. This way we can easily look up a candidate to back references.
+    // dict_bitshift
+    // Shift the hash value for the dictionary to the right, to match the dictionary size.
     let (dict_size, dict_bitshift) = match input.len() {
         0..=500 => (128, 9),
         501..=1_000 => (256, 8),
         1_001..=4_000 => (512, 7),
         4_001..=8_000 => (1024, 6),
         8_001..=16_000 => (2048, 5),
-        16_001..=100_000 => (4096, 4),
-        100_001..=400_000 => (8192, 3),
+        16_001..=30_000 => (8192, 3),
+        // 100_000..=400_000 => (8192, 3),
         _ => (16384, 2),
     };
-    let dict = vec![0; dict_size];
+    let mut dict = vec![0; dict_size];
 
-    Encoder {
-        input: input.as_ptr(),
-        input_size: input.len(),
-        output_ptr: output.as_mut_ptr(),
-        dict_bitshift,
-        // cur: 0,
-        dict,
+    let input_size = input.len();
+    // let input = input.as_ptr();
+    // let mut output_ptr = output.as_mut_ptr();
+    let dict_bitshift = dict_bitshift;
+
+    // let out_ptr_start = output_ptr;
+    // Input too small, no compression (all literals)
+    if input_size < LZ4_MIN_LENGTH as usize {
+        // The length (in bytes) of the literals section.
+        let lit_len = input_size;
+        let token = token_from_literal(lit_len);
+        push_byte(output, token);
+        // output.push(token);
+        if lit_len >= 0xF {
+            write_integer(output, lit_len - 0xF)?;
+        }
+
+        // Now, write the actual literals.
+        copy_literals(output, &input);
+        return Ok(output.len());
     }
-    .complete()
+
+    let hash = get_hash_at(input, 0, dict_bitshift);
+    dict[hash] = 0;
+
+    assert!(LZ4_MIN_LENGTH as usize > END_OFFSET);
+    let end_pos_check = input_size - MFLIMIT as usize;
+    
+    let mut cur = 0;
+    let mut start = cur;
+    cur += 1;
+    // let mut forward_hash = get_hash_at(input, cur, dict_bitshift);
+
+    loop {
+        // Read the next block into two sections, the literals and the duplicates.
+        let mut step_size;
+        let mut candidate;
+        let mut non_match_count = 1 << INCREASE_STEPSIZE_BITSHIFT;
+        // The number of bytes before our cursor, where the duplicate starts.
+        let mut next_cur = cur;
+
+        // In this loop we search for duplicates via the hashtable. 4bytes are hashed and compared.
+        while {
+            non_match_count += 1;
+            step_size = non_match_count >> INCREASE_STEPSIZE_BITSHIFT;
+
+            cur = next_cur;
+            next_cur += step_size;
+
+            if cur > end_pos_check {
+                return handle_last_literals(output, input, input_size, start);
+            }
+            // Find a candidate in the dictionary with the hash of the current four bytes.
+            // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
+            // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
+            let hash = get_hash_at(input, cur, dict_bitshift);
+            candidate = dict[hash];
+            dict[hash] = cur;
+
+            // Two requirements to the candidate exists:
+            // - We should not return a position which is merely a hash collision, so w that the
+            //   candidate actually matches what we search for.
+            // - We can address up to 16-bit offset, hence we are only able to address the candidate if
+            //   its offset is less than or equals to 0xFFFF.
+            (candidate + MAX_DISTANCE) < cur || get_batch(input, candidate) != get_batch(input, cur)
+        } {}
+
+        // The length (in bytes) of the literals section.
+        let lit_len = cur - start;
+
+        // Generate the higher half of the token.
+        let mut token = token_from_literal(lit_len);
+
+        let offset = (cur - candidate) as u16;
+        cur += MINMATCH;
+        let duplicate_length = count_same_bytes(input, &input[candidate + MINMATCH..], &mut cur);
+        let hash = get_hash_at(input, cur - 2, dict_bitshift);
+        dict[hash] = cur - 2;
+
+        // Generate the lower half of the token, the duplicates length.
+        // cur += duplicate_length + MINMATCH;
+        token |= if duplicate_length < 0xF {
+            // We could fit it in.
+            duplicate_length as u8
+        } else {
+            // We were unable to fit it in, so we default to 0xF, which will later be extended
+            // by LSIC encoding.
+            0xF
+        };
+
+        // Push the token to the output stream.
+        push_byte(output, token);
+        // output.push(token);
+        // If we were unable to fit the literals length into the token, write the extensional
+        // part through LSIC.
+        if lit_len >= 0xF {
+            write_integer(output, lit_len - 0xF)?;
+        }
+
+        // Now, write the actual literals.
+        // TODO check wildcopy 8byte
+        copy_literals(output, &input[start..start + lit_len]);
+        // write the offset in little endian.
+        // push_byte(output, offset as u8);
+        // push_byte(output, (offset >> 8) as u8);
+        output.extend_from_slice(&offset.to_le_bytes());
+
+        // If we were unable to fit the duplicates length into the token, write the
+        // extensional part through LSIC.
+        if duplicate_length >= 0xF {
+            write_integer(output, duplicate_length - 0xF)?;
+        }
+        start = cur;
+        // forward_hash = get_hash_at(input, cur, dict_bitshift);
+    }
 }
 
 #[inline]
-fn push_unsafe(output: &mut *mut u8, el: u8) {
+#[cfg(feature = "safe-encode")]
+fn push_byte(output: &mut Vec<u8>, el: u8) {
+    output.push(el);
+}
+
+#[inline]
+#[cfg(not(feature = "safe-encode"))]
+fn push_byte(output: &mut Vec<u8>, el: u8) {
     unsafe {
-        std::ptr::write(*output, el);
-        *output = output.add(1);
+        std::ptr::write(output.as_mut_ptr().add(output.len()), el);
+        output.set_len(output.len() + 1);
     }
+}
+
+#[inline]
+fn copy_literals(output: &mut Vec<u8>, input: &[u8]) {
+    output.extend_from_slice(input);
+}
+
+/// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as litte endian.
+/// Can be used in conjuction with `decompress_size_prepended`
+#[inline]
+pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
+    // In most cases, the compression won't expand the size, so we set the input size as capacity.
+    let mut compressed = Vec::with_capacity(16 + 4 + (input.len() as f64 * 1.1) as usize);
+    compressed.extend_from_slice(&[0, 0, 0, 0]);
+    compress_into(input, &mut compressed).unwrap();
+    let size = input.len() as u32;
+    compressed[0] = size as u8;
+    compressed[1] = (size >> 8) as u8;
+    compressed[2] = (size >> 16) as u8;
+    compressed[3] = (size >> 24) as u8;
+    compressed
 }
 
 /// Compress all bytes of `input`.
-#[inline(never)]
+#[inline]
 pub fn compress(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
-    let mut vec = Vec::with_capacity(16 + (input.len() as f64 * 1.1) as usize);
+    let mut compressed = Vec::with_capacity(16 + (input.len() as f64 * 1.1) as usize);
 
-    let bytes_written = compress_into(input, &mut vec).unwrap();
-    unsafe {
-        vec.set_len(bytes_written);
-    }
-    vec
+    compress_into(input, &mut compressed).unwrap();
+    compressed
 }
 
 #[inline]
-fn copy_into_vec(out_ptr: &mut *mut u8, start: *const u8, num_items: usize) {
-    // vec.reserve(num_items);
-    unsafe {
-        std::ptr::copy_nonoverlapping(start, *out_ptr, num_items);
-        *out_ptr = out_ptr.add(num_items);
-        // vec.set_len(vec.len() + num_items);
-    }
-}
-// fn copy_into_vec(vec: &mut Vec<u8>, start: *const u8, num_items: usize) {
-//     // vec.reserve(num_items);
-//     unsafe {
-//         std::ptr::copy_nonoverlapping(start, vec.as_mut_ptr().add(vec.len()), num_items);
-//         vec.set_len(vec.len() + num_items);
-//     }
-// }
-
-// fn read_u64_ptr(input: *const u8) -> usize {
-//     let mut num:usize = 0;
-//     unsafe{std::ptr::copy_nonoverlapping(input, &mut num as *mut usize as *mut u8, 8);}
-//     num
-// }
-#[inline]
+#[cfg(not(feature = "safe-encode"))]
 fn read_u32_ptr(input: *const u8) -> u32 {
     let mut num: u32 = 0;
     unsafe {
@@ -431,7 +442,9 @@ fn read_u32_ptr(input: *const u8) -> u32 {
     }
     num
 }
+
 #[inline]
+#[cfg(not(feature = "safe-encode"))]
 fn read_usize_ptr(input: *const u8) -> usize {
     let mut num: usize = 0;
     unsafe {
@@ -444,6 +457,7 @@ fn read_usize_ptr(input: *const u8) -> usize {
     num
 }
 #[inline]
+#[cfg(not(feature = "safe-encode"))]
 fn read_u16_ptr(input: *const u8) -> u16 {
     let mut num: u16 = 0;
     unsafe {
@@ -451,27 +465,10 @@ fn read_u16_ptr(input: *const u8) -> u16 {
     }
     num
 }
-// #[inline]
-// fn read_u64(input: &[u8]) -> usize {
-//     let mut num:usize = 0;
-//     unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut usize as *mut u8, 8);}
-//     num
-// }
-// fn read_u32(input: &[u8]) -> u32 {
-//     let mut num:u32 = 0;
-//     unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut u32 as *mut u8, 4);}
-//     num
-// }
-
-// fn read_u16(input: &[u8]) -> u16 {
-//     let mut num:u16 = 0;
-//     unsafe{std::ptr::copy_nonoverlapping(input.as_ptr(), &mut num as *mut u16 as *mut u8, 2);}
-//     num
-// }
 
 #[inline]
 fn get_common_bytes(diff: usize) -> u32 {
     let tr_zeroes = diff.trailing_zeros();
-    // right shift by 3, because we are only interested in 8 bit blocks
+    // right shift by 3, because we are only interested in 8 bit blocks (1 byte)
     tr_zeroes >> 3
 }

@@ -6,16 +6,15 @@
 
 ![lz4_flex_logo](https://raw.githubusercontent.com/PSeitz/lz4_flex/master/logo.jpg)
 
-Configurable, pure rust, high performance implementation of LZ4 compression with fast compile times. Originally based on [redox-os' lz4 compression](https://crates.io/crates/lz4-compress), but now a complete rewrite.
-
+Fastest LZ4 implementation in Rust. Originally based on [redox-os' lz4 compression](https://crates.io/crates/lz4-compress), but now a complete rewrite.
+The results in the table are the benchmark in this project (66Kb JSON).
 
 |    Compressor    | Compression | Decompression |
 |------------------|-------------|---------------|
-| lz4_flexx unsafe | 594 MiB/s   | 3733 MiB/s    |
-| lz4_flexx safe   | 546 MiB/s   | 1433 MiB/s    |
+| lz4_flexx unsafe | 648 MiB/s   | 3733 MiB/s    |
+| lz4_flexx safe   | 575 MiB/s   | 1433 MiB/s    |
 | lz4_cpp          | 914 MiB/s   | 3793 MiB/s    |
-| lz4_fear         | 433 MiB/s   | 836 MiB/s     |
-
+| lz4_fear         | 443 MiB/s   | 836 MiB/s     |
 
 ## Features
 - Very good logo
@@ -68,6 +67,11 @@ Executed on Core i7-6700 Win10 WSL.
 ![Decompress](./decompress_bench_safe.svg)
 
 
+## Miri
+
+[Miri](https://github.com/rust-lang/miri) can be used to find issues related to incorrect unsafe usage:
+
+`MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-disable-stacked-borrows" cargo miri test --no-default-features`
 
 ## Fuzzer
 This fuzz target fuzzes, and asserts compression and decompression returns the original input.

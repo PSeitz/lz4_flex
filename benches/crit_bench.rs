@@ -32,7 +32,7 @@ fn compress_lz4_fear(input: &[u8]) -> Vec<u8> {
 }
 
 fn bench_compression_throughput(c: &mut Criterion) {
-    let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
+    let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Linear);
 
     let mut group = c.benchmark_group("Compress");
     group.plot_config(plot_config);

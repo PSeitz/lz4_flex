@@ -122,17 +122,6 @@ unsafe fn copy_24(start_ptr: *const u8, output_ptr: *mut u8) {
 /// We copy 24 byte blocks, because aligned copies are faster
 const BLOCK_COPY_SIZE: usize = 24;
 
-#[inline]
-fn block_copy_from_src(source: *const u8, dst_ptr: *mut u8, num_items: usize) {
-    debug_assert!(num_items <= BLOCK_COPY_SIZE);
-    unsafe {
-        let dst_ptr_end = dst_ptr.add(num_items);
-        if (dst_ptr as usize) < dst_ptr_end as usize {
-            std::ptr::copy_nonoverlapping(source, dst_ptr, BLOCK_COPY_SIZE);
-        }
-    }
-}
-
 /// Decompress all bytes of `input` into `output`.
 #[inline]
 pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), DecompressError> {
