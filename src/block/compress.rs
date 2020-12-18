@@ -25,6 +25,18 @@ pub fn hash(sequence: u32) -> u32 {
     (sequence.wrapping_mul(2654435761_u32)) >> 16
 }
 
+ 
+/// hashes and right shifts to a maximum value of 16bit, 65535
+/// The right shift is done in order to not exceed, the hashtables capacity
+pub fn hash5(sequence: usize) -> u32 {
+    let primebytes = if cfg!(target_endian = "little") {
+        889523592379_usize
+    } else {
+        11400714785074694791_usize
+    };
+    return (((sequence << 24).wrapping_mul(primebytes)) >> 48) as u32;
+}
+
 /// Read a 4-byte "batch" from some position.
 ///
 /// This will read a native-endian 4-byte integer from some position.
@@ -38,12 +50,32 @@ fn get_batch(input: &[u8], n: usize) -> u32 {
 #[cfg(feature = "safe-encode")]
 fn get_batch(input: &[u8], n: usize) -> u32 {
     let arr: &[u8; 4] = input[n..n + 4].try_into().unwrap();
-    as_u32_le(arr)
+    u32::from_le_bytes(*arr)
+}
+
+/// Read a 4-byte "batch" from some position.
+///
+/// This will read a native-endian 4-byte integer from some position.
+#[inline]
+#[cfg(not(feature = "safe-encode"))]
+fn get_batch_arch(input: &[u8], n: usize) -> usize {
+    unsafe { read_usize_ptr(input.as_ptr().add(n)) }
 }
 
 #[inline]
-fn get_hash_at(input: &[u8], pos: usize, dict_bitshift: u8) -> usize {
-    hash(get_batch(input, pos)) as usize >> dict_bitshift
+#[cfg(feature = "safe-encode")]
+fn get_batch_arch(input: &[u8], n: usize) -> usize {
+    let arr: &[u8; 8] = input[n..n + 8].try_into().unwrap();
+    usize::from_le_bytes(*arr)
+}
+
+#[inline]
+fn get_hash_at(input: &[u8], pos: usize) -> usize {
+    if input.len() < u16::MAX as usize { // add if usize === 8
+        hash(get_batch(input, pos)) as usize
+    }else{
+        hash5(get_batch_arch(input, pos)) as usize
+    }
 }
 
 #[inline]
@@ -67,8 +99,8 @@ fn count_same_bytes(first: &[u8], second: &[u8], cur: &mut usize) -> usize {
     let mut num = 0;
 
     for (block1, block2) in cur_slice.chunks_exact(8).zip(second.chunks_exact(8)) {
-        let input_block = usize::from_le(as_usize_le(block1));
-        let match_block = usize::from_le(as_usize_le(block2));
+        let input_block = as_usize_le(block1);
+        let match_block = as_usize_le(block2);
 
         if input_block == match_block {
             num += 8;
@@ -94,15 +126,6 @@ fn as_usize_le(array: &[u8]) -> usize {
         | ((array[5] as usize) << 40)
         | ((array[6] as usize) << 48)
         | ((array[7] as usize) << 56)
-}
-
-#[inline]
-#[cfg(feature = "safe-encode")]
-fn as_u32_le(array: &[u8; 4]) -> u32 {
-    (array[0] as u32)
-        | ((array[1] as u32) << 8)
-        | ((array[2] as u32) << 16)
-        | ((array[3] as u32) << 24)
 }
 
 /// Counts the number of same bytes in two byte streams.
@@ -218,7 +241,6 @@ pub fn compress_into_with_table<T: HashTable>(
     dict: &mut T,
 ) -> std::io::Result<usize> {
     let input_size = input.len();
-    let dict_bitshift = 0;
 
     // Input too small, no compression (all literals)
     if input_size < LZ4_MIN_LENGTH as usize {
@@ -236,7 +258,7 @@ pub fn compress_into_with_table<T: HashTable>(
         return Ok(output.len());
     }
 
-    let hash = get_hash_at(input, 0, dict_bitshift);
+    let hash = get_hash_at(input, 0);
     dict.put_at(hash, 0);
 
     assert!(LZ4_MIN_LENGTH as usize > END_OFFSET);
@@ -256,7 +278,7 @@ pub fn compress_into_with_table<T: HashTable>(
         let mut next_cur = cur;
 
         // In this loop we search for duplicates via the hashtable. 4bytes are hashed and compared.
-        while {
+        loop {
             non_match_count += 1;
             step_size = non_match_count >> INCREASE_STEPSIZE_BITSHIFT;
 
@@ -269,7 +291,7 @@ pub fn compress_into_with_table<T: HashTable>(
             // Find a candidate in the dictionary with the hash of the current four bytes.
             // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
             // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
-            let hash = get_hash_at(input, cur, dict_bitshift);
+            let hash = get_hash_at(input, cur);
             candidate = dict.get_at(hash);
             dict.put_at(hash, cur);
 
@@ -278,9 +300,14 @@ pub fn compress_into_with_table<T: HashTable>(
             //   candidate actually matches what we search for.
             // - We can address up to 16-bit offset, hence we are only able to address the candidate if
             //   its offset is less than or equals to 0xFFFF.
-            (candidate as usize + MAX_DISTANCE) < cur
-                || get_batch(input, candidate as usize) != get_batch(input, cur)
-        } {}
+            if (candidate as usize + MAX_DISTANCE) < cur {
+                continue;
+            }
+
+            if get_batch(input, candidate as usize) == get_batch(input, cur) {
+                break;
+            }
+        }
 
         // The length (in bytes) of the literals section.
         let lit_len = cur - start;
@@ -292,7 +319,7 @@ pub fn compress_into_with_table<T: HashTable>(
         cur += MINMATCH;
         let duplicate_length =
             count_same_bytes(input, &input[candidate as usize + MINMATCH..], &mut cur);
-        let hash = get_hash_at(input, cur - 2, dict_bitshift);
+        let hash = get_hash_at(input, cur - 2);
         dict.put_at(hash, cur - 2);
 
         // Generate the lower half of the token, the duplicates length.
@@ -319,12 +346,7 @@ pub fn compress_into_with_table<T: HashTable>(
         // TODO check wildcopy 8byte
         copy_literals(output, &input[start..start + lit_len]);
         // write the offset in little endian.
-        // push_byte(output, offset as u8);
-        // push_byte(output, (offset >> 8) as u8);
-        // output.extend_from_slice(&offset.to_le_bytes());
         push_u16(output, offset);
-        // use byteorder::{LittleEndian, WriteBytesExt};
-        // output.write_u16::<LittleEndian>(offset).unwrap();
 
         // If we were unable to fit the duplicates length into the token, write the
         // extensional part through LSIC.
@@ -542,6 +564,7 @@ fn test_bug() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore)]
 fn test_compare() {
     let mut input: &[u8] = &[10, 12, 14, 16];
 

@@ -11,8 +11,8 @@ The results in the table are from a benchmark in this project (66Kb JSON).
 
 |    Compressor    | Compression | Decompression |
 |------------------|-------------|---------------|
-| lz4_flex unsafe  | 648 MiB/s   | 3733 MiB/s    |
-| lz4_flex safe    | 575 MiB/s   | 1433 MiB/s    |
+| lz4_flex unsafe  | 711 MiB/s   | 3733 MiB/s    |
+| lz4_flex safe    | 628 MiB/s   | 1433 MiB/s    |
 | lz4_cpp          | 914 MiB/s   | 3793 MiB/s    |
 | lz4_fear         | 443 MiB/s   | 836 MiB/s     |
 
@@ -24,8 +24,17 @@ The results in the table are from a benchmark in this project (66Kb JSON).
 - Feature flags to configure safe/unsafe code usage
 
 ## Usage: 
-
 Compression and decompression uses no usafe via the default feature flags "safe-encode" and "safe-decode". If you need more performance you can disable them (e.g. with no-default-features).
+
+Safe:
+```
+lz4_flex = { version = "0.5.1" }
+```
+
+Performance:
+```
+lz4_flex = { version = "0.5.1", default-features = false }
+```
 
 ```rust
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
@@ -66,7 +75,6 @@ Executed on Core i7-6700 Win10 WSL.
 
 ![Decompress](./decompress_bench_safe.svg)
 
-
 ## Miri
 
 [Miri](https://github.com/rust-lang/miri) can be used to find issues related to incorrect unsafe usage:
@@ -79,8 +87,6 @@ This fuzz target fuzzes, and asserts compression and decompression returns the o
 
 This fuzz target fuzzes, and asserts compression with cpp and decompression returns the original input.
 `cargo fuzz run fuzz_roundtrip_cpp_compress`
-
-
 
 ## TODO
 - Frame format

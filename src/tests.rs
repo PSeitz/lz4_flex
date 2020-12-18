@@ -105,6 +105,7 @@ fn inverse(s: &str) {
 }
 
 #[test]
+#[cfg_attr(miri, ignore)]
 fn yopa() {
     const COMPRESSION10MB: &'static [u8] = include_bytes!("../benches/dickens.txt");
     let compressed = compress(COMPRESSION10MB);
@@ -349,6 +350,7 @@ mod test_compression {
         }
 
         #[test]
+        #[cfg_attr(miri, ignore)]
         fn test_comp_lz4_linked() {
             print_ratio(
                 "Ratio 1k",

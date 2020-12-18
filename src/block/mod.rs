@@ -22,6 +22,8 @@ pub mod hashtable;
 
 #[cfg_attr(feature = "safe-decode", forbid(unsafe_code))]
 pub mod decompress_safe;
+#[cfg(feature = "safe-decode")]
+pub use decompress_safe as decompress;
 
 #[cfg(not(feature = "safe-decode"))]
 pub mod decompress;
