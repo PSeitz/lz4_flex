@@ -12,6 +12,7 @@
 pub trait HashTable {
     fn get_at(&self, pos: usize) -> usize;
     fn put_at(&mut self, pos: usize, val: usize);
+    fn clear(&mut self);
 }
 
 #[derive(Debug)]
@@ -42,9 +43,16 @@ impl HashTable for HashTableUsize {
     fn put_at(&mut self, hash: usize, val: usize) {
         self.dict[hash >> self.dict_bitshift] = val;
     }
+    #[inline]
+    fn clear(&mut self) {
+        let len = self.dict.len();
+        self.dict.clear();
+        self.dict.resize(len, 0);
+    }
 }
 
 #[derive(Debug)]
+#[repr(align(64))]
 pub struct HashTableU32 {
     dict: Vec<u32>,
     /// Shift the hash value for the dictionary to the right, to match the dictionary size.
@@ -70,9 +78,16 @@ impl HashTable for HashTableU32 {
     fn put_at(&mut self, hash: usize, val: usize) {
         self.dict[hash >> self.dict_bitshift] = val as u32;
     }
+    #[inline]
+    fn clear(&mut self) {
+        let len = self.dict.len();
+        self.dict.clear();
+        self.dict.resize(len, 0);
+    }
 }
 
 #[derive(Debug)]
+#[repr(align(64))]
 pub struct HashTableU16 {
     dict: Vec<u16>,
     /// Shift the hash value for the dictionary to the right, to match the dictionary size.
@@ -98,6 +113,12 @@ impl HashTable for HashTableU16 {
     fn put_at(&mut self, hash: usize, val: usize) {
         self.dict[hash >> self.dict_bitshift] = val as u16;
     }
+    #[inline]
+    fn clear(&mut self) {
+        let len = self.dict.len();
+        self.dict.clear();
+        self.dict.resize(len, 0);
+    }
 }
 
 #[inline]
@@ -114,3 +135,4 @@ pub fn get_table_size(input_len: usize) -> (usize, usize) {
     };
     (dict_size, dict_bitshift)
 }
+
