@@ -243,13 +243,13 @@ fn small_compressible_3() {
     compress("AAAAAAAAAAAZZZZZZZZAAAAAAAA".as_bytes());
 
 }
-#[test]
-fn compare_small_compressible() {
-    let input = "AAAAAAAAAAAAAAAAAAAAAA".as_bytes();
-    let compressed1 = compress(input);
-    let compressed2 = compress_lz4_fear(input);
-    assert_eq!(compressed1, compressed2);
-}
+// #[test]
+// fn compare_small_compressible() {
+//     let input = "AAAAAAAAAAAAAAAAAAAAAA".as_bytes();
+//     let compressed1 = compress(input);
+//     let compressed2 = compress_lz4_fear(input);
+//     assert_eq!(compressed1, compressed2);
+// }
 
 #[test]
 fn shakespear1() {
@@ -317,6 +317,19 @@ fn compression_works() {
 
     assert!(compress(s.as_bytes()).len() < s.len());
 }
+// #[test]
+// fn multi_compress() {
+
+//     let s1 = r#"An iterator that knows its exact length.performant implementation than the default, so overriding it in this case makes sense."#;
+//     let s2 = r#"An iterator that knows its exact length.performant implementation than the default, so overriding it in this case makes sense."#;
+
+//     let mut out = vec![];
+//     compress_into()
+
+//     inverse(s);
+
+//     assert!(compress(s.as_bytes()).len() < s.len());
+// }
 
 #[ignore]
 #[test]

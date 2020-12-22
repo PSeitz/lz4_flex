@@ -405,6 +405,7 @@ pub fn get_maximum_output_size(input_len: usize) -> usize {
 /// The method chooses an appropriate hashtable to lookup duplicates and calls `compress_into_with_table`
 #[inline]
 pub fn compress_into(input: &[u8], compressed: &mut Vec<u8>) {
+    compressed.reserve(get_maximum_output_size(input.len()));
     let (dict_size, dict_bitshift) = get_table_size(input.len());
     if input.len() < u16::MAX as usize {
         let mut dict = HashTableU16::new(dict_size, dict_bitshift);
@@ -423,7 +424,7 @@ pub fn compress_into(input: &[u8], compressed: &mut Vec<u8>) {
 #[inline]
 pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
-    let mut compressed = Vec::with_capacity(get_maximum_output_size(input.len()));
+    let mut compressed = vec![];
     compressed.extend_from_slice(&[0, 0, 0, 0]);
     compress_into(input, &mut compressed);
     let size = input.len() as u32;
