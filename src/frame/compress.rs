@@ -1,5 +1,4 @@
 use crate::block::compress::compress as compress_block;
-use byteorder::{ByteOrder, LittleEndian};
 use std::io::Read;
 use std::io::Write;
 
@@ -8,9 +7,7 @@ use std::io::Write;
 #[inline]
 pub fn compress<R: Read, W: Write>(input: &mut R, output: &mut W) -> std::io::Result<()> {
     // Write Frame header
-    // output
-    let mut buf = [0; 4];
-    LittleEndian::write_u32(&mut buf, 0x184D2204); // magic number LZ4 Header
+    let buf = 0x184D2204_u32.to_le_bytes(); // magic number LZ4 Header
     output.write_all(&buf)?;
 
     // Flag Byte bits
