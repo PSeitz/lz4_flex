@@ -403,6 +403,8 @@ pub fn get_maximum_output_size(input_len: usize) -> usize {
 
 /// Compress all bytes of `input` into `output`.
 /// The method chooses an appropriate hashtable to lookup duplicates and calls `compress_into_with_table`
+///
+/// The method will reserve the required space on the output vec.
 #[inline]
 pub fn compress_into(input: &[u8], compressed: &mut Vec<u8>) {
     compressed.reserve(get_maximum_output_size(input.len()));
@@ -436,10 +438,11 @@ pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
 }
 
 /// Compress all bytes of `input`.
+///
 #[inline]
 pub fn compress(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
-    let mut compressed = Vec::with_capacity(get_maximum_output_size(input.len()));
+    let mut compressed = vec![];
     compress_into(input, &mut compressed);
     compressed
 }

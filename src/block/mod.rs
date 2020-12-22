@@ -1,20 +1,23 @@
-//! <https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md>
+/*! 
 
-/// LZ4 Format
-/// Token 1 byte[Literal Length, Match Length (Neg Offset)]   -- 0-15, 0-15
-/// [Optional Literal Length bytes] [Literal] [Optional Match Length bytes]
-///
-/// 100 bytes match length
-///
-/// [Token] 4bit
-/// 15 token
-/// [Optional Match Length bytes] 1byte
-/// 85
-///
-/// Compression
-/// match [10][4][6][100]  .....      in [10][4][6][40]
-/// 3
-///
+<https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md>
+
+LZ4 Format
+Token 1 byte[Literal Length, Match Length (Neg Offset)]   -- 0-15, 0-15
+[Optional Literal Length bytes] [Literal] [Optional Match Length bytes]
+
+100 bytes match length
+
+[Token] 4bit
+15 token
+[Optional Match Length bytes] 1byte
+85
+
+Compression
+match [10][4][6][100]  .....      in [10][4][6][40]
+3
+
+*/
 
 #[cfg_attr(feature = "safe-encode", forbid(unsafe_code))]
 pub mod compress;
