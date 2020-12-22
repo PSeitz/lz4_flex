@@ -188,6 +188,9 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
 
             let offset = read_u16(input, &mut input_pos);
             let start_ptr = unsafe { output_ptr.sub(offset as usize) };
+            // unsafe{
+            //     core::arch::x86_64::_mm_prefetch(start_ptr as *const i8, core::arch::x86_64::_MM_HINT_T0);
+            // }
 
             let match_length = (4 + (token & 0xF)) as usize;
             // Write the duplicate segment to the output buffer from the output buffer
@@ -282,8 +285,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
         // We now copy from the already decompressed buffer. This allows us for storing duplicates
         // by simply referencing the other location.
 
-        // Calculate the start of this duplicate segment. We use wrapping subtraction to avoid
-        // overflow checks, which we will catch later.
+        // Calculate the start of this duplicate segment.
         let start_ptr = unsafe { output_ptr.sub(offset as usize) };
 
         // We'll do a bound check to in checked-decode.

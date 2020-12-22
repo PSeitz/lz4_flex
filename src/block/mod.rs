@@ -85,17 +85,28 @@ static LZ4_64KLIMIT: u32 = (64 * 1024) + (MFLIMIT - 1);
 //     }
 // }
 
-// #[allow(dead_code)]
-// fn wild_copy_from_src_16(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
-//     unsafe {
-//         let dst_ptr_end = dst_ptr.add(num_items);
-//         while (dst_ptr as usize) < dst_ptr_end as usize {
-//             std::ptr::copy_nonoverlapping(source, dst_ptr, 16);
-//             source = source.add(16);
-//             dst_ptr = dst_ptr.add(16);
-//         }
-//     }
-// }
+#[allow(dead_code)]
+fn wild_copy_from_src_32(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
+    unsafe {
+        let dst_ptr_end = dst_ptr.add(num_items);
+        while (dst_ptr as usize) < dst_ptr_end as usize {
+            std::ptr::copy_nonoverlapping(source, dst_ptr, 32);
+            source = source.add(32);
+            dst_ptr = dst_ptr.add(32);
+        }
+    }
+}
+#[allow(dead_code)]
+fn wild_copy_from_src_16(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
+    unsafe {
+        let dst_ptr_end = dst_ptr.add(num_items);
+        while (dst_ptr as usize) < dst_ptr_end as usize {
+            std::ptr::copy_nonoverlapping(source, dst_ptr, 16);
+            source = source.add(16);
+            dst_ptr = dst_ptr.add(16);
+        }
+    }
+}
 
 #[allow(dead_code)]
 fn wild_copy_from_src_8(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {

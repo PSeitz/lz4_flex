@@ -233,6 +233,23 @@ fn test_end_offset() {
 fn small_compressible() {
     inverse("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBa");
 }
+#[test]
+fn small_compressible_2() {
+    inverse("AAAAAAAAAAAZZZZZZZZAAAAAAAA");
+}
+
+#[test]
+fn small_compressible_3() {
+    compress("AAAAAAAAAAAZZZZZZZZAAAAAAAA".as_bytes());
+
+}
+#[test]
+fn compare_small_compressible() {
+    let input = "AAAAAAAAAAAAAAAAAAAAAA".as_bytes();
+    let compressed1 = compress(input);
+    let compressed2 = compress_lz4_fear(input);
+    assert_eq!(compressed1, compressed2);
+}
 
 #[test]
 fn shakespear1() {
