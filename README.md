@@ -28,12 +28,12 @@ Compression and decompression uses no usafe via the default feature flags "safe-
 
 Safe:
 ```
-lz4_flex = { version = "0.5.1" }
+lz4_flex = { version = "0.6.1" }
 ```
 
 Performance:
 ```
-lz4_flex = { version = "0.5.1", default-features = false }
+lz4_flex = { version = "0.6.1", default-features = false }
 ```
 
 ```rust
@@ -92,4 +92,5 @@ This fuzz target fuzzes, and asserts compression with cpp and decompression retu
 - Frame format
 - High compression
 - Dictionary Compression
+- #![no_std] for block compression/decompression
 
