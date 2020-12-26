@@ -1,6 +1,7 @@
 //! The decompression algorithm.
 
 use crate::block::DecompressError;
+use alloc::vec::Vec;
 
 /// Read an integer LSIC (linear small integer code) encoded.
 ///

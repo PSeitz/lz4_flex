@@ -39,7 +39,8 @@ pub use decompress_safe::decompress_size_prepended;
 #[cfg(not(feature = "safe-decode"))]
 pub use decompress::decompress_size_prepended;
 
-use std::convert::TryInto;
+use core::convert::TryInto;
+use core::{fmt, ptr};
 
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
 /// The last match must start at least 12 bytes before the end of block. The last match is part of the penultimate sequence.
@@ -81,7 +82,7 @@ static LZ4_64KLIMIT: u32 = (64 * 1024) + (MFLIMIT - 1);
 //     unsafe {
 //         let dst_ptr_end = dst_ptr.add(num_items);
 //         while (dst_ptr as usize) < dst_ptr_end as usize {
-//             std::ptr::copy_nonoverlapping(source, dst_ptr, 16);
+//             ptr::copy_nonoverlapping(source, dst_ptr, 16);
 //             source = source.add(16);
 //             dst_ptr = dst_ptr.add(16);
 //         }
@@ -93,7 +94,7 @@ fn wild_copy_from_src_32(mut source: *const u8, mut dst_ptr: *mut u8, num_items:
     unsafe {
         let dst_ptr_end = dst_ptr.add(num_items);
         while (dst_ptr as usize) < dst_ptr_end as usize {
-            std::ptr::copy_nonoverlapping(source, dst_ptr, 32);
+            ptr::copy_nonoverlapping(source, dst_ptr, 32);
             source = source.add(32);
             dst_ptr = dst_ptr.add(32);
         }
@@ -104,7 +105,7 @@ fn wild_copy_from_src_16(mut source: *const u8, mut dst_ptr: *mut u8, num_items:
     unsafe {
         let dst_ptr_end = dst_ptr.add(num_items);
         while (dst_ptr as usize) < dst_ptr_end as usize {
-            std::ptr::copy_nonoverlapping(source, dst_ptr, 16);
+            ptr::copy_nonoverlapping(source, dst_ptr, 16);
             source = source.add(16);
             dst_ptr = dst_ptr.add(16);
         }
@@ -116,35 +117,57 @@ fn wild_copy_from_src_8(mut source: *const u8, mut dst_ptr: *mut u8, num_items: 
     unsafe {
         let dst_ptr_end = dst_ptr.add(num_items);
         while (dst_ptr as usize) < dst_ptr_end as usize {
-            std::ptr::copy_nonoverlapping(source, dst_ptr, 8);
+            ptr::copy_nonoverlapping(source, dst_ptr, 8);
             source = source.add(8);
             dst_ptr = dst_ptr.add(8);
         }
     }
 }
 
-quick_error! {
-    /// An error representing invalid compressed data.
-    #[derive(Debug)]
-    pub enum DecompressError {
-        /// Literal is out of bounds of the input
-        OutputTooSmall{expected_size:usize, actual_size:usize} {
-            display("Output ({:?}) is too small for the decompressed data, {:?}", actual_size, expected_size)
-        }
-        /// Literal is out of bounds of the input
-        LiteralOutOfBounds {
-            description("Literal is out of bounds of the input.")
-        }
-        /// Expected another byte, but none found.
-        ExpectedAnotherByte {
-            description("Expected another byte, found none.")
-        }
-        /// Deduplication offset out of bounds (not in buffer).
-        OffsetOutOfBounds {
-            description("The offset to copy is not contained in the decompressed buffer.")
+/// An error representing invalid compressed data.
+#[derive(Debug)]
+pub enum DecompressError {
+    /// Literal is out of bounds of the input
+    OutputTooSmall {
+        expected_size: usize,
+        actual_size: usize,
+    },
+    /// Literal is out of bounds of the input
+    LiteralOutOfBounds,
+    /// Expected another byte, but none found.
+    ExpectedAnotherByte,
+    /// Deduplication offset out of bounds (not in buffer).
+    OffsetOutOfBounds,
+}
+
+impl fmt::Display for DecompressError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DecompressError::OutputTooSmall {
+                expected_size,
+                actual_size,
+            } => {
+                write!(
+                    f,
+                    "output ({:?}) is too small for the decompressed data, {:?}",
+                    actual_size, expected_size
+                )
+            }
+            DecompressError::LiteralOutOfBounds => {
+                f.write_str("literal is out of bounds of the input")
+            }
+            DecompressError::ExpectedAnotherByte => {
+                f.write_str("expected another byte, found none")
+            }
+            DecompressError::OffsetOutOfBounds => {
+                f.write_str("the offset to copy is not contained in the decompressed buffer")
+            }
         }
     }
 }
+
+#[cfg(feature = "std")]
+impl std::error::Error for DecompressError {}
 
 #[inline]
 fn uncompressed_size(input: &[u8]) -> Result<(usize, &[u8]), DecompressError> {

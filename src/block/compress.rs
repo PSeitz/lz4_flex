@@ -12,9 +12,10 @@ use crate::block::LZ4_MIN_LENGTH;
 use crate::block::MAX_DISTANCE;
 use crate::block::MFLIMIT;
 use crate::block::MINMATCH;
+use alloc::vec::Vec;
 
 #[cfg(feature = "safe-encode")]
-use std::convert::TryInto;
+use core::convert::TryInto;
 
 /// Increase step size after 1<<INCREASE_STEPSIZE_BITSHIFT non matches
 const INCREASE_STEPSIZE_BITSHIFT: usize = 5;
@@ -136,7 +137,7 @@ fn count_same_bytes(first: &[u8], mut second: &[u8], cur: &mut usize) -> usize {
     let start = *cur;
 
     // compare 4/8 bytes blocks depending on the arch
-    const STEP_SIZE: usize = std::mem::size_of::<usize>();
+    const STEP_SIZE: usize = core::mem::size_of::<usize>();
     while *cur + STEP_SIZE + END_OFFSET < first.len() {
         let diff =
             read_usize_ptr(unsafe { first.as_ptr().add(*cur) }) ^ read_usize_ptr(second.as_ptr());
@@ -239,7 +240,7 @@ pub fn compress_into_with_table<T: HashTable>(
     input: &[u8],
     output: &mut Vec<u8>,
     dict: &mut T,
-) -> std::io::Result<usize> {
+) -> usize {
     let input_size = input.len();
 
     // Input too small, no compression (all literals)
@@ -255,7 +256,7 @@ pub fn compress_into_with_table<T: HashTable>(
 
         // Now, write the actual literals.
         copy_literals(output, &input);
-        return Ok(output.len());
+        return output.len();
     }
 
     let hash = get_hash_at(input, 0);
@@ -286,7 +287,7 @@ pub fn compress_into_with_table<T: HashTable>(
             next_cur += step_size;
 
             if cur > end_pos_check {
-                return Ok(handle_last_literals(output, input, input_size, start));
+                return handle_last_literals(output, input, input_size, start);
             }
             // Find a candidate in the dictionary with the hash of the current four bytes.
             // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
@@ -368,7 +369,7 @@ fn push_byte(output: &mut Vec<u8>, el: u8) {
 #[cfg(not(feature = "safe-encode"))]
 fn push_byte(output: &mut Vec<u8>, el: u8) {
     unsafe {
-        std::ptr::write(output.as_mut_ptr().add(output.len()), el);
+        core::ptr::write(output.as_mut_ptr().add(output.len()), el);
         output.set_len(output.len() + 1);
     }
 }
@@ -384,8 +385,8 @@ fn push_u16(output: &mut Vec<u8>, el: u16) {
 fn push_u16(output: &mut Vec<u8>, el: u16) {
     unsafe {
         let out_ptr = output.as_mut_ptr().add(output.len());
-        std::ptr::write(out_ptr, el as u8);
-        std::ptr::write(out_ptr.add(1), (el >> 8) as u8);
+        core::ptr::write(out_ptr, el as u8);
+        core::ptr::write(out_ptr.add(1), (el >> 8) as u8);
         output.set_len(output.len() + 2);
     }
 }
@@ -411,13 +412,13 @@ pub fn compress_into(input: &[u8], compressed: &mut Vec<u8>) {
     let (dict_size, dict_bitshift) = get_table_size(input.len());
     if input.len() < u16::MAX as usize {
         let mut dict = HashTableU16::new(dict_size, dict_bitshift);
-        compress_into_with_table(input, compressed, &mut dict).unwrap();
+        compress_into_with_table(input, compressed, &mut dict);
     } else if input.len() < u32::MAX as usize {
         let mut dict = HashTableU32::new(dict_size, dict_bitshift);
-        compress_into_with_table(input, compressed, &mut dict).unwrap();
+        compress_into_with_table(input, compressed, &mut dict);
     } else {
         let mut dict = HashTableUsize::new(dict_size, dict_bitshift);
-        compress_into_with_table(input, compressed, &mut dict).unwrap();
+        compress_into_with_table(input, compressed, &mut dict);
     }
 }
 
@@ -426,7 +427,7 @@ pub fn compress_into(input: &[u8], compressed: &mut Vec<u8>) {
 #[inline]
 pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
-    let mut compressed = vec![];
+    let mut compressed = Vec::new();
     compressed.extend_from_slice(&[0, 0, 0, 0]);
     compress_into(input, &mut compressed);
     let size = input.len() as u32;
@@ -442,7 +443,7 @@ pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
 #[inline]
 pub fn compress(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
-    let mut compressed = vec![];
+    let mut compressed = Vec::new();
     compress_into(input, &mut compressed);
     compressed
 }
@@ -452,7 +453,7 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
 fn read_u32_ptr(input: *const u8) -> u32 {
     let mut num: u32 = 0;
     unsafe {
-        std::ptr::copy_nonoverlapping(input, &mut num as *mut u32 as *mut u8, 4);
+        core::ptr::copy_nonoverlapping(input, &mut num as *mut u32 as *mut u8, 4);
     }
     num
 }
@@ -462,10 +463,10 @@ fn read_u32_ptr(input: *const u8) -> u32 {
 fn read_usize_ptr(input: *const u8) -> usize {
     let mut num: usize = 0;
     unsafe {
-        std::ptr::copy_nonoverlapping(
+        core::ptr::copy_nonoverlapping(
             input,
             &mut num as *mut usize as *mut u8,
-            std::mem::size_of::<usize>(),
+            core::mem::size_of::<usize>(),
         );
     }
     num
@@ -475,7 +476,7 @@ fn read_usize_ptr(input: *const u8) -> usize {
 fn read_u16_ptr(input: *const u8) -> u16 {
     let mut num: u16 = 0;
     unsafe {
-        std::ptr::copy_nonoverlapping(input, &mut num as *mut u16 as *mut u8, 2);
+        core::ptr::copy_nonoverlapping(input, &mut num as *mut u16 as *mut u8, 2);
     }
     num
 }
@@ -487,103 +488,108 @@ fn get_common_bytes(diff: usize) -> u32 {
     tr_zeroes >> 3
 }
 
-#[test]
-#[cfg(target_pointer_width = "64")]
-#[cfg(not(feature = "safe-encode"))]
-fn test_get_common_bytes() {
-    let num1 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 1].as_ptr());
-    let num2 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 2].as_ptr());
-    let diff = num1 ^ num2;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    assert_eq!(get_common_bytes(diff), 7);
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    #[cfg(not(feature = "safe-encode"))]
+    fn test_get_common_bytes() {
+        let num1 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 1].as_ptr());
+        let num2 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 2].as_ptr());
+        let diff = num1 ^ num2;
 
-    let num1 = read_usize_ptr([0, 0, 0, 0, 0, 0, 1, 1].as_ptr());
-    let num2 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 2].as_ptr());
-    let diff = num1 ^ num2;
-    assert_eq!(get_common_bytes(diff), 6);
-    let num1 = read_usize_ptr([1, 0, 0, 0, 0, 0, 1, 1].as_ptr());
-    let num2 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 2].as_ptr());
-    let diff = num1 ^ num2;
-    assert_eq!(get_common_bytes(diff), 0);
-}
+        assert_eq!(get_common_bytes(diff), 7);
 
-#[test]
-#[cfg(target_pointer_width = "32")]
-fn test_get_common_bytes() {
-    let num1 = read_u32(&[0, 0, 0, 1]);
-    let num2 = read_u32(&[0, 0, 0, 2]);
-    let diff = num1 ^ num2;
+        let num1 = read_usize_ptr([0, 0, 0, 0, 0, 0, 1, 1].as_ptr());
+        let num2 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 2].as_ptr());
+        let diff = num1 ^ num2;
+        assert_eq!(get_common_bytes(diff), 6);
+        let num1 = read_usize_ptr([1, 0, 0, 0, 0, 0, 1, 1].as_ptr());
+        let num2 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 2].as_ptr());
+        let diff = num1 ^ num2;
+        assert_eq!(get_common_bytes(diff), 0);
+    }
 
-    assert_eq!(get_common_bytes(diff as usize), 3);
+    #[test]
+    #[cfg(target_pointer_width = "32")]
+    fn test_get_common_bytes() {
+        let num1 = read_u32(&[0, 0, 0, 1]);
+        let num2 = read_u32(&[0, 0, 0, 2]);
+        let diff = num1 ^ num2;
 
-    let num1 = read_u32(&[0, 0, 1, 1]);
-    let num2 = read_u32(&[0, 0, 0, 2]);
-    let diff = num1 ^ num2;
-    assert_eq!(get_common_bytes(diff as usize), 2);
-    let num1 = read_u32(&[1, 0, 1, 1]);
-    let num2 = read_u32(&[0, 0, 0, 2]);
-    let diff = num1 ^ num2;
-    assert_eq!(get_common_bytes(diff as usize), 0);
-}
+        assert_eq!(get_common_bytes(diff as usize), 3);
 
-// #[test]
-// fn test_count_same_bytes() {
-//     // 8byte aligned block, zeros and ones are added because the end/offset
-//     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-//     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 16);
+        let num1 = read_u32(&[0, 0, 1, 1]);
+        let num2 = read_u32(&[0, 0, 0, 2]);
+        let diff = num1 ^ num2;
+        assert_eq!(get_common_bytes(diff as usize), 2);
+        let num1 = read_u32(&[1, 0, 1, 1]);
+        let num2 = read_u32(&[0, 0, 0, 2]);
+        let diff = num1 ^ num2;
+        assert_eq!(get_common_bytes(diff as usize), 0);
+    }
 
-//     // 4byte aligned block
-//     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-//     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 20);
+    // #[test]
+    // fn test_count_same_bytes() {
+    //     // 8byte aligned block, zeros and ones are added because the end/offset
+    //     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    //     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    //     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 16);
 
-//     // 2byte aligned block
-//     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-//     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 22);
+    //     // 4byte aligned block
+    //     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
+    //     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    //     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 20);
 
-//     // 1byte aligned block
-//     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-//     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 23);
+    //     // 2byte aligned block
+    //     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
+    //     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    //     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 22);
 
-//     // 1byte aligned block - last byte different
-//     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 6, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-//     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 22);
+    //     // 1byte aligned block
+    //     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
+    //     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    //     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 23);
 
-//     // 1byte aligned block
-//     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 9, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
-//     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 6, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-//     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 21);
-// }
+    //     // 1byte aligned block - last byte different
+    //     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
+    //     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 6, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    //     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 22);
 
-#[test]
-fn test_bug() {
-    let input: &[u8] = &[
-        10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
-    ];
-    let _out = compress(&input);
-}
+    //     // 1byte aligned block
+    //     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 9, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
+    //     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 6, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    //     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 21);
+    // }
 
-#[test]
-#[cfg_attr(miri, ignore)]
-fn test_compare() {
-    let mut input: &[u8] = &[10, 12, 14, 16];
+    #[test]
+    fn test_bug() {
+        let input: &[u8] = &[
+            10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
+        ];
+        let _out = compress(&input);
+    }
 
-    let mut cache = vec![];
-    let mut encoder = lz4::EncoderBuilder::new()
-        .level(2)
-        .build(&mut cache)
-        .unwrap();
-    // let mut read = *input;
-    std::io::copy(&mut input, &mut encoder).unwrap();
-    let (comp_lz4, _result) = encoder.finish();
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_compare() {
+        let mut input: &[u8] = &[10, 12, 14, 16];
 
-    println!("{:?}", comp_lz4);
+        let mut cache = vec![];
+        let mut encoder = lz4::EncoderBuilder::new()
+            .level(2)
+            .build(&mut cache)
+            .unwrap();
+        // let mut read = *input;
+        std::io::copy(&mut input, &mut encoder).unwrap();
+        let (comp_lz4, _result) = encoder.finish();
 
-    let input: &[u8] = &[10, 12, 14, 16];
-    let out = compress(&input);
-    dbg!(&out);
+        println!("{:?}", comp_lz4);
+
+        let input: &[u8] = &[10, 12, 14, 16];
+        let out = compress(&input);
+        dbg!(&out);
+    }
 }

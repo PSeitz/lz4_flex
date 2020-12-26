@@ -16,9 +16,6 @@ harness = false
 name = "crit_bench"
 path = "benches/crit_bench.rs"
 
-[dependencies]
-quick-error = "1.2.3"
-
 [dev-dependencies]
 criterion = "0.3.3"
 lz4 = "1.23.1"
@@ -29,10 +26,11 @@ more-asserts = "0.2.1"
 git = "https://github.com/main--/rust-lz-fear"
 
 [features]
-default = ["safe-encode", "safe-decode"]
+default = ["std", "safe-encode", "safe-decode"]
 safe-decode = []
 safe-encode = []
 checked-decode = []
+std = []
 
 [profile.bench]
 codegen-units = 1
