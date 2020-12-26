@@ -571,25 +571,4 @@ mod tests {
         ];
         let _out = compress(&input);
     }
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_compare() {
-        let mut input: &[u8] = &[10, 12, 14, 16];
-
-        let mut cache = vec![];
-        let mut encoder = lz4::EncoderBuilder::new()
-            .level(2)
-            .build(&mut cache)
-            .unwrap();
-        // let mut read = *input;
-        std::io::copy(&mut input, &mut encoder).unwrap();
-        let (comp_lz4, _result) = encoder.finish();
-
-        println!("{:?}", comp_lz4);
-
-        let input: &[u8] = &[10, 12, 14, 16];
-        let out = compress(&input);
-        dbg!(&out);
-    }
 }

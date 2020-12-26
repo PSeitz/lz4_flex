@@ -31,12 +31,6 @@ extern crate alloc;
 pub mod block;
 #[cfg(feature = "std")]
 mod frame;
-#[cfg(test)]
-mod tests;
-
-#[cfg(test)]
-#[macro_use]
-extern crate more_asserts;
 
 pub use block::compress::{compress, compress_into, compress_prepend_size};
 
