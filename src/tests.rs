@@ -241,7 +241,6 @@ fn small_compressible_2() {
 #[test]
 fn small_compressible_3() {
     compress("AAAAAAAAAAAZZZZZZZZAAAAAAAA".as_bytes());
-
 }
 // #[test]
 // fn compare_small_compressible() {

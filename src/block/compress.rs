@@ -25,7 +25,6 @@ pub fn hash(sequence: u32) -> u32 {
     (sequence.wrapping_mul(2654435761_u32)) >> 16
 }
 
- 
 /// hashes and right shifts to a maximum value of 16bit, 65535
 /// The right shift is done in order to not exceed, the hashtables capacity
 pub fn hash5(sequence: usize) -> u32 {
@@ -71,9 +70,10 @@ fn get_batch_arch(input: &[u8], n: usize) -> usize {
 
 #[inline]
 fn get_hash_at(input: &[u8], pos: usize) -> usize {
-    if input.len() < u16::MAX as usize { // add if usize === 8
+    if input.len() < u16::MAX as usize {
+        // add if usize === 8
         hash(get_batch(input, pos)) as usize
-    }else{
+    } else {
         hash5(get_batch_arch(input, pos)) as usize
     }
 }

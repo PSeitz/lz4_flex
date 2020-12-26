@@ -135,4 +135,3 @@ pub fn get_table_size(input_len: usize) -> (usize, usize) {
     };
     (dict_size, dict_bitshift)
 }
-
