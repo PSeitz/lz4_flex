@@ -28,6 +28,7 @@ fn hash(sequence: u32) -> u32 {
 
 /// hashes and right shifts to a maximum value of 16bit, 65535
 /// The right shift is done in order to not exceed, the hashtables capacity
+#[cfg(target_pointer_width = "64")]
 fn hash5(sequence: usize) -> u32 {
     let primebytes = if cfg!(target_endian = "little") {
         889523592379_usize
@@ -65,7 +66,8 @@ fn get_batch_arch(input: &[u8], n: usize) -> usize {
 #[inline]
 #[cfg(feature = "safe-encode")]
 fn get_batch_arch(input: &[u8], n: usize) -> usize {
-    let arr: &[u8; 8] = input[n..n + 8].try_into().unwrap();
+    const USIZE_SIZE: usize = core::mem::size_of::<usize>();
+    let arr: &[u8; USIZE_SIZE] = input[n..n + USIZE_SIZE].try_into().unwrap();
     usize::from_le_bytes(*arr)
 }
 
@@ -109,13 +111,13 @@ fn count_same_bytes(input: &[u8], input_dupl: &[u8], cur: &mut usize) -> usize {
     let cur_slice = &input[*cur..input.len() - END_OFFSET];
 
     let mut num = 0;
-
-    for (block1, block2) in cur_slice.chunks_exact(8).zip(input_dupl.chunks_exact(8)) {
+    const USIZE_SIZE: usize = core::mem::size_of::<usize>();
+    for (block1, block2) in cur_slice.chunks_exact(USIZE_SIZE).zip(input_dupl.chunks_exact(USIZE_SIZE)) {
         let input_block = as_usize_le(block1);
         let match_block = as_usize_le(block2);
 
         if input_block == match_block {
-            num += 8;
+            num += USIZE_SIZE;
         } else {
             let diff = input_block ^ match_block;
             num += get_common_bytes(diff) as usize;
@@ -129,6 +131,7 @@ fn count_same_bytes(input: &[u8], input_dupl: &[u8], cur: &mut usize) -> usize {
 
 #[inline]
 #[cfg(feature = "safe-encode")]
+#[cfg(target_pointer_width = "64")]
 fn as_usize_le(array: &[u8]) -> usize {
     (array[0] as usize)
         | ((array[1] as usize) << 8)
@@ -138,6 +141,16 @@ fn as_usize_le(array: &[u8]) -> usize {
         | ((array[5] as usize) << 40)
         | ((array[6] as usize) << 48)
         | ((array[7] as usize) << 56)
+}
+
+#[inline]
+#[cfg(feature = "safe-encode")]
+#[cfg(target_pointer_width = "32")]
+fn as_usize_le(array: &[u8]) -> usize {
+    (array[0] as usize)
+        | ((array[1] as usize) << 8)
+        | ((array[2] as usize) << 16)
+        | ((array[3] as usize) << 24)
 }
 
 /// Counts the number of same bytes in two byte streams.
