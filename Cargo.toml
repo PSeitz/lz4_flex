@@ -8,7 +8,7 @@ homepage = "https://github.com/pseitz/lz4_flex"
 repository = "https://github.com/pseitz/lz4_flex"
 readme = "README.md"
 license = "MIT"
-version = "0.6.1"
+version = "0.7.0"
 include = ["src/lib.rs", "src/frame/**/*", "src/block/**/*", "README.md"]
 
 [[bench]]
@@ -45,7 +45,6 @@ lto = true
 opt-level = 3
 panic = "unwind"
 
-
 # [[bench]]
 # harness = false
 # name = "quickbench"
@@ -59,6 +58,10 @@ panic = "unwind"
 # [[bin]]
 # name = "decompress_with_stats"
 # path = "src/test_bins/decompress_with_stats.rs"
+
+# [[bin]]
+# name = "profile_decomp"
+# path = "src/test_bins/profile_decomp.rs"
 
 # [[bin]]
 # name = "profile_comp"

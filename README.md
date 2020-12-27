@@ -23,18 +23,19 @@ The results in the table are from a benchmark in this project (66Kb JSON).
 - 0,5s clean release build time
 - Feature flags to configure safe/unsafe code usage
 - no-std support (thanks @coolreader18)
+- 32-bit support
 
 ## Usage: 
 Compression and decompression uses no usafe via the default feature flags "safe-encode" and "safe-decode". If you need more performance you can disable them (e.g. with no-default-features).
 
 Safe:
 ```
-lz4_flex = { version = "0.6.1" }
+lz4_flex = { version = "0.7.0" }
 ```
 
 Performance:
 ```
-lz4_flex = { version = "0.6.1", default-features = false }
+lz4_flex = { version = "0.7.0", default-features = false }
 ```
 
 ```rust
