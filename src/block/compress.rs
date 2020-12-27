@@ -22,13 +22,13 @@ const INCREASE_STEPSIZE_BITSHIFT: usize = 5;
 
 /// hashes and right shifts to a maximum value of 16bit, 65535
 /// The right shift is done in order to not exceed, the hashtables capacity
-pub fn hash(sequence: u32) -> u32 {
+fn hash(sequence: u32) -> u32 {
     (sequence.wrapping_mul(2654435761_u32)) >> 16
 }
 
 /// hashes and right shifts to a maximum value of 16bit, 65535
 /// The right shift is done in order to not exceed, the hashtables capacity
-pub fn hash5(sequence: usize) -> u32 {
+fn hash5(sequence: usize) -> u32 {
     let primebytes = if cfg!(target_endian = "little") {
         889523592379_usize
     } else {
@@ -70,13 +70,19 @@ fn get_batch_arch(input: &[u8], n: usize) -> usize {
 }
 
 #[inline]
+#[cfg(target_pointer_width = "64")]
 fn get_hash_at(input: &[u8], pos: usize) -> usize {
     if input.len() < u16::MAX as usize {
-        // add if usize === 8
         hash(get_batch(input, pos)) as usize
     } else {
         hash5(get_batch_arch(input, pos)) as usize
     }
+}
+
+#[inline]
+#[cfg(target_pointer_width = "32")]
+fn get_hash_at(input: &[u8], pos: usize) -> usize {
+    hash(get_batch(input, pos)) as usize
 }
 
 #[inline]
@@ -92,14 +98,19 @@ fn token_from_literal(lit_len: usize) -> u8 {
 }
 
 /// Counts the number of same bytes in two byte streams.
+/// `input` is the complete input
+/// `cur` is the current position in the input. it will be incremented by the number of matched bytes
+/// `input_dupl` is a pointer back in the input
+///
+/// The function ignores the last 7bytes (END_OFFSET) in input as this should be literals.
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn count_same_bytes(first: &[u8], second: &[u8], cur: &mut usize) -> usize {
-    let cur_slice = &first[*cur..first.len() - END_OFFSET];
+fn count_same_bytes(input: &[u8], input_dupl: &[u8], cur: &mut usize) -> usize {
+    let cur_slice = &input[*cur..input.len() - END_OFFSET];
 
     let mut num = 0;
 
-    for (block1, block2) in cur_slice.chunks_exact(8).zip(second.chunks_exact(8)) {
+    for (block1, block2) in cur_slice.chunks_exact(8).zip(input_dupl.chunks_exact(8)) {
         let input_block = as_usize_le(block1);
         let match_block = as_usize_le(block2);
 
@@ -130,21 +141,25 @@ fn as_usize_le(array: &[u8]) -> usize {
 }
 
 /// Counts the number of same bytes in two byte streams.
-/// Counts the number of same bytes in two byte streams.
+/// `input` is the complete input
+/// `cur` is the current position in the input. it will be incremented by the number of matched bytes
+/// `input_dupl` is a pointer back in the input
+///
+/// The function ignores the last 7bytes (END_OFFSET) in input as this should be literals.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn count_same_bytes(first: &[u8], mut second: &[u8], cur: &mut usize) -> usize {
+fn count_same_bytes(input: &[u8], mut input_dupl: &[u8], cur: &mut usize) -> usize {
     let start = *cur;
 
     // compare 4/8 bytes blocks depending on the arch
     const STEP_SIZE: usize = core::mem::size_of::<usize>();
-    while *cur + STEP_SIZE + END_OFFSET < first.len() {
+    while *cur + STEP_SIZE + END_OFFSET < input.len() {
         let diff =
-            read_usize_ptr(unsafe { first.as_ptr().add(*cur) }) ^ read_usize_ptr(second.as_ptr());
+            read_usize_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_usize_ptr(input_dupl.as_ptr());
 
         if diff == 0 {
             *cur += STEP_SIZE;
-            second = &second[STEP_SIZE..];
+            input_dupl = &input_dupl[STEP_SIZE..];
             continue;
         } else {
             *cur += get_common_bytes(diff) as usize;
@@ -155,9 +170,9 @@ fn count_same_bytes(first: &[u8], mut second: &[u8], cur: &mut usize) -> usize {
     // compare 4 bytes block
     #[cfg(target_pointer_width = "64")]
     {
-        if *cur + 4 + END_OFFSET < first.len() {
+        if *cur + 4 + END_OFFSET < input.len() {
             let diff =
-                read_u32_ptr(unsafe { first.as_ptr().add(*cur) }) ^ read_u32_ptr(second.as_ptr());
+                read_u32_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u32_ptr(input_dupl.as_ptr());
 
             if diff == 0 {
                 *cur += 4;
@@ -170,9 +185,9 @@ fn count_same_bytes(first: &[u8], mut second: &[u8], cur: &mut usize) -> usize {
     }
 
     // compare 2 bytes block
-    if *cur + 2 + END_OFFSET < first.len() {
+    if *cur + 2 + END_OFFSET < input.len() {
         let diff =
-            read_u16_ptr(unsafe { first.as_ptr().add(*cur) }) ^ read_u16_ptr(second.as_ptr());
+            read_u16_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u16_ptr(input_dupl.as_ptr());
 
         if diff == 0 {
             *cur += 2;
@@ -183,9 +198,8 @@ fn count_same_bytes(first: &[u8], mut second: &[u8], cur: &mut usize) -> usize {
         }
     }
 
-    // TODO add end_pos_check, last 5 bytes should be literals
-    if *cur + 1 + END_OFFSET < first.len()
-        && unsafe { first.as_ptr().add(*cur).read() } == unsafe { second.as_ptr().read() }
+    if *cur + 1 + END_OFFSET < input.len()
+        && unsafe { input.as_ptr().add(*cur).read() } == unsafe { input_dupl.as_ptr().read() }
     {
         *cur += 1;
     }
@@ -234,7 +248,7 @@ fn handle_last_literals(
 /// This is used to find duplicates in the stream so they are not written multiple times.
 ///
 /// Every four bytes are hashed, and in the resulting slot their position in the input buffer
-/// is placed. This way we can easily look up a candidate to back references.
+/// is placed in the dict. This way we can easily look up a candidate to back references.
 #[inline]
 pub fn compress_into_with_table<T: HashTable>(
     input: &[u8],
