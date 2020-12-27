@@ -541,19 +541,20 @@ mod tests {
 
     #[test]
     #[cfg(target_pointer_width = "32")]
+    #[cfg(not(feature = "safe-encode"))]
     fn test_get_common_bytes() {
-        let num1 = read_u32(&[0, 0, 0, 1]);
-        let num2 = read_u32(&[0, 0, 0, 2]);
+        let num1 = read_usize_ptr([0, 0, 0, 1].as_ptr());
+        let num2 = read_usize_ptr([0, 0, 0, 2].as_ptr());
         let diff = num1 ^ num2;
 
         assert_eq!(get_common_bytes(diff as usize), 3);
 
-        let num1 = read_u32(&[0, 0, 1, 1]);
-        let num2 = read_u32(&[0, 0, 0, 2]);
+        let num1 = read_usize_ptr([0, 0, 1, 1].as_ptr());
+        let num2 = read_usize_ptr([0, 0, 0, 2].as_ptr());
         let diff = num1 ^ num2;
         assert_eq!(get_common_bytes(diff as usize), 2);
-        let num1 = read_u32(&[1, 0, 1, 1]);
-        let num2 = read_u32(&[0, 0, 0, 2]);
+        let num1 = read_usize_ptr([1, 0, 1, 1].as_ptr());
+        let num2 = read_usize_ptr([0, 0, 0, 2].as_ptr());
         let diff = num1 ^ num2;
         assert_eq!(get_common_bytes(diff as usize), 0);
     }

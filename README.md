@@ -20,8 +20,9 @@ The results in the table are from a benchmark in this project (66Kb JSON).
 - Very good logo
 - LZ4 Block format
 - High performance
-- 1s clean release build time
+- 0,5s clean release build time
 - Feature flags to configure safe/unsafe code usage
+- no-std support (thanks @coolreader18)
 
 ## Usage: 
 Compression and decompression uses no usafe via the default feature flags "safe-encode" and "safe-decode". If you need more performance you can disable them (e.g. with no-default-features).
@@ -92,5 +93,4 @@ This fuzz target fuzzes, and asserts compression with cpp and decompression retu
 - Frame format
 - High compression
 - Dictionary Compression
-- #![no_std] for block compression/decompression
 
