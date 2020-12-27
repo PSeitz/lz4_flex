@@ -59,19 +59,19 @@ The lz4-flex version is tested with the feature flags safe-decode and safe-encod
 - lz4_cpp: https://crates.io/crates/lz4
 - lz-fear: https://github.com/main--/rust-lz-fear
 
-### Results v0.4.1 10-12-2020 (safe-decode and safe-encode off)
+### Results v0.7.0 27-12-2020 (safe-decode and safe-encode off)
 `cargo bench --no-default-features`
 
-Executed on Core i7-6700 Win10 WSL.
+Executed on Core i7-6700 Linux Mint.
 
 ![Compress](./compress_bench.svg)
 
 ![Decompress](./decompress_bench.svg)
 
-### Results v0.4 04-12-2020 (safe-decode and safe-encode on)
+### Results v0.7.0 27-12-2020 (safe-decode and safe-encode on)
 `cargo bench`
 
-Executed on Core i7-6700 Win10 WSL.
+Executed on Core i7-6700 Linux Mint.
 
 ![Compress](./compress_bench_safe.svg)
 
