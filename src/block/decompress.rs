@@ -1,6 +1,7 @@
 //! The decompression algorithm.
 use crate::block::wild_copy_from_src_8;
 use crate::block::DecompressError;
+use alloc::vec::Vec;
 
 #[inline]
 fn duplicate(output_ptr: &mut *mut u8, start: *const u8, match_length: usize) {
@@ -78,7 +79,7 @@ fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, DecompressEr
 fn read_u16(input: &[u8], input_pos: &mut usize) -> u16 {
     let mut num: u16 = 0;
     unsafe {
-        std::ptr::copy_nonoverlapping(
+        core::ptr::copy_nonoverlapping(
             input.as_ptr().add(*input_pos),
             &mut num as *mut u16 as *mut u8,
             2,
@@ -116,7 +117,7 @@ fn is_safe_distance(input_pos: usize, in_len: usize) -> bool {
 
 #[cold]
 unsafe fn copy_24(start_ptr: *const u8, output_ptr: *mut u8) {
-    std::ptr::copy_nonoverlapping(start_ptr, output_ptr, 24);
+    core::ptr::copy_nonoverlapping(start_ptr, output_ptr, 24);
 }
 
 /// We copy 24 byte blocks, because aligned copies are faster
@@ -179,7 +180,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
             // The literal is at max 14 bytes, and the is_safe_distance check assures
             // that we are far away enough from the end so we can safely copy 16 bytes
             unsafe {
-                std::ptr::copy_nonoverlapping(input.as_ptr().add(input_pos), output_ptr, 16);
+                core::ptr::copy_nonoverlapping(input.as_ptr().add(input_pos), output_ptr, 16);
             };
             input_pos += literal_length;
             unsafe {
@@ -203,7 +204,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
                 unsafe {
                     // match_length is at max 14+4 = 18, so copy_24 covers only the values 17, 18 and is therefore marked as cold
                     if match_length <= 16 {
-                        std::ptr::copy_nonoverlapping(start_ptr, output_ptr, 16);
+                        core::ptr::copy_nonoverlapping(start_ptr, output_ptr, 16);
                     } else {
                         copy_24(start_ptr, output_ptr)
                     }
@@ -239,7 +240,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
                 };
             }
             unsafe {
-                std::ptr::copy_nonoverlapping(
+                core::ptr::copy_nonoverlapping(
                     input.as_ptr().add(input_pos),
                     output_ptr,
                     literal_length,

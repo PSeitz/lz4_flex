@@ -18,21 +18,19 @@ assert_eq!(input, uncompressed);
 - `safe-encode` uses only safe rust for encode. _enabled by default_
 - `safe-decode` uses only safe rust for encode. _enabled by default_
 - `checked-decode` will add aditional checks if `safe-decode` is not enabled, to avoid out of bounds access
+- `std` enables dependency on the standard library. _enabled by default_
 
 For maximum performance use `no-default-features`.
 
 */
-#[macro_use]
-extern crate quick_error;
+
+#![cfg_attr(not(feature = "std"), no_std)]
+
+extern crate alloc;
 
 pub mod block;
+#[cfg(feature = "std")]
 mod frame;
-#[cfg(test)]
-mod tests;
-
-#[cfg(test)]
-#[macro_use]
-extern crate more_asserts;
 
 pub use block::compress::{compress, compress_into, compress_prepend_size};
 

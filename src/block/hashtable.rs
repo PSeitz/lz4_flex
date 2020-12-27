@@ -9,6 +9,8 @@
 /// Every four bytes is assigned an entry. When this number is lower, fewer entries exists, and
 /// thus collisions are more likely, hurting the compression ratio.
 ///
+use alloc::vec::Vec;
+
 pub trait HashTable {
     fn get_at(&self, pos: usize) -> usize;
     fn put_at(&mut self, pos: usize, val: usize);
@@ -25,7 +27,7 @@ pub struct HashTableUsize {
 impl HashTableUsize {
     #[inline]
     pub fn new(dict_size: usize, dict_bitshift: usize) -> Self {
-        let dict = vec![0; dict_size];
+        let dict = alloc::vec![0; dict_size];
         Self {
             dict,
             dict_bitshift,
@@ -61,7 +63,7 @@ pub struct HashTableU32 {
 impl HashTableU32 {
     #[inline]
     pub fn new(dict_size: usize, dict_bitshift: usize) -> Self {
-        let dict = vec![0; dict_size];
+        let dict = alloc::vec![0; dict_size];
         Self {
             dict,
             dict_bitshift,
@@ -96,7 +98,7 @@ pub struct HashTableU16 {
 impl HashTableU16 {
     #[inline]
     pub fn new(dict_size: usize, dict_bitshift: usize) -> Self {
-        let dict = vec![0; dict_size];
+        let dict = alloc::vec![0; dict_size];
         Self {
             dict,
             dict_bitshift,
@@ -135,4 +137,3 @@ pub fn get_table_size(input_len: usize) -> (usize, usize) {
     };
     (dict_size, dict_bitshift)
 }
-

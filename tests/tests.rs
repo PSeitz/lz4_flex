@@ -1,12 +1,14 @@
 //! Tests.
 
+#[macro_use]
+extern crate more_asserts;
 // extern crate test;
 
 // use crate::block::compress::compress_into_2;
-use crate::block::{compress_prepend_size, decompress_size_prepended};
-use crate::{compress, decompress};
 use lz4::block::{compress as lz4_cpp_block_compress, decompress as lz4_cpp_block_decompress};
 use lz4_compress::compress as lz4_rust_compress;
+use lz4_flex::block::{compress_prepend_size, decompress_size_prepended};
+use lz4_flex::{compress, decompress};
 use std::str;
 
 const COMPRESSION1K: &'static [u8] = include_bytes!("../benches/compression_1k.txt");
@@ -241,7 +243,6 @@ fn small_compressible_2() {
 #[test]
 fn small_compressible_3() {
     compress("AAAAAAAAAAAZZZZZZZZAAAAAAAA".as_bytes());
-
 }
 // #[test]
 // fn compare_small_compressible() {
@@ -394,4 +395,25 @@ mod test_compression {
             );
         }
     }
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn test_compare_compress() {
+    let mut input: &[u8] = &[10, 12, 14, 16];
+
+    let mut cache = vec![];
+    let mut encoder = lz4::EncoderBuilder::new()
+        .level(2)
+        .build(&mut cache)
+        .unwrap();
+    // let mut read = *input;
+    std::io::copy(&mut input, &mut encoder).unwrap();
+    let (comp_lz4, _result) = encoder.finish();
+
+    println!("{:?}", comp_lz4);
+
+    let input: &[u8] = &[10, 12, 14, 16];
+    let out = compress(&input);
+    dbg!(&out);
 }
