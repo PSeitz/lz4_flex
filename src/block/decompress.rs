@@ -2,6 +2,7 @@
 use crate::block::wild_copy_from_src_8;
 use crate::block::DecompressError;
 use alloc::vec::Vec;
+use crate::block::vint::decode_varint_slice;
 
 #[inline]
 fn duplicate(output_ptr: &mut *mut u8, start: *const u8, match_length: usize) {
@@ -187,7 +188,8 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
                 output_ptr = output_ptr.add(literal_length);
             }
 
-            let offset = read_u16(input, &mut input_pos);
+            // let offset = read_u16(input, &mut input_pos);
+            let offset = decode_varint_slice(input, &mut input_pos) as usize;
             let start_ptr = unsafe { output_ptr.sub(offset as usize) };
             // unsafe{
             //     core::arch::x86_64::_mm_prefetch(start_ptr as *const i8, core::arch::x86_64::_MM_HINT_T0);
@@ -266,7 +268,10 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
                 return Err(DecompressError::OffsetOutOfBounds);
             }
         }
-        let offset = read_u16(input, &mut input_pos);
+
+        let offset = decode_varint_slice(input, &mut input_pos) as usize;
+
+        // let offset = read_u16(input, &mut input_pos);
         // Obtain the initial match length. The match length is the length of the duplicate segment
         // which will later be copied from data previously decompressed into the output buffer. The
         // initial length is derived from the second part of the token (the lower nibble), we read

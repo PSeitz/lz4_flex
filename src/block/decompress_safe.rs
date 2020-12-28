@@ -1,5 +1,6 @@
 //! The decompression algorithm.
 
+use crate::block::vint::decode_varint_slice;
 use crate::block::DecompressError;
 use alloc::vec::Vec;
 
@@ -131,7 +132,8 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
             output.extend_from_slice(&input[input_pos..input_pos + literal_length]);
             input_pos += literal_length;
 
-            let offset = read_u16(input, &mut input_pos) as usize;
+            // let offset = read_u16(input, &mut input_pos) as usize;
+            let offset = decode_varint_slice(input, &mut input_pos) as usize;
 
             let match_length = (4 + (token & 0xF)) as usize;
 
@@ -181,7 +183,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
             break;
         }
 
-        let offset = read_u16(input, &mut input_pos) as usize;
+        let offset = decode_varint_slice(input, &mut input_pos) as usize;
         // Obtain the initial match length. The match length is the length of the duplicate segment
         // which will later be copied from data previously decompressed into the output buffer. The
         // initial length is derived from the second part of the token (the lower nibble), we read

@@ -82,25 +82,25 @@ fn inverse(s: &str) {
     let decompressed = decompress(&compressed_flex, s.len()).unwrap();
     assert_eq!(decompressed, s.as_bytes());
 
-    // compress with lz4 cpp, decompress with rust
-    let compressed = lz4_cpp_block_compress(s.as_bytes(), None, false).unwrap();
-    let decompressed = decompress(&compressed, s.len()).unwrap();
-    assert_eq!(decompressed, s.as_bytes());
+    // // compress with lz4 cpp, decompress with rust
+    // let compressed = lz4_cpp_block_compress(s.as_bytes(), None, false).unwrap();
+    // let decompressed = decompress(&compressed, s.len()).unwrap();
+    // assert_eq!(decompressed, s.as_bytes());
 
-    if s.len() != 0 {
-        // compress with rust, decompress with lz4 cpp
-        // let compressed = compress(s.as_bytes());
-        let decompressed =
-            lz4_cpp_block_decompress(&compressed_flex, Some(s.len() as i32)).unwrap();
-        assert_eq!(decompressed, s.as_bytes());
-    }
+    // if s.len() != 0 {
+    //     // compress with rust, decompress with lz4 cpp
+    //     // let compressed = compress(s.as_bytes());
+    //     let decompressed =
+    //         lz4_cpp_block_decompress(&compressed_flex, Some(s.len() as i32)).unwrap();
+    //     assert_eq!(decompressed, s.as_bytes());
+    // }
 
-    // compress with rust, decompress with rust
-    let compressed_flex = compress(s.as_bytes());
-    let decompressed = decompress(&compressed_flex, s.len()).unwrap();
-    assert_eq!(decompressed, s.as_bytes());
+    // // compress with rust, decompress with rust
+    // let compressed_flex = compress(s.as_bytes());
+    // let decompressed = decompress(&compressed_flex, s.len()).unwrap();
+    // assert_eq!(decompressed, s.as_bytes());
 
-    // compress with rust, decompress with rust, prepend size
+    // // compress with rust, decompress with rust, prepend size
     let compressed_flex = compress_prepend_size(s.as_bytes());
     let decompressed = decompress_size_prepended(&compressed_flex).unwrap();
     assert_eq!(decompressed, s.as_bytes());
@@ -133,6 +133,7 @@ fn yopa() {
 #[test]
 fn compare_compression() {
     print_compression_ration(include_bytes!("../benches/compression_34k.txt"), "34k");
+    print_compression_ration(include_bytes!("../benches/dickens.txt"), "10mb dickens");
 }
 
 #[test]
@@ -175,23 +176,23 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
         name,
         compressed.len() as f64 / input.len() as f64
     );
-    let decompressed = decompress(&compressed, input.len()).unwrap();
+    // let decompressed = decompress(&compressed, input.len()).unwrap();
 
-    assert_eq!(decompressed, input);
-    let compressed = lz4_rust_compress(input);
-    println!(
-        "lz4_rust_compress Compression Ratio {:?} {:?}",
-        name,
-        compressed.len() as f64 / input.len() as f64
-    );
+    // assert_eq!(decompressed, input);
+    // let compressed = lz4_rust_compress(input);
+    // println!(
+    //     "lz4_rust_compress Compression Ratio {:?} {:?}",
+    //     name,
+    //     compressed.len() as f64 / input.len() as f64
+    // );
 
-    assert_eq!(decompressed, input);
-    let compressed = compress_lz4_fear(input);
-    println!(
-        "lz4_fear_compress Compression Ratio {:?} {:?}",
-        name,
-        compressed.len() as f64 / input.len() as f64
-    );
+    // assert_eq!(decompressed, input);
+    // let compressed = compress_lz4_fear(input);
+    // println!(
+    //     "lz4_fear_compress Compression Ratio {:?} {:?}",
+    //     name,
+    //     compressed.len() as f64 / input.len() as f64
+    // );
 }
 
 // #[test]

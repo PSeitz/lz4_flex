@@ -4,6 +4,7 @@
 //! high performance. It has fixed memory usage, which contrary to other approachs, makes it less
 //! memory hungry.
 
+use crate::block::vint::encode_varint_into;
 use crate::block::hashtable::get_table_size;
 use crate::block::hashtable::HashTable;
 use crate::block::hashtable::{HashTableU16, HashTableU32, HashTableUsize};
@@ -328,9 +329,9 @@ pub fn compress_into_with_table<T: HashTable>(
             //   candidate actually matches what we search for.
             // - We can address up to 16-bit offset, hence we are only able to address the candidate if
             //   its offset is less than or equals to 0xFFFF.
-            if (candidate as usize + MAX_DISTANCE) < cur {
-                continue;
-            }
+            // if (candidate as usize + MAX_DISTANCE) < cur {
+            //     continue;
+            // }
 
             if get_batch(input, candidate as usize) == get_batch(input, cur) {
                 break;
@@ -343,7 +344,7 @@ pub fn compress_into_with_table<T: HashTable>(
         // Generate the higher half of the token.
         let mut token = token_from_literal(lit_len);
 
-        let offset = (cur - candidate as usize) as u16;
+        let offset = (cur - candidate as usize) as u32;
         cur += MINMATCH;
         let duplicate_length =
             count_same_bytes(input, &input[candidate as usize + MINMATCH..], &mut cur);
@@ -374,7 +375,8 @@ pub fn compress_into_with_table<T: HashTable>(
         // TODO check wildcopy 8byte
         copy_literals(output, &input[start..start + lit_len]);
         // write the offset in little endian.
-        push_u16(output, offset);
+        encode_varint_into(output, offset);    
+        // push_u16(output, offset);
 
         // If we were unable to fit the duplicates length into the token, write the
         // extensional part through LSIC.

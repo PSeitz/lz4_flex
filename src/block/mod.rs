@@ -22,6 +22,7 @@ match [10][4][6][100]  .....      in [10][4][6][40]
 #[cfg_attr(feature = "safe-encode", forbid(unsafe_code))]
 pub mod compress;
 pub mod hashtable;
+pub mod vint;
 
 #[cfg_attr(feature = "safe-decode", forbid(unsafe_code))]
 pub mod decompress_safe;
