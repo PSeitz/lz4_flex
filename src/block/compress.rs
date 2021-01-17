@@ -129,7 +129,8 @@ fn token_from_literal_and_match_length(lit_len: usize, duplicate_length: usize) 
 /// The function ignores the last 7bytes (END_OFFSET) in input as this should be literals.
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn count_same_bytes(input: &[u8], input_dupl: &[u8], cur: &mut usize) -> usize {
+fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
+    let input_dupl = &input[candidate as usize..];
     let cur_slice = &input[*cur..input.len() - END_OFFSET];
 
     let mut num = 0;
@@ -183,18 +184,20 @@ fn as_usize_le(array: &[u8]) -> usize {
 /// The function ignores the last 7bytes (END_OFFSET) in input as this should be literals.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn count_same_bytes(input: &[u8], mut input_dupl: &[u8], cur: &mut usize) -> usize {
+fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
     let start = *cur;
+
+    let mut input_dupl_ptr = unsafe{input.as_ptr().add(candidate)};
 
     // compare 4/8 bytes blocks depending on the arch
     const STEP_SIZE: usize = core::mem::size_of::<usize>();
     while *cur + STEP_SIZE + END_OFFSET < input.len() {
         let diff =
-            read_usize_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_usize_ptr(input_dupl.as_ptr());
+            read_usize_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_usize_ptr(input_dupl_ptr);
 
         if diff == 0 {
             *cur += STEP_SIZE;
-            input_dupl = &input_dupl[STEP_SIZE..];
+            unsafe{input_dupl_ptr = input_dupl_ptr.add(STEP_SIZE);}
             continue;
         } else {
             *cur += get_common_bytes(diff) as usize;
@@ -207,7 +210,7 @@ fn count_same_bytes(input: &[u8], mut input_dupl: &[u8], cur: &mut usize) -> usi
     {
         if *cur + 4 + END_OFFSET < input.len() {
             let diff =
-                read_u32_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u32_ptr(input_dupl.as_ptr());
+                read_u32_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u32_ptr(input_dupl_ptr);
 
             if diff == 0 {
                 *cur += 4;
@@ -222,7 +225,7 @@ fn count_same_bytes(input: &[u8], mut input_dupl: &[u8], cur: &mut usize) -> usi
     // compare 2 bytes block
     if *cur + 2 + END_OFFSET < input.len() {
         let diff =
-            read_u16_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u16_ptr(input_dupl.as_ptr());
+            read_u16_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u16_ptr(input_dupl_ptr);
 
         if diff == 0 {
             *cur += 2;
@@ -234,7 +237,7 @@ fn count_same_bytes(input: &[u8], mut input_dupl: &[u8], cur: &mut usize) -> usi
     }
 
     if *cur + 1 + END_OFFSET < input.len()
-        && unsafe { input.as_ptr().add(*cur).read() } == unsafe { input_dupl.as_ptr().read() }
+        && unsafe { input.as_ptr().add(*cur).read() } == unsafe { input_dupl_ptr.read() }
     {
         *cur += 1;
     }
@@ -391,7 +394,7 @@ pub fn compress_into_with_table<T: HashTable>(
         cur += MINMATCH;
 
         let duplicate_length =
-            count_same_bytes(input, &input[candidate as usize + MINMATCH..], &mut cur);
+            count_same_bytes(input, candidate as usize + MINMATCH, &mut cur);
 
         let hash = get_hash_at(input, cur - 2);
         dict.put_at(hash, cur - 2);
@@ -399,7 +402,6 @@ pub fn compress_into_with_table<T: HashTable>(
         let token = token_from_literal_and_match_length(lit_len, duplicate_length);
         // Push the token to the output stream.
         push_byte(output, token);
-        // output.push(token);
         // If we were unable to fit the literals length into the token, write the extensional
         // part through LSIC.
         if lit_len >= 0xF {
@@ -407,8 +409,7 @@ pub fn compress_into_with_table<T: HashTable>(
         }
 
         // Now, write the actual literals.
-        // TODO check wildcopy 8byte
-        copy_literals(output, &input[literal_start..literal_start + lit_len]);
+        copy_literals_wild(output, &input, literal_start, lit_len);
         // write the offset in little endian.
         push_u16(output, offset);
 
@@ -457,6 +458,22 @@ fn push_u16(output: &mut Vec<u8>, el: u16) {
 #[inline]
 fn copy_literals(output: &mut Vec<u8>, input: &[u8]) {
     output.extend_from_slice(input);
+}
+
+#[inline]
+#[cfg(feature = "safe-encode")]
+fn copy_literals_wild(output: &mut Vec<u8>, input: &[u8], input_start:usize, len:usize) {
+    output.extend_from_slice(&input[input_start..input_start + len]);
+}
+
+#[inline]
+#[cfg(not(feature = "safe-encode"))]
+fn copy_literals_wild(output: &mut Vec<u8>, input: &[u8], input_start:usize, len:usize) {
+    use crate::block::wild_copy_from_src_8;
+    unsafe{
+        wild_copy_from_src_8(input.as_ptr().add(input_start), output.as_mut_ptr().add(output.len()), len);
+        output.set_len(output.len() + len);
+    }
 }
 
 /// Returns the maximum output size of the compressed data.
