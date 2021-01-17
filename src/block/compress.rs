@@ -98,6 +98,28 @@ fn token_from_literal(lit_len: usize) -> u8 {
         0xF0
     }
 }
+#[inline]
+fn token_from_literal_and_match_length(lit_len: usize, duplicate_length: usize) -> u8 {
+    let mut token = if lit_len < 0xF {
+        // Since we can fit the literals length into it, there is no need for saturation.
+        (lit_len as u8) << 4
+    } else {
+        // We were unable to fit the literals into it, so we saturate to 0xF. We will later
+        // write the extensional value through LSIC encoding.
+        0xF0
+    };
+
+    token |= if duplicate_length < 0xF {
+        // We could fit it in.
+        duplicate_length as u8
+    } else {
+        // We were unable to fit it in, so we default to 0xF, which will later be extended
+        // by LSIC encoding.
+        0xF
+    };
+
+    token
+}
 
 /// Counts the number of same bytes in two byte streams.
 /// `input` is the complete input
@@ -254,6 +276,28 @@ fn handle_last_literals(
     output.len()
 }
 
+/// Moves the cursors back as long as the bytes match, to find additional bytes in a duplicate
+///
+#[inline]
+#[cfg(feature = "safe-encode")]
+pub fn backtrack_match(candidate: &mut usize, cur: &mut usize, literal_start: usize, input: &[u8]){
+    while *candidate > 0 && *cur > literal_start && input[*cur-1] == input[*candidate-1] {
+        *cur-=1;
+        *candidate-=1;
+    }
+}
+
+/// Moves the cursors back as long as the bytes match, to find additional bytes in a duplicate
+///
+#[inline]
+#[cfg(not(feature = "safe-encode"))]
+pub fn backtrack_match(candidate: &mut usize, cur: &mut usize, literal_start: usize, input: &[u8]){
+    while unsafe{*candidate > 0 && *cur > literal_start && input.get_unchecked(*cur-1) == input.get_unchecked(*candidate-1)} {
+        *cur-=1;
+        *candidate-=1;
+    }
+}
+
 /// Compress all bytes of `input` into `output`.
 ///
 /// T:HashTable is the dictionary of previously encoded sequences.
@@ -293,7 +337,7 @@ pub fn compress_into_with_table<T: HashTable>(
     let end_pos_check = input_size - MFLIMIT as usize;
 
     let mut cur = 0;
-    let mut start = cur;
+    let mut literal_start = cur;
     cur += 1;
     // let mut forward_hash = get_hash_at(input, cur, dict_bitshift);
 
@@ -305,7 +349,7 @@ pub fn compress_into_with_table<T: HashTable>(
         // The number of bytes before our cursor, where the duplicate starts.
         let mut next_cur = cur;
 
-        // In this loop we search for duplicates via the hashtable. 4bytes are hashed and compared.
+        // In this loop we search for duplicates via the hashtable. 4bytes or 8bytes are hashed and compared.
         loop {
             non_match_count += 1;
             step_size = non_match_count >> INCREASE_STEPSIZE_BITSHIFT;
@@ -314,7 +358,7 @@ pub fn compress_into_with_table<T: HashTable>(
             next_cur += step_size;
 
             if cur > end_pos_check {
-                return handle_last_literals(output, input, input_size, start);
+                return handle_last_literals(output, input, input_size, literal_start);
             }
             // Find a candidate in the dictionary with the hash of the current four bytes.
             // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
@@ -337,30 +381,22 @@ pub fn compress_into_with_table<T: HashTable>(
             }
         }
 
+        backtrack_match(&mut candidate, &mut cur, literal_start, input);
+
         // The length (in bytes) of the literals section.
-        let lit_len = cur - start;
+        let lit_len = cur - literal_start;
 
         // Generate the higher half of the token.
-        let mut token = token_from_literal(lit_len);
-
         let offset = (cur - candidate as usize) as u16;
         cur += MINMATCH;
+
         let duplicate_length =
             count_same_bytes(input, &input[candidate as usize + MINMATCH..], &mut cur);
+
         let hash = get_hash_at(input, cur - 2);
         dict.put_at(hash, cur - 2);
 
-        // Generate the lower half of the token, the duplicates length.
-        // cur += duplicate_length + MINMATCH;
-        token |= if duplicate_length < 0xF {
-            // We could fit it in.
-            duplicate_length as u8
-        } else {
-            // We were unable to fit it in, so we default to 0xF, which will later be extended
-            // by LSIC encoding.
-            0xF
-        };
-
+        let token = token_from_literal_and_match_length(lit_len, duplicate_length);
         // Push the token to the output stream.
         push_byte(output, token);
         // output.push(token);
@@ -372,7 +408,7 @@ pub fn compress_into_with_table<T: HashTable>(
 
         // Now, write the actual literals.
         // TODO check wildcopy 8byte
-        copy_literals(output, &input[start..start + lit_len]);
+        copy_literals(output, &input[literal_start..literal_start + lit_len]);
         // write the offset in little endian.
         push_u16(output, offset);
 
@@ -381,7 +417,7 @@ pub fn compress_into_with_table<T: HashTable>(
         if duplicate_length >= 0xF {
             write_integer(output, duplicate_length - 0xF);
         }
-        start = cur;
+        literal_start = cur;
         // forward_hash = get_hash_at(input, cur, dict_bitshift);
     }
 }

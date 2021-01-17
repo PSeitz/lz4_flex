@@ -133,6 +133,7 @@ fn yopa() {
 #[test]
 fn compare_compression() {
     print_compression_ration(include_bytes!("../benches/compression_34k.txt"), "34k");
+    print_compression_ration(include_bytes!("../benches/compression_66k_JSON.txt"), "66k JSON");
 }
 
 #[test]
@@ -161,7 +162,7 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
     let compressed = compress(input);
     // println!("{:?}", compressed);
     println!(
-        "Compression Ratio {:?} {:?}",
+        "lz4_flex Compression Ratio {:?} {:?}",
         name,
         compressed.len() as f64 / input.len() as f64
     );
@@ -171,7 +172,7 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
     let compressed = lz4_cpp_block_compress(input, None, false).unwrap();
     // println!("{:?}", compressed);
     println!(
-        "Cpp Compression Ratio {:?} {:?}",
+        "Lz4 Cpp Compression Ratio {:?} {:?}",
         name,
         compressed.len() as f64 / input.len() as f64
     );
@@ -232,7 +233,7 @@ fn test_end_offset() {
     // inverse("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAA");
 }
 #[test]
-fn small_compressible() {
+fn small_compressible_1() {
     inverse("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBa");
 }
 #[test]
