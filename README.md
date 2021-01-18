@@ -9,12 +9,12 @@
 Fastest LZ4 implementation in Rust. Originally based on [redox-os' lz4 compression](https://crates.io/crates/lz4-compress), but now a complete rewrite.
 The results in the table are from a benchmark in this project (66Kb JSON).
 
-|    Compressor    | Compression | Decompression |
-|------------------|-------------|---------------|
-| lz4_flex unsafe  | 711 MiB/s   | 3733 MiB/s    |
-| lz4_flex safe    | 628 MiB/s   | 1433 MiB/s    |
-| lz4_cpp          | 914 MiB/s   | 3793 MiB/s    |
-| lz4_fear         | 443 MiB/s   | 836 MiB/s     |
+|    Compressor    | Compression | Decompression | Ratio		 |
+|------------------|-------------|---------------|---------------|
+| lz4_flex unsafe  | 924 MiB/s   | 3733 MiB/s    | 0.2270   	 |
+| lz4_flex safe    | 649 MiB/s   | 1433 MiB/s    | 0.2270   	 |
+| lz4_cpp          | 1001 MiB/s  | 3793 MiB/s    | 0.2283   	 |
+| lz4_fear         | 456 MiB/s   | 836 MiB/s     | 0.2283	     |
 
 ## Features
 - Very good logo
