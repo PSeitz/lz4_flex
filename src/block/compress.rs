@@ -431,6 +431,9 @@ pub fn compress_into_with_table<T: HashTable>(
         }
 
         // Now, write the actual literals.
+        //
+        // The unsafe version copies blocks of 8bytes, and therefore may copy up to 7bytes more than needed.
+        // This is safe, because the last 16 bytes (MF_LIMIT) are handled in handle_last_literals.
         copy_literals_wild(output, &input, literal_start, lit_len);
         // write the offset in little endian.
         push_u16(output, offset);

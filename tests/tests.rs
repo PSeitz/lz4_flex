@@ -82,18 +82,7 @@ fn inverse(s: &str) {
     let decompressed = decompress(&compressed_flex, s.len()).unwrap();
     assert_eq!(decompressed, s.as_bytes());
 
-    // compress with lz4 cpp, decompress with rust
-    let compressed = lz4_cpp_block_compress(s.as_bytes(), None, false).unwrap();
-    let decompressed = decompress(&compressed, s.len()).unwrap();
-    assert_eq!(decompressed, s.as_bytes());
-
-    if s.len() != 0 {
-        // compress with rust, decompress with lz4 cpp
-        // let compressed = compress(s.as_bytes());
-        let decompressed =
-            lz4_cpp_block_decompress(&compressed_flex, Some(s.len() as i32)).unwrap();
-        assert_eq!(decompressed, s.as_bytes());
-    }
+    lz4_cpp_compatibility(s);
 
     // compress with rust, decompress with rust
     let compressed_flex = compress(s.as_bytes());
@@ -104,6 +93,29 @@ fn inverse(s: &str) {
     let compressed_flex = compress_prepend_size(s.as_bytes());
     let decompressed = decompress_size_prepended(&compressed_flex).unwrap();
     assert_eq!(decompressed, s.as_bytes());
+}
+
+
+/// disabled in miri case
+#[cfg(miri)]
+fn lz4_cpp_compatibility(_s:&str) {}
+
+#[cfg(not(miri))]
+fn lz4_cpp_compatibility(s:&str) {
+    let compressed_flex = compress(s.as_bytes());
+
+    // compress with lz4 cpp, decompress with rust
+    let compressed = lz4_cpp_block_compress(s.as_bytes(), None, false).unwrap();
+    let decompressed = decompress(&compressed, s.len()).unwrap();
+    assert_eq!(decompressed, s.as_bytes());
+
+    if s.len() != 0 {
+        // compress with rust, decompress with lz4 cpp
+            let decompressed =
+        lz4_cpp_block_decompress(&compressed_flex, Some(s.len() as i32)).unwrap();
+        assert_eq!(decompressed, s.as_bytes());
+    }
+
 }
 
 #[test]
@@ -131,6 +143,7 @@ fn yopa() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore)]
 fn compare_compression() {
     print_compression_ration(include_bytes!("../benches/compression_34k.txt"), "34k");
     print_compression_ration(include_bytes!("../benches/compression_66k_JSON.txt"), "66k JSON");
