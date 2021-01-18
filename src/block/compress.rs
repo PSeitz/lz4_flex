@@ -245,10 +245,11 @@ fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
     *cur - start
 }
 
+
 /// Write an integer to the output in LSIC format.
 #[inline]
+#[cfg(feature = "safe-encode")]
 fn write_integer(output: &mut Vec<u8>, mut n: usize) {
-    // Write the 0xFF bytes as long as the integer is higher than said value.
     while n >= 0xFF {
         n -= 0xFF;
         push_byte(output, 0xFF);
@@ -256,6 +257,26 @@ fn write_integer(output: &mut Vec<u8>, mut n: usize) {
 
     // Write the remaining byte.
     push_byte(output, n as u8);
+}
+
+/// Write an integer to the output in LSIC format.
+#[inline]
+#[cfg(not(feature = "safe-encode"))]
+fn write_integer(output: &mut Vec<u8>, mut n: usize) {
+    // Write the 0xFF bytes as long as the integer is higher than said value.
+    push_u32(output, 0xFFFFFFFF);
+    while n >= 4 * 0xFF {
+        n -= 4 * 0xFF;
+        push_u32(output, 0xFFFFFFFF);
+    }
+
+    // Shortening the output, because we write 4 bytes upfront
+    unsafe{output.set_len(output.len() - 4 + 1 - n / 255);}
+
+    // Write the remaining byte.
+    if let Some(last) = output.last_mut() {
+        *last = (n % 255) as u8;
+    }
 }
 
 /// Handle the last bytes from the input as literals
@@ -284,6 +305,7 @@ fn handle_last_literals(
 #[inline]
 #[cfg(feature = "safe-encode")]
 pub fn backtrack_match(candidate: &mut usize, cur: &mut usize, literal_start: usize, input: &[u8]){
+    // TODO: It should be possible remove all bounds checks, since we are walking backwards
     while *candidate > 0 && *cur > literal_start && input[*cur-1] == input[*candidate-1] {
         *cur-=1;
         *candidate-=1;
@@ -452,6 +474,16 @@ fn push_u16(output: &mut Vec<u8>, el: u16) {
         core::ptr::write(out_ptr, el as u8);
         core::ptr::write(out_ptr.add(1), (el >> 8) as u8);
         output.set_len(output.len() + 2);
+    }
+}
+
+#[inline]
+#[cfg(not(feature = "safe-encode"))]
+fn push_u32(output: &mut Vec<u8>, el: u32) {
+    unsafe {
+        let out_ptr = output.as_mut_ptr().add(output.len());
+        core::ptr::copy_nonoverlapping(el.to_le_bytes().as_ptr(), out_ptr, 4);
+        output.set_len(output.len() + 4);
     }
 }
 
