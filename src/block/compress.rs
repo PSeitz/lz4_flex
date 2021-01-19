@@ -267,15 +267,26 @@ fn write_integer(output: &mut Vec<u8>, mut n: usize) {
     push_u32(output, 0xFFFFFFFF);
     while n >= 4 * 0xFF {
         n -= 4 * 0xFF;
+        unsafe{output.set_len(output.len() + 4);}
         push_u32(output, 0xFFFFFFFF);
     }
 
-    // Shortening the output, because we write 4 bytes upfront
-    unsafe{output.set_len(output.len() - 4 + 1 - n / 255);}
+    // Updating output len for the remainder
+    unsafe{output.set_len(output.len() + 1 + n / 255);}
+    let last_index = output.len() - 1;
+    unsafe{
+        // Write the remaining byte.
+        *output.get_unchecked_mut(last_index) = (n % 255) as u8;
+    };
 
-    // Write the remaining byte.
-    if let Some(last) = output.last_mut() {
-        *last = (n % 255) as u8;
+}
+
+#[inline]
+#[cfg(not(feature = "safe-encode"))]
+fn push_u32(output: &mut Vec<u8>, el: u32) {
+    unsafe {
+        let out_ptr = output.as_mut_ptr().add(output.len());
+        core::ptr::copy_nonoverlapping(el.to_le_bytes().as_ptr(), out_ptr, 4);
     }
 }
 
@@ -477,16 +488,6 @@ fn push_u16(output: &mut Vec<u8>, el: u16) {
         core::ptr::write(out_ptr, el as u8);
         core::ptr::write(out_ptr.add(1), (el >> 8) as u8);
         output.set_len(output.len() + 2);
-    }
-}
-
-#[inline]
-#[cfg(not(feature = "safe-encode"))]
-fn push_u32(output: &mut Vec<u8>, el: u32) {
-    unsafe {
-        let out_ptr = output.as_mut_ptr().add(output.len());
-        core::ptr::copy_nonoverlapping(el.to_le_bytes().as_ptr(), out_ptr, 4);
-        output.set_len(output.len() + 4);
     }
 }
 
