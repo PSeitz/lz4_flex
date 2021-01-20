@@ -77,43 +77,48 @@ const COMPRESSION34K: &'static [u8] = include_bytes!("../benches/compression_34k
 
 /// Test that the compressed string decompresses to the original string.
 fn inverse(s: &str) {
-    // compress with rust, decompress with rust
-    let compressed_flex = compress(s.as_bytes());
-    let decompressed = decompress(&compressed_flex, s.len()).unwrap();
-    assert_eq!(decompressed, s.as_bytes());
+    inverse_bytes(s.as_bytes());
+}
 
-    lz4_cpp_compatibility(s);
+/// Test that the compressed string decompresses to the original string.
+fn inverse_bytes(bytes: &[u8]) {
+    // compress with rust, decompress with rust
+    let compressed_flex = compress(bytes);
+    let decompressed = decompress(&compressed_flex, bytes.len()).unwrap();
+    assert_eq!(decompressed, bytes);
+
+    lz4_cpp_compatibility(bytes);
 
     // compress with rust, decompress with rust
-    let compressed_flex = compress(s.as_bytes());
-    let decompressed = decompress(&compressed_flex, s.len()).unwrap();
-    assert_eq!(decompressed, s.as_bytes());
+    let compressed_flex = compress(bytes);
+    let decompressed = decompress(&compressed_flex, bytes.len()).unwrap();
+    assert_eq!(decompressed, bytes);
 
     // compress with rust, decompress with rust, prepend size
-    let compressed_flex = compress_prepend_size(s.as_bytes());
+    let compressed_flex = compress_prepend_size(bytes);
     let decompressed = decompress_size_prepended(&compressed_flex).unwrap();
-    assert_eq!(decompressed, s.as_bytes());
+    assert_eq!(decompressed, bytes);
 }
 
 
 /// disabled in miri case
 #[cfg(miri)]
-fn lz4_cpp_compatibility(_s:&str) {}
+fn lz4_cpp_compatibility(_bytes: &[u8]) {}
 
 #[cfg(not(miri))]
-fn lz4_cpp_compatibility(s:&str) {
-    let compressed_flex = compress(s.as_bytes());
+fn lz4_cpp_compatibility(bytes: &[u8]) {
+    let compressed_flex = compress(bytes);
 
     // compress with lz4 cpp, decompress with rust
-    let compressed = lz4_cpp_block_compress(s.as_bytes(), None, false).unwrap();
-    let decompressed = decompress(&compressed, s.len()).unwrap();
-    assert_eq!(decompressed, s.as_bytes());
+    let compressed = lz4_cpp_block_compress(bytes, None, false).unwrap();
+    let decompressed = decompress(&compressed, bytes.len()).unwrap();
+    assert_eq!(decompressed, bytes);
 
-    if s.len() != 0 {
+    if bytes.len() != 0 {
         // compress with rust, decompress with lz4 cpp
             let decompressed =
-        lz4_cpp_block_decompress(&compressed_flex, Some(s.len() as i32)).unwrap();
-        assert_eq!(decompressed, s.as_bytes());
+        lz4_cpp_block_decompress(&compressed_flex, Some(bytes.len() as i32)).unwrap();
+        assert_eq!(decompressed, bytes);
     }
 
 }
@@ -240,6 +245,35 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
 // }
 
 // the last 5 bytes need to be literals, so the last match block is not allowed to match to the end
+
+// #[test]
+// fn test_end_offset() {
+//     inverse(&[122, 1, 0, 1, 0, 10, 1, 0]);
+//     // inverse("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAA");
+// }
+
+
+#[cfg(test)]
+mod checked_decode {
+    use super::*;
+
+    #[cfg_attr(not(feature="checked_decode"), ignore)]
+    #[test]
+    fn error_case_1() {
+        let _err = decompress_size_prepended(&[122, 1, 0, 1, 0, 10, 1, 0]);
+    }
+    #[cfg_attr(not(feature="checked_decode"), ignore)]
+    #[test]
+    fn error_case_2() {
+        let _err = decompress_size_prepended(&[44, 251, 49, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0, 0]);
+    }
+    #[cfg_attr(not(feature="checked_decode"), ignore)]
+    #[test]
+    fn error_case_3() {
+        let _err = decompress_size_prepended(&[7, 0, 0, 0, 0, 0, 0, 11, 0, 0, 7, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 1, 0, 0]);
+    }
+}
+
 #[test]
 fn test_end_offset() {
     inverse("AAAAAAAAAAAAAAAAAAAAAAAAaAAAAAAAAAAAAAAAAAAAAAAAA");
@@ -258,13 +292,6 @@ fn small_compressible_2() {
 fn small_compressible_3() {
     compress("AAAAAAAAAAAZZZZZZZZAAAAAAAA".as_bytes());
 }
-// #[test]
-// fn compare_small_compressible() {
-//     let input = "AAAAAAAAAAAAAAAAAAAAAA".as_bytes();
-//     let compressed1 = compress(input);
-//     let compressed2 = compress_lz4_fear(input);
-//     assert_eq!(compressed1, compressed2);
-// }
 
 #[test]
 fn shakespear1() {
@@ -322,6 +349,12 @@ fn nulls() {
 }
 
 #[test]
+fn bug_fuzz() {
+    let data = &[8, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 46, 0, 0, 8, 0, 138];
+    inverse_bytes(data);
+}
+
+#[test]
 fn compression_works() {
     let s = r#"An iterator that knows its exact length.
         Many Iterators don't know how many times they will iterate, but some do. If an iterator knows how many times it can iterate, providing access to that information can be useful. For example, if you want to iterate backwards, a good start is to know where the end is.
@@ -329,20 +362,16 @@ fn compression_works() {
         The len method has a default implementation, so you usually shouldn't implement it. However, you may be able to provide a more performant implementation than the default, so overriding it in this case makes sense."#;
 
     inverse(s);
-
     assert!(compress(s.as_bytes()).len() < s.len());
 }
+
 // #[test]
 // fn multi_compress() {
-
 //     let s1 = r#"An iterator that knows its exact length.performant implementation than the default, so overriding it in this case makes sense."#;
 //     let s2 = r#"An iterator that knows its exact length.performant implementation than the default, so overriding it in this case makes sense."#;
-
 //     let mut out = vec![];
 //     compress_into()
-
 //     inverse(s);
-
 //     assert!(compress(s.as_bytes()).len() < s.len());
 // }
 

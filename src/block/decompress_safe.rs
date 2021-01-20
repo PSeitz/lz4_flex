@@ -137,16 +137,17 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
 
             // Write the duplicate segment to the output buffer from the output buffer
             // The blocks can overlap, make sure they are at least BLOCK_COPY_SIZE apart
-            // duplicate_slice(output, offset, match_length)?;
-
             if match_length + BLOCK_COPY_SIZE >= offset {
                 duplicate_overlapping_slice(output, offset, match_length)?;
             } else {
                 let old_len = output.len();
                 if match_length <= 16 {
                     let mut dst = [0u8; 16];
-                    let i = output.len() - offset;
-                    dst.clone_from_slice(&output[i..i + 16]);
+                    let (start, did_overflow) = output.len().overflowing_sub(offset);
+                    if did_overflow {
+                        return Err(DecompressError::OffsetOutOfBounds);
+                    }
+                    dst.clone_from_slice(&output[start..start + 16]);
                     output.extend_from_slice(&dst);
                 } else {
                     copy_24(output, offset)
@@ -204,8 +205,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
     Ok(())
 }
 
-/// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in litte endian.
-/// Can be used in conjuction with `compress_prepend_size`
+/// extends output by self-referential copies
 #[inline]
 pub fn duplicate_slice(
     output: &mut Vec<u8>,
@@ -217,7 +217,11 @@ pub fn duplicate_slice(
     } else {
         let old_len = output.len();
         let mut dst = [0u8; 16];
-        for i in (output.len() - offset..output.len() - offset + match_length).step_by(16) {
+        let (val, did_overflow) = output.len().overflowing_sub(offset);
+        if did_overflow {
+            return Err(DecompressError::OffsetOutOfBounds);
+        }
+        for i in (val..val + match_length).step_by(16) {
             dst.clone_from_slice(&output[i..i + 16]);
             output.extend_from_slice(&dst);
         }
@@ -226,7 +230,7 @@ pub fn duplicate_slice(
     Ok(())
 }
 
-/// Copy function, if the data start (end of output - offset) + match_length overlaps into output
+/// self-referential copy for the case data start (end of output - offset) + match_length overlaps into output
 #[inline]
 fn duplicate_overlapping_slice(
     output: &mut Vec<u8>,
@@ -237,16 +241,21 @@ fn duplicate_overlapping_slice(
         output.resize(output.len() + match_length, output[output.len() - 1]);
         Ok(())
     } else {
-        let start = output.len().wrapping_sub(offset);
-        if start < output.len() {
-            for i in start..start + match_length {
-                let b = output[i];
-                output.push(b);
-            }
-            Ok(())
-        } else {
-            Err(DecompressError::OffsetOutOfBounds)
+        let (start, did_overflow) = output.len().overflowing_sub(offset);
+        if did_overflow {
+            return Err(DecompressError::OffsetOutOfBounds);
         }
+        #[cfg(feature = "checked-decode")]
+        {
+            if output.is_empty() {
+                return Err(DecompressError::UnexpectedOutputEmpty);
+            }
+        }
+        for i in start..start + match_length {
+            let b = output[i];
+            output.push(b);
+        }
+        Ok(())
     }
 }
 

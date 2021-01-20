@@ -134,6 +134,8 @@ pub enum DecompressError {
     },
     /// Literal is out of bounds of the input
     LiteralOutOfBounds,
+    /// Output is empty, but it should contain data.
+    UnexpectedOutputEmpty,
     /// Expected another byte, but none found.
     ExpectedAnotherByte,
     /// Deduplication offset out of bounds (not in buffer).
@@ -147,14 +149,25 @@ impl fmt::Display for DecompressError {
                 expected_size,
                 actual_size,
             } => {
-                write!(
-                    f,
-                    "output ({:?}) is too small for the decompressed data, {:?}",
-                    actual_size, expected_size
-                )
+                if *expected_size == 0 {
+                    write!(
+                        f,
+                        "output ({:?}) is too small for the decompressed data",
+                        actual_size
+                    )
+                }else{
+                    write!(
+                        f,
+                        "output ({:?}) is too small for the decompressed data, {:?}",
+                        actual_size, expected_size
+                    )
+                }
             }
             DecompressError::LiteralOutOfBounds => {
                 f.write_str("literal is out of bounds of the input")
+            }
+            DecompressError::UnexpectedOutputEmpty => {
+                f.write_str("Output is empty, but it should contain data")
             }
             DecompressError::ExpectedAnotherByte => {
                 f.write_str("expected another byte, found none")

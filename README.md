@@ -30,12 +30,17 @@ Compression and decompression uses no usafe via the default feature flags "safe-
 
 Safe:
 ```
-lz4_flex = { version = "0.7.0" }
+lz4_flex = { version = "0.7.2" }
 ```
 
 Performance:
 ```
-lz4_flex = { version = "0.7.0", default-features = false }
+lz4_flex = { version = "0.7.2", default-features = false }
+```
+
+Warning: If you don't trust your input, use checked-decode in order to avoid out of bounds access.
+```
+lz4_flex = { version = "0.7.2", default-features = false, features = ["checked-decode"] }
 ```
 
 ```rust
@@ -84,10 +89,13 @@ Executed on Core i7-6700 Linux Mint.
 `MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-disable-stacked-borrows" cargo miri test --no-default-features`
 
 ## Fuzzer
-This fuzz target fuzzes, and asserts compression and decompression returns the original input.
+This fuzz target generates corrupted data for the decompressor. Make sure to switch to the checked_decode version in `fuzz/Cargo.toml` before testing this.
+`cargo fuzz run fuzz_decomp_corrupted_data`
+
+This fuzz target asserts that a compression and decompression rountrip returns the original input.
 `cargo fuzz run fuzz_roundtrip`
 
-This fuzz target fuzzes, and asserts compression with cpp and decompression returns the original input.
+This fuzz target asserts compression with cpp and decompression with lz4_flex returns the original input.
 `cargo fuzz run fuzz_roundtrip_cpp_compress`
 
 ## TODO

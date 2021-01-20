@@ -3,6 +3,7 @@ use crate::block::wild_copy_from_src_8;
 use crate::block::DecompressError;
 use alloc::vec::Vec;
 
+/// copies data to output_ptr by self-referential copy from start and match_length
 #[inline]
 fn duplicate(output_ptr: &mut *mut u8, start: *const u8, match_length: usize) {
     // We cannot simply use memcpy or `extend_from_slice`, because these do not allow
@@ -59,7 +60,6 @@ fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, DecompressEr
                 return Err(DecompressError::ExpectedAnotherByte);
             };
         }
-        // check alread done in move_cursor
         let extra = *unsafe { input.get_unchecked(*input_pos) };
         *input_pos += 1;
         n += extra as u32;
@@ -187,8 +187,20 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
                 output_ptr = output_ptr.add(literal_length);
             }
 
+            #[cfg(feature = "checked-decode")]
+            {
+                if input_pos + 2 >= input.len() {
+                    return Err(DecompressError::OffsetOutOfBounds);
+                }
+            }
             let offset = read_u16(input, &mut input_pos);
             let start_ptr = unsafe { output_ptr.sub(offset as usize) };
+            #[cfg(feature = "checked-decode")]
+            {
+                if (start_ptr as usize) < (output_start as usize) {
+                    return Err(DecompressError::OffsetOutOfBounds);
+                };
+            }
             // unsafe{
             //     core::arch::x86_64::_mm_prefetch(start_ptr as *const i8, core::arch::x86_64::_MM_HINT_T0);
             // }
@@ -262,9 +274,6 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
             if input_pos + 2 >= input.len() {
                 return Err(DecompressError::OffsetOutOfBounds);
             }
-            if input_pos + 2 >= output.len() {
-                return Err(DecompressError::OffsetOutOfBounds);
-            }
         }
         let offset = read_u16(input, &mut input_pos);
         // Obtain the initial match length. The match length is the length of the duplicate segment
@@ -289,11 +298,15 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
         // Calculate the start of this duplicate segment.
         let start_ptr = unsafe { output_ptr.sub(offset as usize) };
 
-        // We'll do a bound check to in checked-decode.
+        // We'll do a bounds check in checked-decode.
         #[cfg(feature = "checked-decode")]
         {
-            if (start_ptr as usize) >= (output_ptr as usize) {
+            if (start_ptr as usize) < (output_start as usize) {
                 return Err(DecompressError::OffsetOutOfBounds);
+            };
+            let output_end = output_start + output.capacity();
+            if output_ptr as usize + match_length + 7 > output_end {
+                return Err(DecompressError::OutputTooSmall{actual_size: output.capacity(), expected_size: 0});
             };
         }
         duplicate(&mut output_ptr, start_ptr, match_length);

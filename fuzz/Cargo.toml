@@ -13,8 +13,8 @@ cargo-fuzz = true
 libfuzzer-sys = "0.3"
 lz4 = "1.23.1"
 
-[dependencies.lz4_flex]
-path = ".."
+# checked-decode" is required for the fuzz_decomp_corrupted_data target
+lz4_flex = { path = "..", default-features = false, features=["checked-decode"] }
 
 # Prevent this from interfering with workspaces
 [workspace]
@@ -29,5 +29,11 @@ doc = false
 [[bin]]
 name = "fuzz_roundtrip_cpp_compress"
 path = "fuzz_targets/fuzz_roundtrip_cpp_compress.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_decomp_corrupted_data"
+path = "fuzz_targets/fuzz_decomp_corrupted_data.rs"
 test = false
 doc = false
