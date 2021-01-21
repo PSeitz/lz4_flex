@@ -30,17 +30,17 @@ Compression and decompression uses no usafe via the default feature flags "safe-
 
 Safe:
 ```
-lz4_flex = { version = "0.7.4" }
+lz4_flex = { version = "0.7.5" }
 ```
 
 Performance:
 ```
-lz4_flex = { version = "0.7.4", default-features = false }
+lz4_flex = { version = "0.7.5", default-features = false }
 ```
 
 Warning: If you don't trust your input, use checked-decode in order to avoid out of bounds access.
 ```
-lz4_flex = { version = "0.7.4", default-features = false, features = ["checked-decode"] }
+lz4_flex = { version = "0.7.5", default-features = false, features = ["checked-decode"] }
 ```
 
 ```rust
