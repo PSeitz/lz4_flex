@@ -322,7 +322,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
 pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressError> {
     let (uncompressed_size, input) = super::uncompressed_size(input)?;
     // Allocate a vector to contain the decompressed stream. we may wildcopy out of bounds, so the vector needs to have ad additional BLOCK_COPY_SIZE capacity
-    let mut vec = Vec::with_capacity(uncompressed_size + BLOCK_COPY_SIZE);
+    let mut vec = Vec::with_capacity(uncompressed_size + 4 + BLOCK_COPY_SIZE);
     unsafe {
         vec.set_len(uncompressed_size);
     }
@@ -335,7 +335,7 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
 #[inline]
 pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
     // Allocate a vector to contain the decompressed stream. we may wildcopy out of bounds, so the vector needs to have ad additional BLOCK_COPY_SIZE capacity
-    let mut vec = Vec::with_capacity(uncompressed_size + BLOCK_COPY_SIZE);
+    let mut vec = Vec::with_capacity(uncompressed_size + 4 + BLOCK_COPY_SIZE);
     unsafe {
         vec.set_len(uncompressed_size);
     }
