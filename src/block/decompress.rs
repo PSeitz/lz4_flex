@@ -1,16 +1,19 @@
 //! The decompression algorithm.
-use crate::block::wild_copy_from_src_8;
+use crate::block::wild_copy_from_src_16;
 use crate::block::DecompressError;
 use alloc::vec::Vec;
 
-/// copies data to output_ptr by self-referential copy from start and match_length
+// copy_on_self uses 16byte wild copy, to avoid overlapping copies we add 12. Minimum length of match_length is 4 totaling to 16. 
+const SAFE_DUPLICATE_COPY_RANGE: usize = 12;
+
+/// Copies data to output_ptr by self-referential copy from start and match_length
 #[inline]
 fn duplicate(output_ptr: &mut *mut u8, start: *const u8, match_length: usize) {
     // We cannot simply use memcpy or `extend_from_slice`, because these do not allow
     // self-referential copies: http://ticki.github.io/img/lz4_runs_encoding_diagram.svg
-    // `reserve` enough space on the vector to safely copy self referential data.
     // Check overlap copy
-    if (*output_ptr as usize) <= unsafe { start.add(match_length) } as usize {
+
+    if (*output_ptr as usize) < start  as usize + match_length + SAFE_DUPLICATE_COPY_RANGE {
         duplicate_overlapping(output_ptr, start, match_length);
     } else {
         copy_on_self(output_ptr, start, match_length);
@@ -117,10 +120,10 @@ fn is_safe_distance(input_pos: usize, in_len: usize) -> bool {
 
 #[cold]
 unsafe fn copy_24(start_ptr: *const u8, output_ptr: *mut u8) {
-    core::ptr::copy_nonoverlapping(start_ptr, output_ptr, 24);
+    core::ptr::copy_nonoverlapping(start_ptr, output_ptr, BLOCK_COPY_SIZE);
 }
 
-/// We copy 24 byte blocks, because aligned copies are faster
+/// We copy 24 byte blocks, because block size aligned copies are faster
 const BLOCK_COPY_SIZE: usize = 24;
 
 /// Decompress all bytes of `input` into `output`.
@@ -208,8 +211,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
             let match_length = (4 + (token & 0xF)) as usize;
             // Write the duplicate segment to the output buffer from the output buffer
             // The blocks can overlap, make sure they are at least BLOCK_COPY_SIZE apart
-            if (output_ptr as usize)
-                < unsafe { start_ptr.add(match_length).add(BLOCK_COPY_SIZE) } as usize
+            if (output_ptr as usize) < start_ptr as usize + match_length + BLOCK_COPY_SIZE
             {
                 duplicate_overlapping(&mut output_ptr, start_ptr, match_length);
             } else {
@@ -305,7 +307,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
                 return Err(DecompressError::OffsetOutOfBounds);
             };
             let output_end = output_start + output.capacity();
-            if output_ptr as usize + match_length + 7 > output_end {
+            if output_ptr as usize + match_length + SAFE_DUPLICATE_COPY_RANGE > output_end {
                 return Err(DecompressError::OutputTooSmall{actual_size: output.capacity(), expected_size: 0});
             };
         }
@@ -345,7 +347,7 @@ pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, Dec
 #[inline]
 fn copy_on_self(out_ptr: &mut *mut u8, start: *const u8, num_items: usize) {
     unsafe {
-        wild_copy_from_src_8(start, *out_ptr, num_items);
+        wild_copy_from_src_16(start, *out_ptr, num_items);
         *out_ptr = out_ptr.add(num_items);
     }
 }

@@ -9,12 +9,12 @@
 Fastest LZ4 implementation in Rust. Originally based on [redox-os' lz4 compression](https://crates.io/crates/lz4-compress), but now a complete rewrite.
 The results in the table are from a benchmark in this project (66Kb JSON).
 
-|    Compressor    | Compression | Decompression | Ratio		 |
-|------------------|-------------|---------------|---------------|
-| lz4_flex unsafe  | 924 MiB/s   | 3733 MiB/s    | 0.2270   	 |
-| lz4_flex safe    | 649 MiB/s   | 1433 MiB/s    | 0.2270   	 |
-| lz4_cpp          | 1001 MiB/s  | 3793 MiB/s    | 0.2283   	 |
-| lz4_fear         | 456 MiB/s   | 836 MiB/s     | 0.2283	     |
+|    Compressor        | Compression | Decompression | Ratio		 |
+|----------------------|-------------|---------------|---------------|
+| lz4_flex unsafe      | 947 MiB/s   | 5017 MiB/s    | 0.2270   	 |
+| lz4_flex safe        | 649 MiB/s   | 1433 MiB/s    | 0.2270   	 |
+| lz4_rs (lz4 1.8.1)   | 1001 MiB/s  | 4627 MiB/s    | 0.2283   	 |
+| lz4_fear             | 456 MiB/s   | 809 MiB/s     | 0.2283	     |
 
 ## Features
 - Very good logo
@@ -30,17 +30,17 @@ Compression and decompression uses no usafe via the default feature flags "safe-
 
 Safe:
 ```
-lz4_flex = { version = "0.7.2" }
+lz4_flex = { version = "0.7.4" }
 ```
 
 Performance:
 ```
-lz4_flex = { version = "0.7.2", default-features = false }
+lz4_flex = { version = "0.7.4", default-features = false }
 ```
 
 Warning: If you don't trust your input, use checked-decode in order to avoid out of bounds access.
 ```
-lz4_flex = { version = "0.7.2", default-features = false, features = ["checked-decode"] }
+lz4_flex = { version = "0.7.4", default-features = false, features = ["checked-decode"] }
 ```
 
 ```rust
