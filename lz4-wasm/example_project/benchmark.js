@@ -1,5 +1,7 @@
 import * as wasm from "lz4-wasm";
-import * as JSZip from "jszip";
+// import * as JSZip from "jszip";
+var lz4js = require('lz4/lib/binding')
+ import * as fflate from 'fflate/esm/browser.js';
 
 // benchmark data
 let test_input = `
@@ -69,8 +71,31 @@ function addText(text) {
     // let body = document.querySelectorAll('body');
     var div = document.createElement("div");
     div.innerHTML = text;
+
+    div.style["font-size"] = "40px";
+
     document.getElementById("body").appendChild(div);
 }
+// function addRow(col1, col2, col3) {
+//     // 
+//     var tr = document.createElement("tr");
+//     tr.style["font-size"] = "40px";
+
+//     var td = document.createElement("td");
+//     td.innerHTML = col1;
+//     tr.appendChild(td);
+
+//     var td = document.createElement("td");
+//     td.innerHTML = col2;
+//     tr.appendChild(td);
+
+//     var td = document.createElement("td");
+//     td.innerHTML = col3;
+//     tr.appendChild(td);
+
+//     document.querySelectorAll('tbody')[0].appendChild(tr);
+// }
+
 async function benchmark_jszip_compression(argument) {
 
     let total_bytes = 0;
@@ -100,14 +125,10 @@ async function benchmark_jszip_compression(argument) {
 async function benchmark_lz4_compression(argument) {
 
     let enc = new TextEncoder();
-    const compressed = wasm.compress(enc.encode("compress this text, compress this text pls. thx. thx. thx. thx. thx"));
-    const original = wasm.decompress(compressed);
-
-    var dec = new TextDecoder("utf-8");
-    // alert(dec.decode(original))
 
     // 200 MB/s
     let test_input_bytes = enc.encode(test_input);
+    const compressed = wasm.compress(test_input_bytes);
     let total_bytes = 0;
     var time0 = performance.now();
     for (let i = 0; i < 5000; i++) {
@@ -120,8 +141,9 @@ async function benchmark_lz4_compression(argument) {
     let total_mb = total_bytes / 1000000;
     let time_in_s = time_in_ms / 1000;
 
+    console.log(compressed)
 
-    addText("lz4 wasm compression: " + parseFloat("" + total_mb / time_in_s).toFixed(2)  + "MB/s")
+    addText("lz4 wasm compression: " + (total_mb / time_in_s).toFixed(2)  + "MB/s" + " Ratio: " + (compressed.length / test_input_bytes.length).toFixed(2) )
 
     // alert(total_mb / time_in_s  + "MB/s")
 
@@ -136,7 +158,7 @@ async function benchmark_lz4_decompression(argument) {
     let total_bytes = 0;
     var time0 = performance.now();
     const compressed = wasm.compress(test_input_bytes);
-    for (let i = 0; i < 30000; i++) {
+    for (let i = 0; i < 1000; i++) {
         const original = wasm.decompress(compressed);
         total_bytes += original.length;
     }
@@ -146,10 +168,123 @@ async function benchmark_lz4_decompression(argument) {
     let total_mb = total_bytes / 1000000;
     let time_in_s = time_in_ms / 1000;
 
-    addText("lz4 wasm decompression: " + parseFloat("" + total_mb / time_in_s).toFixed(2)  + "MB/s")
+    addText("lz4 wasm decompression: " + parseFloat("" + total_mb / time_in_s).toFixed(2)  + "MB/s" + " Ratio: " + (compressed.length / test_input_bytes.length).toFixed(2))
     // alert(total_mb / time_in_s  + "MB/s")
 
 }
+
+
+function benchmark_lz4_js_compression() {
+ 
+    // LZ4 can only work on Buffers
+    var test_input_bytes = Buffer.from(test_input)
+
+    var output = Buffer.alloc( lz4js.compressBound(test_input_bytes.length) )
+    var compressedSize = lz4js.compress(test_input_bytes, output)
+
+    let total_bytes = 0;
+    var time0 = performance.now();
+    for (let i = 0; i < 1000; i++) {
+        var output = Buffer.alloc( lz4js.compressBound(test_input_bytes.length) )
+        var compressedSize = lz4js.compress(test_input_bytes, output)
+        output = output.slice(0, compressedSize)
+        total_bytes += test_input_bytes.length;
+    }
+ 
+    var time_in_ms = performance.now() - time0;
+ 
+    let total_mb = total_bytes / 1000000;
+    let time_in_s = time_in_ms / 1000;
+ 
+    console.log("lz4_comp_js: " + total_mb / time_in_s  + "MB/s")
+
+    addText("lz4 (js) compression: " + parseFloat("" + total_mb / time_in_s).toFixed(2)  + "MB/s"+ " Ratio: " + (compressedSize / test_input_bytes.length).toFixed(2))
+ 
+}
+
+function benchmark_lz4_js_decompression(argument) {
+ 
+    // LZ4 can only work on Buffers
+    var test_input_bytes = Buffer.from(test_input)
+
+    let total_bytes = 0;
+    var time0 = performance.now();
+    var output = Buffer.alloc( lz4js.compressBound(test_input_bytes.length) )
+    var compressedSize = lz4js.compress(test_input_bytes, output)
+    output = output.slice(0, compressedSize)
+
+    for (let i = 0; i < 1000; i++) {
+        var uncompressed = Buffer.alloc(test_input_bytes.length)
+        var uncompressedSize = lz4js.uncompress(output, uncompressed)
+        uncompressed = uncompressed.slice(0, uncompressedSize)
+        total_bytes += uncompressedSize;
+    }
+ 
+    var time_in_ms = performance.now() - time0;
+ 
+    let total_mb = total_bytes / 1000000;
+    let time_in_s = time_in_ms / 1000;
+ 
+    console.log("lz4_decomp_js: " +total_mb / time_in_s  + "MB/s")
+
+    addText("lz4 (js) decompression: " + parseFloat("" + total_mb / time_in_s).toFixed(2)  + "MB/s"+ " Ratio: " + (compressedSize / test_input_bytes.length).toFixed(2))
+ 
+}
+
+
+function benchmark_fflate_compression() {
+ 
+    // LZ4 can only work on Buffers
+    var test_input_bytes = Buffer.from(test_input)
+
+    var output = Buffer.alloc( lz4js.compressBound(test_input_bytes.length) )
+    var compressed = fflate.zlibSync(test_input_bytes, { level: 1 });
+
+    let total_bytes = 0;
+    var time0 = performance.now();
+    for (let i = 0; i < 100; i++) {
+        const notSoMassive = fflate.zlibSync(test_input_bytes, { level: 1 });
+        total_bytes += notSoMassive.length;
+    }
+ 
+    var time_in_ms = performance.now() - time0;
+ 
+    let total_mb = total_bytes / 1000000;
+    let time_in_s = time_in_ms / 1000;
+ 
+    console.log("lz4_comp_js: " + total_mb / time_in_s  + "MB/s")
+
+    addText("fflate (zlib) compression: " + parseFloat("" + total_mb / time_in_s).toFixed(2)  + "MB/s"+ " Ratio: " + (compressed.length / test_input_bytes.length).toFixed(2))
+ 
+}
+
+function benchmark_fflate_decompression() {
+ 
+    // LZ4 can only work on Buffers
+    var test_input_bytes = Buffer.from(test_input)
+
+    var output = Buffer.alloc( lz4js.compressBound(test_input_bytes.length) )
+    var compressed = fflate.zlibSync(test_input_bytes, { level: 1 });
+
+    let total_bytes = 0;
+    var time0 = performance.now();
+    for (let i = 0; i < 100; i++) {
+        const massiveAgain = fflate.unzlibSync(compressed);
+        total_bytes += massiveAgain.length;
+    }
+ 
+    var time_in_ms = performance.now() - time0;
+ 
+    let total_mb = total_bytes / 1000000;
+    let time_in_s = time_in_ms / 1000;
+ 
+    console.log("lz4_comp_js: " + total_mb / time_in_s  + "MB/s")
+
+    addText("fflate (zlib) decompression: " + parseFloat("" + total_mb / time_in_s).toFixed(2)  + "MB/s"+ " Ratio: " + (compressed.length / test_input_bytes.length).toFixed(2))
+ 
+}
+
+
 
 
 function sleep(ms) {
@@ -158,12 +293,20 @@ function sleep(ms) {
 
 async function run(argument) {
     addText("Starting Benchmark..")
-    await sleep(10)
-
-    benchmark_lz4_compression()
     // benchmark_jszip_compression();
+
+    await sleep(10)
+    benchmark_lz4_compression()
     await sleep(10)
     benchmark_lz4_decompression();
+    await sleep(10)
+    benchmark_lz4_js_compression();
+    await sleep(10)
+    benchmark_lz4_js_decompression();
+    await sleep(10)
+    benchmark_fflate_compression();
+    await sleep(10)
+    benchmark_fflate_decompression();
     await sleep(10)
 
     addText("Finished")
