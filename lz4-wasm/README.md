@@ -33,3 +33,22 @@ alert(dec.decode(original))
 
 
 See https://github.com/PSeitz/lz4_flex/tree/master/lz4-wasm/example_project for usage and benchmark.
+
+
+## Making New Releases
+
+Build. This will optimize usage for inside a bundler like webpack.
+`
+RUST_LOG=info wasm-pack build --release
+`
+
+Due to a long standing bug in wasm-pack 0.9.1, _manually_ add these files to package.json.
+
+```
+    "lz4_wasm_bg.wasm.d.ts",
+    "lz4_wasm_bg.js",
+```
+
+`
+RUST_LOG=info wasm-pack publish
+`
