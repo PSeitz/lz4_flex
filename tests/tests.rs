@@ -5,6 +5,9 @@ extern crate more_asserts;
 // extern crate test;
 
 // use crate::block::compress::compress_into_2;
+use lz4_flex::block::decompress_with_dict::decompress_with_dict;
+use lz4_flex::block::compress_with_dict::compress_with_dict;
+use lz4_flex::block::dict::Dict;
 use lz4::block::{compress as lz4_cpp_block_compress, decompress as lz4_cpp_block_decompress};
 use lz4_compress::compress as lz4_rust_compress;
 use lz4_flex::block::{compress_prepend_size, decompress_size_prepended};
@@ -152,7 +155,7 @@ fn yopa() {
 #[cfg_attr(miri, ignore)]
 fn compare_compression() {
     print_compression_ration(include_bytes!("../benches/compression_34k.txt"), "34k");
-    print_compression_ration(include_bytes!("../benches/compression_66k_JSON.txt"), "66k JSON");
+    print_compression_ration(COMPRESSION66JSON, "66k JSON");
 }
 
 #[test]
@@ -187,6 +190,20 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
     );
     let decompressed = decompress(&compressed, input.len()).unwrap();
     assert_eq!(decompressed, input);
+
+
+    {
+        let input = input.to_vec();
+        let dict = Dict::new(input.to_vec());
+        let compressed_dict = compress_with_dict(&input, &dict);
+        println!(
+            "lz4_flex Compression Ratio with Dict {:?} {:?}",
+            name,
+            compressed_dict.len() as f64 / input.len() as f64
+        );
+        let decompressed = decompress_with_dict(&compressed_dict, input.len(), &dict).unwrap();
+        assert_eq!(decompressed, input);
+    }
 
     let compressed = lz4_cpp_block_compress(input, None, false).unwrap();
     // println!("{:?}", compressed);
@@ -483,4 +500,88 @@ fn test_compare_compress() {
     let input: &[u8] = &[10, 12, 14, 16];
     let out = compress(&input);
     dbg!(&out);
+}
+
+
+
+#[test]
+fn test_dictionary_mode_simple() {
+
+        let input: &[u8] = &[
+            10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
+        ];
+        let dict_data: &[u8] = &[
+            10, 12, 14, 16, 18, 10, 12, 18, 10, 12, 14, 16, 18, 10, 12, 112, 14, 16, 18, 10, 12, 14, 16, 18,
+        ];
+
+        let dict = Dict::new(dict_data.to_vec());
+
+        let compressed = compress_with_dict(&input, &dict);
+
+        let decomp = decompress_with_dict(&compressed, input.len(), &dict).unwrap();
+        assert_eq!(input, decomp);
+        assert!(compressed.len() < input.len());
+
+}
+
+
+#[test]
+fn test_dictionary_mode_small_json_keys() {
+
+    let dict_data = r#"name:",alter:"#.as_bytes().to_vec();
+
+    let input = r#"
+    name:"Fred,alter:100
+    name:"Fritz,alter:101
+    name:"Holger,alter:102
+    name:"Frederik,alter:103
+    name:"Fred,alter:104
+    name:"Fred,alter:105
+    name:"Fred,alter:106
+    name:"Fred,alter:107
+    name:"Fred,alter:108
+    name:"Fred,alter:109
+    name:"Fred,alter:109
+    name:"Fred,alter:109
+    name:"Fred,alter:109
+    name:"Fred,alter:109
+    name:"Fred,alter:109
+    name:"Fred,alter:109
+    "#.as_bytes().to_vec();
+
+    let dict = Dict::new(dict_data);
+
+    let compressed = compress_with_dict(&input, &dict);
+
+    println!(
+        "lz4_flex Compression Ratio with Small Custom Dict {:?}",
+        compressed.len() as f64 / input.len() as f64
+    );
+
+    let decomp = decompress_with_dict(&compressed, input.len(), &dict).unwrap();
+    assert_eq!(input, decomp);
+    assert!(compressed.len() < input.len());
+
+}
+
+
+#[test]
+fn test_dictionary_mode_json_keys() {
+
+    let dict_data = r#"{"commonness":0,"ent_seq":","kana":[{"commonness":0,"ent_seq":"","romaji":"","text":""}],"kanji":[{"commonness":0,"ent_seq":"","readings":[""],"text":""}],"meanings":{"eng":[""],"ger":[{"rank":1,"text":""},{"rank":2,"text":""}]},"misc":[],"pos":["adj-na","adj-no"]} [{"rank":3," [{"rank":4,""#;
+    let input: &[u8] = &COMPRESSION66JSON;
+
+    let dict = Dict::new(dict_data.as_bytes().to_vec());
+
+    let compressed = compress_with_dict(&input, &dict);
+
+    println!(
+        "lz4_flex Compression Ratio with 66k Custom Dict {:?}",
+        compressed.len() as f64 / input.len() as f64
+    );
+
+    let decomp = decompress_with_dict(&compressed, input.len(), &dict).unwrap();
+    assert_eq!(input, decomp);
+    assert!(compressed.len() < input.len());
+
 }

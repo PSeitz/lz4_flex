@@ -21,15 +21,30 @@ match [10][4][6][100]  .....      in [10][4][6][40]
 
 #[cfg_attr(feature = "safe-encode", forbid(unsafe_code))]
 pub mod compress;
+
+#[cfg_attr(feature = "safe-encode", forbid(unsafe_code))]
+pub mod compress_with_dict;
+
 pub mod hashtable;
+pub mod dict;
 
 #[cfg_attr(feature = "safe-decode", forbid(unsafe_code))]
 pub mod decompress_safe;
+
+#[cfg_attr(feature = "safe-decode", forbid(unsafe_code))]
+pub mod decompress_with_dict_safe;
+
 #[cfg(feature = "safe-decode")]
 pub use decompress_safe as decompress;
 
+#[cfg(feature = "safe-decode")]
+pub use decompress_with_dict_safe as decompress_with_dict;
+
 #[cfg(not(feature = "safe-decode"))]
 pub mod decompress;
+
+#[cfg(not(feature = "safe-decode"))]
+pub mod decompress_with_dict;
 
 pub use compress::compress_prepend_size;
 
