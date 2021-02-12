@@ -2,8 +2,7 @@
 
   <h1><code>lz4-wasm</code></h1>
 
-  <strong>Extremely fast compression(200MB/s) and decompression(600MB/s) in the browser or nodejs using wasm.</strong>
-
+  <strong>Extremely fast compression(200MB/s Firefox, 350Mb/s Chrome) and decompression(600MB/s Firefox, 1400Mb/s Chrome) in the browser or nodejs using wasm.</strong>
 
   <sub>Built with Rust</a></sub>
 </div>
@@ -37,10 +36,12 @@ See https://github.com/PSeitz/lz4_flex/tree/master/lz4-wasm/example_project for 
 
 ## Making New Releases
 
+### Release for bundler
+
 Build. This will optimize usage for inside a bundler like webpack.
-`
+```
 RUST_LOG=info wasm-pack build --release
-`
+```
 
 Due to a long standing bug in wasm-pack 0.9.1, _manually_ add these files to package.json.
 
@@ -49,6 +50,23 @@ Due to a long standing bug in wasm-pack 0.9.1, _manually_ add these files to pac
     "lz4_wasm_bg.js",
 ```
 
-`
+```
 RUST_LOG=info wasm-pack publish
-`
+```
+
+
+### Release for nodejs
+
+set name in Cargo toml to
+```
+name = "lz4-wasm-nodejs"
+```
+
+Build for nodejs
+```
+RUST_LOG=info wasm-pack build --release -t nodejs
+```
+
+```
+RUST_LOG=info wasm-pack publish
+```
