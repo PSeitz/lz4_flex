@@ -15,7 +15,7 @@ pub fn compress(input: &[u8]) -> Vec<u8>{
     compress_prepend_size(input)
 }
 
-#[wasm_bindgen]
-pub fn decompress(input: &[u8]) -> Vec<u8>{
-    decompress_size_prepended(input).unwrap()
+#[wasm_bindgen(catch)]
+pub fn decompress(input: &[u8]) -> Result<Vec<u8>, JsValue> {
+    decompress_size_prepended(input).map_err(|e|JsValue::from_str(&e.to_string()))
 }

@@ -2,16 +2,15 @@
 authors = ["Pascal Seitz <pascal.seitz@gmail.com>"]
 edition = "2018"
 name = "lz4-wasm"
-version = "0.1.4"
+version = "0.7.0"
+
 [dependencies]
-wasm-bindgen = "0.2.63"
+wasm-bindgen = "0.2.7"
+lz4_flex = { path = "../", default-features = false, features = ["checked-decode"] }
 
 [dependencies.console_error_panic_hook]
 optional = true
 version = "0.1.6"
-
-[dependencies.lz4_flex]
-path = "../"
 
 [dependencies.wee_alloc]
 optional = true
@@ -25,5 +24,9 @@ default = ["console_error_panic_hook"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+
 [profile.release]
-opt-level = "s"
+codegen-units = 1
+lto = true
+# opt-level = "s"
+opt-level = 3 # opt-level 3 is smaller than s

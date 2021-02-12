@@ -93,7 +93,7 @@ async function benchmark_jszip_compression(argument) {
 
 async function benchmark_lz4_compression(argument) {
 
-    var enc = new TextEncoder();
+    let enc = new TextEncoder();
     const compressed = wasm.compress(enc.encode("compress this text, compress this text pls. thx. thx. thx. thx. thx"));
     const original = wasm.decompress(compressed);
 
@@ -104,7 +104,7 @@ async function benchmark_lz4_compression(argument) {
     let test_input_bytes = enc.encode(test_input);
     let total_bytes = 0;
     var time0 = performance.now();
-    for (let i = 0; i < 1000; i++) {
+    for (let i = 0; i < 5000; i++) {
         const compressed = wasm.compress(test_input_bytes);
         total_bytes += test_input_bytes.length;
     }
@@ -121,12 +121,13 @@ async function benchmark_lz4_compression(argument) {
 
 async function benchmark_lz4_decompression(argument) {
 
-// 600MB/s
+	// 600MB/s
+	let enc = new TextEncoder();
     let test_input_bytes = enc.encode(test_input);
     let total_bytes = 0;
     var time0 = performance.now();
     const compressed = wasm.compress(test_input_bytes);
-    for (let i = 0; i < 100000; i++) {
+    for (let i = 0; i < 30000; i++) {
         const original = wasm.decompress(compressed);
         total_bytes += original.length;
     }
@@ -143,4 +144,4 @@ async function benchmark_lz4_decompression(argument) {
 
 // benchmark_jszip_compression();
 benchmark_lz4_compression();
-// benchmark_lz4_decompression();
+benchmark_lz4_decompression();

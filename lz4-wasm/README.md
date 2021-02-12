@@ -2,7 +2,8 @@
 
   <h1><code>lz4-wasm</code></h1>
 
-  <strong>Extremely fast compression/decompression in the browser using wasm.</strong>
+  <strong>Extremely fast compression(200MB/s) and decompression(600MB/s) in the browser or nodejs using wasm.</strong>
+
 
   <sub>Built with Rust</a></sub>
 </div>
@@ -11,10 +12,9 @@
 ## 🚴 Usage
 
 
-[**📚 Usage! 📚**][template-docs]
-
 The wasm module exposes two function compress and decompress.
-Both accept and return UInt8Array.
+Both accept and return UInt8Array. 
+Internally the lz4 block api is used, the length of the original input is prepended in 32-bit little endian.
 
 
 ```
@@ -30,3 +30,6 @@ var dec = new TextDecoder("utf-8");
 alert(dec.decode(original))
 
 ```
+
+
+See https://github.com/PSeitz/lz4_flex/tree/master/lz4-wasm/example_project for usage and benchmark.
