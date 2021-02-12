@@ -65,6 +65,12 @@ let test_input = `
 
 `
 
+function addText(text) {
+    // let body = document.querySelectorAll('body');
+    var div = document.createElement("div");
+    div.innerHTML = text;
+    document.getElementById("body").appendChild(div);
+}
 async function benchmark_jszip_compression(argument) {
 
     let total_bytes = 0;
@@ -86,7 +92,7 @@ async function benchmark_jszip_compression(argument) {
     let total_mb = total_bytes / 1000000;
     let time_in_s = time_in_ms / 1000;
 
-    alert(total_mb / time_in_s  + "MB/s")
+    // alert(total_mb / time_in_s  + "MB/s")
 
 }
 
@@ -98,7 +104,7 @@ async function benchmark_lz4_compression(argument) {
     const original = wasm.decompress(compressed);
 
     var dec = new TextDecoder("utf-8");
-    alert(dec.decode(original))
+    // alert(dec.decode(original))
 
     // 200 MB/s
     let test_input_bytes = enc.encode(test_input);
@@ -114,15 +120,18 @@ async function benchmark_lz4_compression(argument) {
     let total_mb = total_bytes / 1000000;
     let time_in_s = time_in_ms / 1000;
 
-    alert(total_mb / time_in_s  + "MB/s")
+
+    addText("lz4 wasm compression: " + parseFloat("" + total_mb / time_in_s).toFixed(2)  + "MB/s")
+
+    // alert(total_mb / time_in_s  + "MB/s")
 
 }
 
 
 async function benchmark_lz4_decompression(argument) {
 
-	// 600MB/s
-	let enc = new TextEncoder();
+    // 600MB/s
+    let enc = new TextEncoder();
     let test_input_bytes = enc.encode(test_input);
     let total_bytes = 0;
     var time0 = performance.now();
@@ -137,11 +146,28 @@ async function benchmark_lz4_decompression(argument) {
     let total_mb = total_bytes / 1000000;
     let time_in_s = time_in_ms / 1000;
 
-    alert(total_mb / time_in_s  + "MB/s")
+    addText("lz4 wasm decompression: " + parseFloat("" + total_mb / time_in_s).toFixed(2)  + "MB/s")
+    // alert(total_mb / time_in_s  + "MB/s")
 
 }
 
 
-// benchmark_jszip_compression();
-benchmark_lz4_compression();
-benchmark_lz4_decompression();
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function run(argument) {
+    addText("Starting Benchmark..")
+    await sleep(10)
+
+    benchmark_lz4_compression()
+    // benchmark_jszip_compression();
+    await sleep(10)
+    benchmark_lz4_decompression();
+    await sleep(10)
+
+    addText("Finished")
+
+}
+
+run()
