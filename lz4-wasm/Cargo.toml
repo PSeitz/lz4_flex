@@ -1,8 +1,11 @@
 [package]
 authors = ["Pascal Seitz <pascal.seitz@gmail.com>"]
+description = "High Performance lz4 wasm implementation"
 edition = "2018"
 name = "lz4-wasm"
-version = "0.7.3"
+version = "0.7.4"
+license = "MIT"
+keywords = ["compression", "lz4", "compress", "decompression", "decompress", "wasm"]
 
 [dependencies]
 wasm-bindgen = "0.2.7"
