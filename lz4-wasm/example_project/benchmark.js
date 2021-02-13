@@ -4,6 +4,7 @@ var lz4js = require('lz4/lib/binding')
 import * as fflate from 'fflate/esm/browser.js';
 
 import test_input_66k_JSON from '../../benches/compression_66k_JSON.txt';
+import test_input_65k from '../../benches/compression_65k.txt';
 import test_input_34k from '../../benches/compression_34k.txt';
 import test_input_1k from '../../benches/compression_1k.txt';
 
@@ -113,6 +114,10 @@ let inputs = [
     {
         name: "66k_JSON",
         data: test_input_66k_JSON
+    },
+    {
+        name: "65k Text",
+        data: test_input_65k
     },
     {
         name: "34k Text",
