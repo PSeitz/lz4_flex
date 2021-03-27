@@ -318,8 +318,12 @@ pub fn backtrack_match(
     source: &[u8],
     candidate: &mut usize,
 ) {
-    // TODO: It should be possible remove all bounds checks, since we are walking backwards
-    while *candidate > 0 && *cur > literal_start && input[*cur - 1] == source[*candidate - 1] {
+    let left = input[literal_start..*cur].iter().rev().copied();
+    let right = source[..*candidate].iter().rev().copied();
+    for (a, b) in left.zip(right) {
+        if a != b {
+            break;
+        }
         *cur -= 1;
         *candidate -= 1;
     }
