@@ -135,7 +135,10 @@ fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
 
     let mut num = 0;
     const USIZE_SIZE: usize = core::mem::size_of::<usize>();
-    for (block1, block2) in cur_slice.chunks_exact(USIZE_SIZE).zip(input_dupl.chunks_exact(USIZE_SIZE)) {
+    for (block1, block2) in cur_slice
+        .chunks_exact(USIZE_SIZE)
+        .zip(input_dupl.chunks_exact(USIZE_SIZE))
+    {
         let input_block = as_usize_le(block1);
         let match_block = as_usize_le(block2);
 
@@ -187,7 +190,7 @@ fn as_usize_le(array: &[u8]) -> usize {
 fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
     let start = *cur;
 
-    let mut input_dupl_ptr = unsafe{input.as_ptr().add(candidate)};
+    let mut input_dupl_ptr = unsafe { input.as_ptr().add(candidate) };
 
     // compare 4/8 bytes blocks depending on the arch
     const STEP_SIZE: usize = core::mem::size_of::<usize>();
@@ -197,7 +200,9 @@ fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
 
         if diff == 0 {
             *cur += STEP_SIZE;
-            unsafe{input_dupl_ptr = input_dupl_ptr.add(STEP_SIZE);}
+            unsafe {
+                input_dupl_ptr = input_dupl_ptr.add(STEP_SIZE);
+            }
             continue;
         } else {
             *cur += get_common_bytes(diff) as usize;
@@ -224,8 +229,7 @@ fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
 
     // compare 2 bytes block
     if *cur + 2 + END_OFFSET < input.len() {
-        let diff =
-            read_u16_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u16_ptr(input_dupl_ptr);
+        let diff = read_u16_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u16_ptr(input_dupl_ptr);
 
         if diff == 0 {
             *cur += 2;
@@ -244,7 +248,6 @@ fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
 
     *cur - start
 }
-
 
 /// Write an integer to the output in LSIC format.
 #[inline]
@@ -267,18 +270,21 @@ fn write_integer(output: &mut Vec<u8>, mut n: usize) {
     push_u32(output, 0xFFFFFFFF);
     while n >= 4 * 0xFF {
         n -= 4 * 0xFF;
-        unsafe{output.set_len(output.len() + 4);}
+        unsafe {
+            output.set_len(output.len() + 4);
+        }
         push_u32(output, 0xFFFFFFFF);
     }
 
     // Updating output len for the remainder
-    unsafe{output.set_len(output.len() + 1 + n / 255);}
+    unsafe {
+        output.set_len(output.len() + 1 + n / 255);
+    }
     let last_index = output.len() - 1;
-    unsafe{
+    unsafe {
         // Write the remaining byte.
         *output.get_unchecked_mut(last_index) = (n % 255) as u8;
     };
-
 }
 
 #[inline]
@@ -315,11 +321,11 @@ fn handle_last_literals(
 ///
 #[inline]
 #[cfg(feature = "safe-encode")]
-pub fn backtrack_match(candidate: &mut usize, cur: &mut usize, literal_start: usize, input: &[u8]){
+pub fn backtrack_match(candidate: &mut usize, cur: &mut usize, literal_start: usize, input: &[u8]) {
     // TODO: It should be possible remove all bounds checks, since we are walking backwards
-    while *candidate > 0 && *cur > literal_start && input[*cur-1] == input[*candidate-1] {
-        *cur-=1;
-        *candidate-=1;
+    while *candidate > 0 && *cur > literal_start && input[*cur - 1] == input[*candidate - 1] {
+        *cur -= 1;
+        *candidate -= 1;
     }
 }
 
@@ -327,10 +333,14 @@ pub fn backtrack_match(candidate: &mut usize, cur: &mut usize, literal_start: us
 ///
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-pub fn backtrack_match(candidate: &mut usize, cur: &mut usize, literal_start: usize, input: &[u8]){
-    while unsafe{*candidate > 0 && *cur > literal_start && input.get_unchecked(*cur-1) == input.get_unchecked(*candidate-1)} {
-        *cur-=1;
-        *candidate-=1;
+pub fn backtrack_match(candidate: &mut usize, cur: &mut usize, literal_start: usize, input: &[u8]) {
+    while unsafe {
+        *candidate > 0
+            && *cur > literal_start
+            && input.get_unchecked(*cur - 1) == input.get_unchecked(*candidate - 1)
+    } {
+        *cur -= 1;
+        *candidate -= 1;
     }
 }
 
@@ -426,8 +436,7 @@ pub fn compress_into_with_table<T: HashTable>(
         let offset = (cur - candidate as usize) as u16;
         cur += MINMATCH;
 
-        let duplicate_length =
-            count_same_bytes(input, candidate as usize + MINMATCH, &mut cur);
+        let duplicate_length = count_same_bytes(input, candidate as usize + MINMATCH, &mut cur);
 
         let hash = get_hash_at(input, cur - 2);
         dict.put_at(hash, cur - 2);
@@ -498,16 +507,20 @@ fn copy_literals(output: &mut Vec<u8>, input: &[u8]) {
 
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn copy_literals_wild(output: &mut Vec<u8>, input: &[u8], input_start:usize, len:usize) {
+fn copy_literals_wild(output: &mut Vec<u8>, input: &[u8], input_start: usize, len: usize) {
     output.extend_from_slice(&input[input_start..input_start + len]);
 }
 
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn copy_literals_wild(output: &mut Vec<u8>, input: &[u8], input_start:usize, len:usize) {
+fn copy_literals_wild(output: &mut Vec<u8>, input: &[u8], input_start: usize, len: usize) {
     use crate::block::wild_copy_from_src_8;
-    unsafe{
-        wild_copy_from_src_8(input.as_ptr().add(input_start), output.as_mut_ptr().add(output.len()), len);
+    unsafe {
+        wild_copy_from_src_8(
+            input.as_ptr().add(input_start),
+            output.as_mut_ptr().add(output.len()),
+            len,
+        );
         output.set_len(output.len() + len);
     }
 }

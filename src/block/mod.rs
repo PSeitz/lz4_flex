@@ -155,7 +155,7 @@ impl fmt::Display for DecompressError {
                         "output ({:?}) is too small for the decompressed data",
                         actual_size
                     )
-                }else{
+                } else {
                     write!(
                         f,
                         "output ({:?}) is too small for the decompressed data, {:?}",
