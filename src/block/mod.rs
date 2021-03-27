@@ -50,10 +50,10 @@ use core::{fmt, ptr};
 /// so it needs at least one prior byte.
 ///
 /// When a block can reference data from another block, it can start immediately with a match and no literal, so a block of 12 bytes can be compressed.
-const MFLIMIT: usize = 16;
+const MFLIMIT: usize = 12;
 
 /// The last 5 bytes of input are always literals. Therefore, the last sequence contains at least 5 bytes.
-const END_OFFSET: usize = 7;
+const END_OFFSET: usize = 5;
 
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
 /// Minimum length of a block
