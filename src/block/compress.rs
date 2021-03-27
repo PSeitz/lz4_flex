@@ -129,15 +129,15 @@ fn token_from_literal_and_match_length(lit_len: usize, duplicate_length: usize) 
 /// The function ignores the last 7bytes (END_OFFSET) in input as this should be literals.
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
-    let input_dupl = &input[candidate as usize..];
+fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
+    let cand_slice = &source[candidate as usize..];
     let cur_slice = &input[*cur..input.len() - END_OFFSET];
 
     let mut num = 0;
     const USIZE_SIZE: usize = core::mem::size_of::<usize>();
     for (block1, block2) in cur_slice
         .chunks_exact(USIZE_SIZE)
-        .zip(input_dupl.chunks_exact(USIZE_SIZE))
+        .zip(cand_slice.chunks_exact(USIZE_SIZE))
     {
         let input_block = as_usize_le(block1);
         let match_block = as_usize_le(block2);
@@ -187,21 +187,20 @@ fn as_usize_le(array: &[u8]) -> usize {
 /// The function ignores the last 7bytes (END_OFFSET) in input as this should be literals.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
+fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
     let start = *cur;
 
-    let mut input_dupl_ptr = unsafe { input.as_ptr().add(candidate) };
+    let mut source_ptr = unsafe { source.as_ptr().add(candidate) };
 
     // compare 4/8 bytes blocks depending on the arch
     const STEP_SIZE: usize = core::mem::size_of::<usize>();
     while *cur + STEP_SIZE + END_OFFSET < input.len() {
-        let diff =
-            read_usize_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_usize_ptr(input_dupl_ptr);
+        let diff = read_usize_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_usize_ptr(source_ptr);
 
         if diff == 0 {
             *cur += STEP_SIZE;
             unsafe {
-                input_dupl_ptr = input_dupl_ptr.add(STEP_SIZE);
+                source_ptr = source_ptr.add(STEP_SIZE);
             }
             continue;
         } else {
@@ -214,8 +213,7 @@ fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
     #[cfg(target_pointer_width = "64")]
     {
         if *cur + 4 + END_OFFSET < input.len() {
-            let diff =
-                read_u32_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u32_ptr(input_dupl_ptr);
+            let diff = read_u32_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u32_ptr(source_ptr);
 
             if diff == 0 {
                 *cur += 4;
@@ -229,7 +227,7 @@ fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
 
     // compare 2 bytes block
     if *cur + 2 + END_OFFSET < input.len() {
-        let diff = read_u16_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u16_ptr(input_dupl_ptr);
+        let diff = read_u16_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u16_ptr(source_ptr);
 
         if diff == 0 {
             *cur += 2;
@@ -241,7 +239,7 @@ fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
     }
 
     if *cur + 1 + END_OFFSET < input.len()
-        && unsafe { input.as_ptr().add(*cur).read() } == unsafe { input_dupl_ptr.read() }
+        && unsafe { input.as_ptr().add(*cur).read() } == unsafe { source_ptr.read() }
     {
         *cur += 1;
     }
@@ -321,9 +319,15 @@ fn handle_last_literals(
 ///
 #[inline]
 #[cfg(feature = "safe-encode")]
-pub fn backtrack_match(candidate: &mut usize, cur: &mut usize, literal_start: usize, input: &[u8]) {
+pub fn backtrack_match(
+    input: &[u8],
+    cur: &mut usize,
+    literal_start: usize,
+    source: &[u8],
+    candidate: &mut usize,
+) {
     // TODO: It should be possible remove all bounds checks, since we are walking backwards
-    while *candidate > 0 && *cur > literal_start && input[*cur - 1] == input[*candidate - 1] {
+    while *candidate > 0 && *cur > literal_start && input[*cur - 1] == source[*candidate - 1] {
         *cur -= 1;
         *candidate -= 1;
     }
@@ -333,11 +337,17 @@ pub fn backtrack_match(candidate: &mut usize, cur: &mut usize, literal_start: us
 ///
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-pub fn backtrack_match(candidate: &mut usize, cur: &mut usize, literal_start: usize, input: &[u8]) {
+pub fn backtrack_match(
+    input: &[u8],
+    cur: &mut usize,
+    literal_start: usize,
+    source: &[u8],
+    candidate: &mut usize,
+) {
     while unsafe {
         *candidate > 0
             && *cur > literal_start
-            && input.get_unchecked(*cur - 1) == input.get_unchecked(*candidate - 1)
+            && input.get_unchecked(*cur - 1) == source.get_unchecked(*candidate - 1)
     } {
         *cur -= 1;
         *candidate -= 1;
@@ -353,11 +363,13 @@ pub fn backtrack_match(candidate: &mut usize, cur: &mut usize, literal_start: us
 /// Every four bytes are hashed, and in the resulting slot their position in the input buffer
 /// is placed in the dict. This way we can easily look up a candidate to back references.
 #[inline]
-pub fn compress_into_with_table<T: HashTable>(
+fn compress_internal<T: HashTable>(
     input: &[u8],
     output: &mut Vec<u8>,
     dict: &mut T,
+    ext_dict: &[u8],
 ) -> usize {
+    assert!(ext_dict.len() < u16::MAX as usize);
     let input_size = input.len();
 
     // Input too small, no compression (all literals)
@@ -377,7 +389,7 @@ pub fn compress_into_with_table<T: HashTable>(
     }
 
     let hash = get_hash_at(input, 0);
-    dict.put_at(hash, 0);
+    dict.put_at(hash, /* 0 + */ ext_dict.len());
 
     assert!(LZ4_MIN_LENGTH as usize > END_OFFSET);
     let end_pos_check = input_size - MFLIMIT as usize;
@@ -391,6 +403,8 @@ pub fn compress_into_with_table<T: HashTable>(
         // Read the next block into two sections, the literals and the duplicates.
         let mut step_size;
         let mut candidate;
+        let mut candidate_source;
+        let mut offset;
         let mut non_match_count = 1 << INCREASE_STEPSIZE_BITSHIFT;
         // The number of bytes before our cursor, where the duplicate starts.
         let mut next_cur = cur;
@@ -411,35 +425,50 @@ pub fn compress_into_with_table<T: HashTable>(
             // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
             let hash = get_hash_at(input, cur);
             candidate = dict.get_at(hash);
-            dict.put_at(hash, cur);
+            dict.put_at(hash, cur + ext_dict.len());
 
             // Two requirements to the candidate exists:
             // - We should not return a position which is merely a hash collision, so w that the
             //   candidate actually matches what we search for.
             // - We can address up to 16-bit offset, hence we are only able to address the candidate if
             //   its offset is less than or equals to 0xFFFF.
-            if (candidate as usize + MAX_DISTANCE) < cur {
+            if candidate + MAX_DISTANCE < cur {
                 continue;
             }
 
-            if get_batch(input, candidate as usize) == get_batch(input, cur) {
+            if candidate >= ext_dict.len() {
+                candidate -= ext_dict.len();
+                candidate_source = input;
+                offset = (cur - candidate) as u16;
+            } else {
+                candidate_source = ext_dict;
+                offset = (ext_dict.len() + cur - candidate) as u16;
+            }
+
+            if get_batch(candidate_source, candidate) == get_batch(input, cur) {
                 break;
             }
         }
 
-        backtrack_match(&mut candidate, &mut cur, literal_start, input);
+        backtrack_match(
+            input,
+            &mut cur,
+            literal_start,
+            candidate_source,
+            &mut candidate,
+        );
 
         // The length (in bytes) of the literals section.
         let lit_len = cur - literal_start;
 
         // Generate the higher half of the token.
-        let offset = (cur - candidate as usize) as u16;
         cur += MINMATCH;
 
-        let duplicate_length = count_same_bytes(input, candidate as usize + MINMATCH, &mut cur);
+        let duplicate_length =
+            count_same_bytes(input, &mut cur, candidate_source, candidate + MINMATCH);
 
         let hash = get_hash_at(input, cur - 2);
-        dict.put_at(hash, cur - 2);
+        dict.put_at(hash, cur - 2 + ext_dict.len());
 
         let token = token_from_literal_and_match_length(lit_len, duplicate_length);
         // Push the token to the output stream.
@@ -537,17 +566,35 @@ pub fn get_maximum_output_size(input_len: usize) -> usize {
 /// The method will reserve the required space on the output vec.
 #[inline]
 pub fn compress_into(input: &[u8], compressed: &mut Vec<u8>) {
+    compress_into_with_dict(input, compressed, b"")
+}
+
+#[inline]
+pub fn compress_into_with_dict(input: &[u8], compressed: &mut Vec<u8>, dict_data: &[u8]) {
     compressed.reserve(get_maximum_output_size(input.len()));
     let (dict_size, dict_bitshift) = get_table_size(input.len());
-    if input.len() < u16::MAX as usize {
+    if dict_data.len() + input.len() < u16::MAX as usize {
         let mut dict = HashTableU16::new(dict_size, dict_bitshift);
-        compress_into_with_table(input, compressed, &mut dict);
-    } else if input.len() < u32::MAX as usize {
+        init_dict(&mut dict, dict_data);
+        compress_internal(input, compressed, &mut dict, dict_data);
+    } else if dict_data.len() + input.len() < u32::MAX as usize {
         let mut dict = HashTableU32::new(dict_size, dict_bitshift);
-        compress_into_with_table(input, compressed, &mut dict);
+        init_dict(&mut dict, dict_data);
+        compress_internal(input, compressed, &mut dict, dict_data);
     } else {
         let mut dict = HashTableUsize::new(dict_size, dict_bitshift);
-        compress_into_with_table(input, compressed, &mut dict);
+        init_dict(&mut dict, dict_data);
+        compress_internal(input, compressed, &mut dict, dict_data);
+    }
+}
+
+#[inline]
+fn init_dict<T: HashTable>(dict: &mut T, dict_data: &[u8]) {
+    let mut i = 0usize;
+    while i + core::mem::size_of::<usize>() <= dict_data.len() {
+        let hash = get_hash_at(dict_data, i);
+        dict.put_at(hash, i);
+        i += 3;
     }
 }
 
@@ -700,5 +747,19 @@ mod tests {
             10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
         ];
         let _out = compress(&input);
+    }
+
+    #[cfg(feature = "safe-decode")]
+    #[test]
+    fn test_dict() {
+        let input: &[u8] = &[
+            10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
+        ];
+        let mut out = Vec::new();
+        compress_into_with_dict(&input, &mut out, &input);
+        let mut trip = Vec::new();
+        crate::block::decompress::decompress_into_with_dict(&out, &mut trip, &input).unwrap();
+        assert_eq!(input, trip);
+        assert!(out.len() < compress(input).len());
     }
 }

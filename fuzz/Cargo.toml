@@ -14,7 +14,7 @@ libfuzzer-sys = "0.3"
 lz4 = "1.23.1"
 
 # checked-decode" is required for the fuzz_decomp_corrupted_data target
-lz4_flex = { path = "..", default-features = false, features=["checked-decode"] }
+lz4_flex = { path = "..", default-features = true, features=["checked-decode"] }
 
 # Prevent this from interfering with workspaces
 [workspace]

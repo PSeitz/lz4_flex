@@ -17,7 +17,6 @@ use alloc::vec::Vec;
 ///
 /// is encoded to _255 + 255 + 255 + 4 = 769_. The bytes after the first 4 is ignored, because
 /// 4 is the first non-0xFF byte.
-// #[inline(never)]
 #[inline]
 fn read_integer(input: &[u8], input_pos: &mut usize) -> u32 {
     // We start at zero and count upwards.
@@ -91,6 +90,15 @@ fn copy_24(output: &mut Vec<u8>, offset: usize) {
 /// Decompress all bytes of `input` into `output`.
 #[inline]
 pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), DecompressError> {
+    decompress_into_with_dict(input, output, b"")
+}
+
+#[inline]
+pub fn decompress_into_with_dict(
+    input: &[u8],
+    output: &mut Vec<u8>,
+    ext_dict: &[u8],
+) -> Result<(), DecompressError> {
     // Decode into our vector.
     let mut input_pos = 0;
     // let mut output_ptr = output.as_mut_ptr();
@@ -121,7 +129,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
 
         // Checking for hot-loop.
         // In most cases the metadata does fit in a single 1byte token (statistically) and we are in a safe-distance to the end.
-        // This enables some optmized handling.
+        // This enables some optimized handling.
         if does_token_fit(token) && is_safe_distance(input_pos, end_pos_check) {
             let literal_length = (token >> 4) as usize;
 
@@ -139,7 +147,9 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
 
             // Write the duplicate segment to the output buffer from the output buffer
             // The blocks can overlap, make sure they are at least BLOCK_COPY_SIZE apart
-            if match_length + BLOCK_COPY_SIZE >= offset {
+            if ext_dict.is_empty() && offset > output.len() {
+                copy_from_dict(output, ext_dict, offset, match_length)?;
+            } else if match_length + BLOCK_COPY_SIZE >= offset {
                 duplicate_overlapping_slice(output, offset, match_length)?;
             } else {
                 let old_len = output.len();
@@ -191,7 +201,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
         // earlier. Since having a match length of less than 4 would mean negative compression
         // ratio, we start at 4.
 
-        // The intial match length can maximally be 19. As with the literal length, this indicates
+        // The initial match length can maximally be 19. As with the literal length, this indicates
         // that there are more bytes to read.
         let mut match_length = (4 + (token & 0xF)) as usize;
         if match_length == 4 + 15 {
@@ -200,16 +210,36 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
             match_length += read_integer(input, &mut input_pos) as usize;
         }
 
-        // We now copy from the already decompressed buffer. This allows us for storing duplicates
-        // by simply referencing the other location.
-        duplicate_slice(output, offset, match_length)?;
+        if !ext_dict.is_empty() && offset > output.len() {
+            copy_from_dict(output, ext_dict, offset, match_length)?;
+        } else {
+            // We now copy from the already decompressed buffer. This allows us for storing duplicates
+            // by simply referencing the other location.
+            duplicate_slice(output, offset, match_length)?;
+        }
     }
+    Ok(())
+}
+
+#[inline]
+fn copy_from_dict(
+    output: &mut Vec<u8>,
+    ext_dict: &[u8],
+    offset: usize,
+    match_length: usize,
+) -> Result<(), DecompressError> {
+    let (start, did_overflow_1) = ext_dict.len().overflowing_sub(offset - output.len());
+    let (end, did_overflow_2) = start.overflowing_add(match_length);
+    if did_overflow_1 || did_overflow_2 || end > ext_dict.len() {
+        return Err(DecompressError::OffsetOutOfBounds);
+    }
+    output.extend_from_slice(&ext_dict[start..end]);
     Ok(())
 }
 
 /// extends output by self-referential copies
 #[inline]
-pub fn duplicate_slice(
+fn duplicate_slice(
     output: &mut Vec<u8>,
     offset: usize,
     match_length: usize,
