@@ -79,13 +79,13 @@ fn bench_decompression_throughput(c: &mut Criterion) {
 
     for input in ALL.iter() {
         let input_bytes = input.len() as u64;
-        group.throughput(Throughput::Bytes(input_bytes));
 
         // let comp_flex = lz4_flex::compress(&input);
         // let comp_fear_rust = compress_lz4_fear(&input);
         // let comp_rust = lz4_compress::compress(&input);
 
         let comp_lz4 = lz4::block::compress(&input, None, false).unwrap();
+        group.throughput(Throughput::Bytes(comp_lz4.len() as _));
 
         group.bench_with_input(
             BenchmarkId::new("lz4_flexx_rust", input_bytes),

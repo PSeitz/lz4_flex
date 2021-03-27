@@ -51,7 +51,7 @@ fn get_batch(input: &[u8], n: usize) -> u32 {
 #[cfg(feature = "safe-encode")]
 fn get_batch(input: &[u8], n: usize) -> u32 {
     let arr: &[u8; 4] = input[n..n + 4].try_into().unwrap();
-    u32::from_le_bytes(*arr)
+    u32::from_ne_bytes(*arr)
 }
 
 /// Read a 4-byte "batch" from some position.
@@ -68,7 +68,7 @@ fn get_batch_arch(input: &[u8], n: usize) -> usize {
 fn get_batch_arch(input: &[u8], n: usize) -> usize {
     const USIZE_SIZE: usize = core::mem::size_of::<usize>();
     let arr: &[u8; USIZE_SIZE] = input[n..n + USIZE_SIZE].try_into().unwrap();
-    usize::from_le_bytes(*arr)
+    usize::from_ne_bytes(*arr)
 }
 
 #[inline]
@@ -140,14 +140,14 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
         .chunks_exact(USIZE_SIZE)
         .zip(cand_slice.chunks_exact(USIZE_SIZE))
     {
-        let input_block = usize::from_le_bytes(block1.try_into().unwrap());
-        let match_block = usize::from_le_bytes(block2.try_into().unwrap());
+        let input_block = usize::from_ne_bytes(block1.try_into().unwrap());
+        let match_block = usize::from_ne_bytes(block2.try_into().unwrap());
 
         if input_block == match_block {
             num += USIZE_SIZE;
         } else {
             let diff = input_block ^ match_block;
-            num += get_common_bytes(diff) as usize;
+            num += (diff.to_le().trailing_zeros() / 8) as usize;
             *cur += num;
             return num;
         }
@@ -165,7 +165,6 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
     *cur += num;
     num
 }
-
 
 /// Counts the number of same bytes in two byte streams.
 /// `input` is the complete input
@@ -192,7 +191,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
                 source_ptr = source_ptr.add(STEP_SIZE);
             }
         } else {
-            *cur += get_common_bytes(diff) as usize;
+            *cur += (diff.to_le().trailing_zeros() / 8) as usize;
             return *cur - start;
         }
     }
@@ -209,7 +208,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
                     source_ptr = source_ptr.add(4);
                 }
             } else {
-                *cur += (diff.trailing_zeros() >> 3) as usize;
+                *cur += (diff.to_le().trailing_zeros() / 8) as usize;
                 return *cur - start;
             }
         }
@@ -225,7 +224,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
                 source_ptr = source_ptr.add(2);
             }
         } else {
-            *cur += (diff.trailing_zeros() >> 3) as usize;
+            *cur += (diff.to_le().trailing_zeros() / 8) as usize;
             return *cur - start;
         }
     }
@@ -642,56 +641,9 @@ fn read_u16_ptr(input: *const u8) -> u16 {
     num
 }
 
-#[inline]
-fn get_common_bytes(diff: usize) -> u32 {
-    let tr_zeroes = diff.trailing_zeros();
-    // right shift by 3, because we are only interested in 8 bit blocks (1 byte)
-    tr_zeroes >> 3
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    #[cfg(target_pointer_width = "64")]
-    #[cfg(not(feature = "safe-encode"))]
-    fn test_get_common_bytes() {
-        let num1 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 1].as_ptr());
-        let num2 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 2].as_ptr());
-        let diff = num1 ^ num2;
-
-        assert_eq!(get_common_bytes(diff), 7);
-
-        let num1 = read_usize_ptr([0, 0, 0, 0, 0, 0, 1, 1].as_ptr());
-        let num2 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 2].as_ptr());
-        let diff = num1 ^ num2;
-        assert_eq!(get_common_bytes(diff), 6);
-        let num1 = read_usize_ptr([1, 0, 0, 0, 0, 0, 1, 1].as_ptr());
-        let num2 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 2].as_ptr());
-        let diff = num1 ^ num2;
-        assert_eq!(get_common_bytes(diff), 0);
-    }
-
-    #[test]
-    #[cfg(target_pointer_width = "32")]
-    #[cfg(not(feature = "safe-encode"))]
-    fn test_get_common_bytes() {
-        let num1 = read_usize_ptr([0, 0, 0, 1].as_ptr());
-        let num2 = read_usize_ptr([0, 0, 0, 2].as_ptr());
-        let diff = num1 ^ num2;
-
-        assert_eq!(get_common_bytes(diff as usize), 3);
-
-        let num1 = read_usize_ptr([0, 0, 1, 1].as_ptr());
-        let num2 = read_usize_ptr([0, 0, 0, 2].as_ptr());
-        let diff = num1 ^ num2;
-        assert_eq!(get_common_bytes(diff as usize), 2);
-        let num1 = read_usize_ptr([1, 0, 1, 1].as_ptr());
-        let num2 = read_usize_ptr([0, 0, 0, 2].as_ptr());
-        let diff = num1 ^ num2;
-        assert_eq!(get_common_bytes(diff as usize), 0);
-    }
 
     #[test]
     fn test_count_same_bytes() {
