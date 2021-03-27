@@ -35,7 +35,7 @@ fn hash5(sequence: usize) -> u32 {
     } else {
         11400714785074694791_usize
     };
-    return (((sequence << 24).wrapping_mul(primebytes)) >> 48) as u32;
+    (((sequence << 24).wrapping_mul(primebytes)) >> 48) as u32
 }
 
 /// Read a 4-byte "batch" from some position.

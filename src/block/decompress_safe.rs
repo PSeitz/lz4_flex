@@ -24,7 +24,7 @@ fn read_integer(input: &[u8], input_pos: &mut usize) -> u32 {
     let mut n: u32 = 0;
     // If this byte takes value 255 (the maximum value it can take), another byte is read
     // and added to the sum. This repeats until a byte lower than 255 is read.
-    while {
+    loop {
         // We add the next byte until we get a byte which we add to the counting variable.
 
         let extra: u8 = input[*input_pos];
@@ -32,9 +32,11 @@ fn read_integer(input: &[u8], input_pos: &mut usize) -> u32 {
         *input_pos += 1;
         n += extra as u32;
 
-        // We continue if we got 255.
-        extra == 0xFF
-    } {}
+        // We continue if we got 255, break otherwise.
+        if extra != 0xFF {
+            break;
+        }
+    }
 
     // 255, 255, 255, 8
     // 111, 111, 111, 101
@@ -82,7 +84,7 @@ const BLOCK_COPY_SIZE: usize = 24;
 fn copy_24(output: &mut Vec<u8>, offset: usize) {
     let mut dst = [0u8; BLOCK_COPY_SIZE];
     let i = output.len() - offset;
-    dst.clone_from_slice(&output[i..i + BLOCK_COPY_SIZE]);
+    dst.copy_from_slice(&output[i..i + BLOCK_COPY_SIZE]);
     output.extend_from_slice(&dst);
 }
 
@@ -147,7 +149,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
                     if did_overflow {
                         return Err(DecompressError::OffsetOutOfBounds);
                     }
-                    dst.clone_from_slice(&output[start..start + 16]);
+                    dst.copy_from_slice(&output[start..start + 16]);
                     output.extend_from_slice(&dst);
                 } else {
                     copy_24(output, offset)
@@ -222,7 +224,7 @@ pub fn duplicate_slice(
             return Err(DecompressError::OffsetOutOfBounds);
         }
         for i in (val..val + match_length).step_by(16) {
-            dst.clone_from_slice(&output[i..i + 16]);
+            dst.copy_from_slice(&output[i..i + 16]);
             output.extend_from_slice(&dst);
         }
         output.truncate(old_len + match_length);
