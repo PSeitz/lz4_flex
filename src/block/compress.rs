@@ -393,8 +393,8 @@ fn compress_internal<T: HashTable>(
 
         // In this loop we search for duplicates via the hashtable. 4bytes or 8bytes are hashed and compared.
         loop {
-            non_match_count += 1;
             step_size = non_match_count >> INCREASE_STEPSIZE_BITSHIFT;
+            non_match_count += 1;
 
             cur = next_cur;
             next_cur += step_size;
