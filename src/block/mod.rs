@@ -50,7 +50,7 @@ use core::{fmt, ptr};
 /// so it needs at least one prior byte.
 ///
 /// When a block can reference data from another block, it can start immediately with a match and no literal, so a block of 12 bytes can be compressed.
-const MFLIMIT: u32 = 16;
+const MFLIMIT: usize = 16;
 
 /// The last 5 bytes of input are always literals. Therefore, the last sequence contains at least 5 bytes.
 const END_OFFSET: usize = 7;
@@ -59,8 +59,7 @@ const END_OFFSET: usize = 7;
 /// Minimum length of a block
 ///
 /// MFLIMIT + 1 for the token.
-#[allow(dead_code)]
-const LZ4_MIN_LENGTH: u32 = MFLIMIT + 1;
+const LZ4_MIN_LENGTH: usize = MFLIMIT + 1;
 
 const MAXD_LOG: usize = 16;
 const MAX_DISTANCE: usize = (1 << MAXD_LOG) - 1;
@@ -76,7 +75,7 @@ const FASTLOOP_SAFE_DISTANCE: usize = 64;
 
 /// Switch for the hashtable size byU16
 #[allow(dead_code)]
-static LZ4_64KLIMIT: u32 = (64 * 1024) + (MFLIMIT - 1);
+static LZ4_64KLIMIT: usize = (64 * 1024) + (MFLIMIT - 1);
 
 // fn wild_copy_from_src(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
 //     unsafe {
