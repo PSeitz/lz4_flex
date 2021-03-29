@@ -1,5 +1,7 @@
+use twox_hash::XxHash32;
+
 use super::Error;
-use std::{convert::TryInto, fmt::Debug, io::Read, mem::size_of};
+use std::{convert::TryInto, fmt::Debug, hash::Hasher, io::Read, mem::size_of};
 
 mod flags {
     pub const VERSION_MASK: u8 = 0b11000000;
@@ -14,6 +16,9 @@ mod flags {
     pub const DICTIONARY_ID: u8 = 0b00000001;
 
     pub const UNCOMPRESSED_SIZE: u32 = 0xF0000000;
+
+    pub const MAGIC_NUMBER: u32 = 0x184D2204;
+    pub const SKIPPABLE_MAGIC: std::ops::RangeInclusive<u32> = 0x184D2A50..=0x184D2A5F;
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -42,9 +47,43 @@ impl BlockSize {
     }
 }
 
-/// Frame Descriptor
-/// FLG     BD      (Content Size)  (Dictionary ID)     HC
-/// 1 byte  1 byte  0 - 8 bytes     0 - 4 bytes         1 byte
+/*
+From: https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md
+
+General Structure of LZ4 Frame format
+-------------------------------------
+
+| MagicNb | F. Descriptor | Block | (...) | EndMark | C. Checksum |
+|:-------:|:-------------:| ----- | ----- | ------- | ----------- |
+| 4 bytes |  3-15 bytes   |       |       | 4 bytes | 0-4 bytes   |
+
+Frame Descriptor
+----------------
+
+| FLG     | BD      | (Content Size) | (Dictionary ID) | HC      |
+| ------- | ------- |:--------------:|:---------------:| ------- |
+| 1 byte  | 1 byte  |  0 - 8 bytes   |   0 - 4 bytes   | 1 byte  |
+
+__FLG byte__
+
+|  BitNb  |  7-6  |   5   |    4     |  3   |    2     |    1     |   0  |
+| ------- |-------|-------|----------|------|----------|----------|------|
+|FieldName|Version|B.Indep|B.Checksum|C.Size|C.Checksum|*Reserved*|DictID|
+
+__BD byte__
+
+|  BitNb  |     7    |     6-5-4     |  3-2-1-0 |
+| ------- | -------- | ------------- | -------- |
+|FieldName|*Reserved*| Block MaxSize |*Reserved*|
+
+Data Blocks
+-----------
+
+| Block Size |  data  | (Block Checksum) |
+|:----------:| ------ |:----------------:|
+|  4 bytes   |        |   0 - 4 bytes    |
+
+*/
 #[derive(Debug, Clone)]
 pub(crate) struct FrameInfo {
     pub content_size: Option<u64>,
@@ -69,22 +108,54 @@ impl Default for FrameInfo {
 }
 
 impl FrameInfo {
-    pub(crate) fn required_size(first_byte: u8) -> usize {
-        let mut required = 1usize;
-        if first_byte & flags::CONTENT_SIZE != 0 {
+    pub(crate) fn required_size(mut input: &[u8]) -> Result<usize, Error> {
+        let mut required = 7;
+        if input.len() < 7 {
+            return Ok(required);
+        }
+        let mut magic = [0u8; 4];
+        input.read_exact(&mut magic).map_err(Error::IoError)?;
+        let magic_num = u32::from_le_bytes(magic);
+        if magic_num != flags::MAGIC_NUMBER {
+            return Err(Error::WrongMagicNumber);
+        }
+        if flags::SKIPPABLE_MAGIC.contains(&magic_num) {
+            return Ok(8);
+        }
+
+        if input[4] & flags::CONTENT_SIZE != 0 {
             required += 8;
         }
-        if first_byte & flags::DICTIONARY_ID != 0 {
+        if input[4] & flags::DICTIONARY_ID != 0 {
             required += 4
         }
-        required
+        Ok(required)
     }
 
     pub(crate) fn read(mut input: &[u8]) -> Result<FrameInfo, Error> {
-        let mut flags = [0u8, 0];
-        input.read_exact(&mut flags).map_err(Error::IoError)?;
-        let flag_byte = flags[0];
-        let bd_byte = flags[1];
+        let original_input = input;
+        // 4 byte Magic
+        let magic_num = {
+            let mut buffer = [0u8; 4];
+            input.read_exact(&mut buffer).map_err(Error::IoError)?;
+            u32::from_le_bytes(buffer)
+        };
+        if magic_num != flags::MAGIC_NUMBER {
+            return Err(Error::WrongMagicNumber);
+        }
+        if flags::SKIPPABLE_MAGIC.contains(&magic_num) {
+            let mut buffer = [0u8; size_of::<u32>()];
+            input.read_exact(&mut buffer).map_err(Error::IoError)?;
+            let user_data_len = u32::from_le_bytes(buffer.try_into().unwrap());
+            return Err(Error::SkippableFrame(user_data_len as usize));
+        }
+
+        // fixed size section
+        let (flag_byte, bd_byte) = {
+            let mut buffer = [0u8, 0];
+            input.read_exact(&mut buffer).map_err(Error::IoError)?;
+            (buffer[0], buffer[1])
+        };
 
         if flag_byte & flags::VERSION_MASK != flags::SUPPORTED_VERSION {
             // version is always 01
@@ -108,6 +179,7 @@ impl FrameInfo {
             _ => unreachable!(),
         };
 
+        // var len section
         let mut content_size = None;
         if flag_byte & flags::CONTENT_SIZE != 0 {
             let mut buffer = [0u8; size_of::<u64>()];
@@ -122,11 +194,17 @@ impl FrameInfo {
             dict_id = Some(u32::from_le_bytes(buffer.try_into().unwrap()));
         }
 
-        {
+        // 1 byte header checksum
+        let expected_checksum = {
             let mut buffer = [0u8; 1];
             input.read_exact(&mut buffer).map_err(Error::IoError)?;
-            // TODO: checksum
-            // ChecksumError
+            buffer[0]
+        };
+        let mut hasher = XxHash32::with_seed(0);
+        hasher.write(&original_input[..original_input.len() - input.len()]);
+        let header_hash = (hasher.finish() >> 8) as u8;
+        if header_hash != expected_checksum {
+            return Err(Error::HeaderChecksumError);
         }
 
         Ok(FrameInfo {

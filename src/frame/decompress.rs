@@ -68,12 +68,12 @@ impl<R: io::Read> FrameDecoder<R> {
         Ok(checksum)
     }
 
-    fn check_checksum(&self, data: &[u8], expected_checksum: u32) -> Result<(), io::Error> {
+    fn check_block_checksum(&self, data: &[u8], expected_checksum: u32) -> Result<(), io::Error> {
         let mut block_hasher = XxHash32::with_seed(0);
         block_hasher.write(data);
         let calc_checksum = block_hasher.finish() as u32;
         Ok(if calc_checksum != expected_checksum {
-            return Err(Error::ChecksumError.into());
+            return Err(Error::BlockChecksumError.into());
         })
     }
 }
@@ -81,13 +81,12 @@ impl<R: io::Read> FrameDecoder<R> {
 impl<R: io::Read> io::Read for FrameDecoder<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.frame_info.is_none() {
-            let mut buffer = [0u8; 1 + 8 + 4];
-            if self.r.read(&mut buffer[..1])? == 0 {
-                return Ok(0);
-            }
-            let required = FrameInfo::required_size(buffer[0]);
-            if required != 1 {
-                self.r.read_exact(&mut buffer[1..required])?;
+            let mut buffer = [0u8; 19];
+            // TODO: handle read Ok(0)
+            self.r.read_exact(&mut buffer[..7])?;
+            let required = FrameInfo::required_size(&buffer[..7])?;
+            if required != 7 {
+                self.r.read_exact(&mut buffer[7..required])?;
             }
             let frame_info = FrameInfo::read(&buffer[..required])?;
             self.dst.resize(frame_info.block_size.get_size(), 0);
@@ -115,7 +114,7 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                     self.r.read_exact(&mut self.dst[..len])?;
                     if self.frame_info.as_ref().unwrap().block_checksums {
                         let expected_checksum = self.read_checksum()?;
-                        self.check_checksum(&self.dst[..len], expected_checksum)?;
+                        self.check_block_checksum(&self.dst[..len], expected_checksum)?;
                     }
                     self.dsts = 0;
                     self.dste = len;
@@ -127,7 +126,7 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                     self.r.read_exact(&mut self.src[..len])?;
                     if self.frame_info.as_ref().unwrap().block_checksums {
                         let expected_checksum = self.read_checksum()?;
-                        self.check_checksum(&self.src[..len], expected_checksum)?;
+                        self.check_block_checksum(&self.src[..len], expected_checksum)?;
                     }
                     let dst =
                         crate::block::decompress::decompress(&self.src[..len], self.dst.len())
@@ -142,7 +141,7 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                         let expected_checksum = self.read_checksum()?;
                         let calc_checksum = self.content_hasher.finish() as u32;
                         if calc_checksum != expected_checksum {
-                            return Err(Error::ChecksumError.into());
+                            return Err(Error::ContentChecksumError.into());
                         }
                     }
                     self.frame_info = None;

@@ -6,11 +6,16 @@ pub mod header;
 
 #[derive(Debug)]
 pub enum Error {
+    SkippableFrame(usize),
+    CompressionError(/* TBD */),
     DecompressionError(crate::block::DecompressError),
     UnimplementedBlocksize(u8),
     UnsupportedVersion(u8),
-    IoError(std::io::Error),
-    ChecksumError,
+    IoError(io::Error),
+    WrongMagicNumber,
+    ContentChecksumError,
+    BlockChecksumError,
+    HeaderChecksumError,
     BlockTooBig,
     LinkedBlocksNotSupported,
 }
