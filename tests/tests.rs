@@ -444,18 +444,18 @@ mod test_compression {
     use super::*;
 
     fn print_ratio(text: &str, val1: usize, val2: usize) {
-        println!("{:?} {:.2}", text, val1 as f32 / val2 as f32);
+        println!("{:?} {:.3} {} -> {}", text, val1 as f32 / val2 as f32, val1, val2);
     }
 
     #[test]
     fn test_comp_flex() {
         print_ratio(
-            "Ratio 1k",
+            "Ratio 1k flex",
             COMPRESSION1K.len(),
             compress(COMPRESSION1K).len(),
         );
         print_ratio(
-            "Ratio 34k",
+            "Ratio 34k flex",
             COMPRESSION34K.len(),
             compress(COMPRESSION34K).len(),
         );
@@ -463,15 +463,8 @@ mod test_compression {
 
     mod lz4_linked {
         use super::*;
-        use std::io;
-        fn get_compressed_size(mut input: &[u8]) -> usize {
-            let mut cache = vec![];
-            let mut encoder = lz4::EncoderBuilder::new()
-                .level(2)
-                .build(&mut cache)
-                .unwrap();
-            io::copy(&mut input, &mut encoder).unwrap();
-            let (output, _result) = encoder.finish();
+        fn get_compressed_size(input: &[u8]) -> usize {
+            let output = lz4::block::compress(input, None, false).unwrap();
             output.len()
         }
 
@@ -479,12 +472,12 @@ mod test_compression {
         #[cfg_attr(miri, ignore)]
         fn test_comp_lz4_linked() {
             print_ratio(
-                "Ratio 1k",
+                "Ratio 1k C",
                 COMPRESSION1K.len(),
                 get_compressed_size(COMPRESSION1K),
             );
             print_ratio(
-                "Ratio 34k",
+                "Ratio 34k C",
                 COMPRESSION34K.len(),
                 get_compressed_size(COMPRESSION34K),
             );
