@@ -240,69 +240,29 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
 
 /// Write an integer to the output in LSIC format.
 #[inline]
-#[cfg(feature = "safe-encode")]
-fn write_integer(mut output: &mut [u8], mut n: usize) -> &mut [u8] {
+fn write_integer(output: &mut [u8], output_len: &mut usize, mut n: usize) {
     while n >= 0xFF {
         n -= 0xFF;
-        output = push_byte(output, 0xFF);
+        push_byte(output, output_len, 0xFF);
     }
 
     // Write the remaining byte.
-    push_byte(output, n as u8)
-}
-
-/// Write an integer to the output in LSIC format.
-#[inline]
-#[cfg(not(feature = "safe-encode"))]
-fn write_integer(output: &mut Vec<u8>, mut n: usize) {
-    // Write the 0xFF bytes as long as the integer is higher than said value.
-    push_u32(output, 0xFFFFFFFF);
-    while n >= 4 * 0xFF {
-        n -= 4 * 0xFF;
-        unsafe {
-            output.set_len(output.len() + 4);
-        }
-        push_u32(output, 0xFFFFFFFF);
-    }
-
-    // Updating output len for the remainder
-    unsafe {
-        output.set_len(output.len() + 1 + n / 255);
-    }
-    let last_index = output.len() - 1;
-    unsafe {
-        // Write the remaining byte.
-        *output.get_unchecked_mut(last_index) = (n % 255) as u8;
-    };
-}
-
-#[inline]
-#[cfg(not(feature = "safe-encode"))]
-fn push_u32(output: &mut Vec<u8>, el: u32) {
-    unsafe {
-        let out_ptr = output.as_mut_ptr().add(output.len());
-        core::ptr::copy_nonoverlapping(el.to_le_bytes().as_ptr(), out_ptr, 4);
-    }
+    push_byte(output, output_len, n as u8)
 }
 
 /// Handle the last bytes from the input as literals
 #[cold]
-fn handle_last_literals<'a>(
-    mut output: &'a mut [u8],
-    input: &[u8],
-    input_size: usize,
-    start: usize,
-) -> &'a mut [u8] {
-    let lit_len = input_size - start;
+fn handle_last_literals(output: &mut [u8], output_len: &mut usize, input: &[u8], start: usize) {
+    let lit_len = input.len() - start;
 
     let token = token_from_literal(lit_len);
-    output = push_byte(output, token);
+    push_byte(output, output_len, token);
     if lit_len >= 0xF {
-        output = write_integer(output, lit_len - 0xF);
+        write_integer(output, output_len, lit_len - 0xF);
     }
     // Now, write the actual literals.
-    output[..input.len() - start].copy_from_slice(&input[start..]);
-    &mut output[input.len() - start..]
+    output[*output_len..*output_len + input.len() - start].copy_from_slice(&input[start..]);
+    *output_len += input.len() - start;
 }
 
 /// Moves the cursors back as long as the bytes match, to find additional bytes in a duplicate
@@ -359,16 +319,16 @@ pub fn backtrack_match(
 #[inline]
 fn compress_internal<T: HashTable>(
     input: &[u8],
-    mut output: &mut [u8],
+    output: &mut [u8],
     dict: &mut T,
     ext_dict: &[u8],
 ) -> std::io::Result<usize> {
     assert!(ext_dict.len() < u16::MAX as usize);
     assert!(LZ4_MIN_LENGTH > END_OFFSET);
-    let output_len = output.len();
+    let mut output_len = 0;
     if input.len() < LZ4_MIN_LENGTH {
-        output = handle_last_literals(output, input, input.len(), 0);
-        return Ok(output_len - output.len());
+        handle_last_literals(output, &mut output_len, input, 0);
+        return Ok(output_len);
     }
 
     let end_pos_check = input.len() - MFLIMIT;
@@ -404,8 +364,8 @@ fn compress_internal<T: HashTable>(
             next_cur += step_size;
 
             if cur > end_pos_check {
-                output = handle_last_literals(output, input, input.len(), literal_start);
-                return Ok(output_len - output.len());
+                handle_last_literals(output, &mut output_len, input, literal_start);
+                return Ok(output_len);
             }
             // Find a candidate in the dictionary with the hash of the current four bytes.
             // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
@@ -458,27 +418,28 @@ fn compress_internal<T: HashTable>(
         dict.put_at(hash, cur - 2 + ext_dict.len());
 
         let token = token_from_literal_and_match_length(lit_len, duplicate_length);
-        assert!(output.len() >= 1 + 8 + lit_len + 2 + 8);
+        // TODO: return error 
+        assert!(output_len + 1 + 8 + lit_len + 2 + 8 < output.len());
         // Push the token to the output stream.
-        output = push_byte(output, token);
+        push_byte(output, &mut output_len, token);
         // If we were unable to fit the literals length into the token, write the extensional
         // part through LSIC.
         if lit_len >= 0xF {
-            output = write_integer(output, lit_len - 0xF);
+            write_integer(output, &mut output_len, lit_len - 0xF);
         }
 
         // Now, write the actual literals.
         //
         // The unsafe version copies blocks of 8bytes, and therefore may copy up to 7bytes more than needed.
         // This is safe, because the last 12 bytes (MF_LIMIT) are handled in handle_last_literals.
-        output = copy_literals_wild(output, &input, literal_start, lit_len);
+        copy_literals_wild(output, &mut output_len, &input, literal_start, lit_len);
         // write the offset in little endian.
-        output = push_u16(output, offset);
+        push_u16(output, &mut output_len, offset);
 
         // If we were unable to fit the duplicates length into the token, write the
         // extensional part through LSIC.
         if duplicate_length >= 0xF {
-            output = write_integer(output, duplicate_length - 0xF);
+            write_integer(output, &mut output_len, duplicate_length - 0xF);
         }
         literal_start = cur;
     }
@@ -486,9 +447,9 @@ fn compress_internal<T: HashTable>(
 
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn push_byte(output: &mut [u8], el: u8) -> &mut [u8] {
-    output[0] = el;
-    &mut output[1..]
+fn push_byte(output: &mut [u8], output_len: &mut usize, el: u8) {
+    output[*output_len] = el;
+    *output_len += 1;
 }
 
 #[inline]
@@ -502,9 +463,9 @@ fn push_byte(output: &mut Vec<u8>, el: u8) {
 
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn push_u16(output: &mut [u8], el: u16) -> &mut [u8] {
-    output[..2].copy_from_slice(&el.to_le_bytes());
-    &mut output[2..]
+fn push_u16(output: &mut [u8], output_len: &mut usize, el: u16) {
+    output[*output_len..*output_len + 2].copy_from_slice(&el.to_le_bytes());
+    *output_len += 2;
 }
 
 #[inline]
@@ -520,14 +481,15 @@ fn push_u16(output: &mut Vec<u8>, el: u16) {
 
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn copy_literals_wild<'a>(
-    output: &'a mut [u8],
+fn copy_literals_wild(
+    output: &mut [u8],
+    output_len: &mut usize,
     input: &[u8],
     input_start: usize,
     len: usize,
-) -> &'a mut [u8] {
-    output[..len].copy_from_slice(&input[input_start..input_start + len]);
-    &mut output[len..]
+) {
+    output[*output_len..*output_len + len].copy_from_slice(&input[input_start..input_start + len]);
+    *output_len += len
 }
 
 #[inline]
