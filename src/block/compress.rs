@@ -22,6 +22,7 @@ const INCREASE_STEPSIZE_BITSHIFT: usize = 5;
 
 /// hashes and right shifts to a maximum value of 16bit, 65535
 /// The right shift is done in order to not exceed, the hashtables capacity
+#[inline(always)]
 fn hash(sequence: u32) -> u32 {
     (sequence.wrapping_mul(2654435761_u32)) >> 16
 }
@@ -29,6 +30,7 @@ fn hash(sequence: u32) -> u32 {
 /// hashes and right shifts to a maximum value of 16bit, 65535
 /// The right shift is done in order to not exceed, the hashtables capacity
 #[cfg(target_pointer_width = "64")]
+#[inline(always)]
 fn hash5(sequence: usize) -> u32 {
     let primebytes = if cfg!(target_endian = "little") {
         889523592379_usize
@@ -41,13 +43,13 @@ fn hash5(sequence: usize) -> u32 {
 /// Read a 4-byte "batch" from some position.
 ///
 /// This will read a native-endian 4-byte integer from some position.
-#[inline]
+#[inline(always)]
 #[cfg(not(feature = "safe-encode"))]
 fn get_batch(input: &[u8], n: usize) -> u32 {
     unsafe { read_u32_ptr(input.as_ptr().add(n)) }
 }
 
-#[inline]
+#[inline(always)]
 #[cfg(feature = "safe-encode")]
 fn get_batch(input: &[u8], n: usize) -> u32 {
     let arr: &[u8; 4] = input[n..n + 4].try_into().unwrap();
@@ -57,13 +59,13 @@ fn get_batch(input: &[u8], n: usize) -> u32 {
 /// Read a 4-byte "batch" from some position.
 ///
 /// This will read a native-endian 4-byte integer from some position.
-#[inline]
+#[inline(always)]
 #[cfg(not(feature = "safe-encode"))]
 fn get_batch_arch(input: &[u8], n: usize) -> usize {
     unsafe { read_usize_ptr(input.as_ptr().add(n)) }
 }
 
-#[inline]
+#[inline(always)]
 #[cfg(feature = "safe-encode")]
 fn get_batch_arch(input: &[u8], n: usize) -> usize {
     const USIZE_SIZE: usize = core::mem::size_of::<usize>();
@@ -71,7 +73,7 @@ fn get_batch_arch(input: &[u8], n: usize) -> usize {
     usize::from_ne_bytes(*arr)
 }
 
-#[inline]
+#[inline(always)]
 #[cfg(target_pointer_width = "64")]
 fn get_hash_at(input: &[u8], pos: usize) -> usize {
     if input.len() < u16::MAX as usize {
@@ -81,13 +83,13 @@ fn get_hash_at(input: &[u8], pos: usize) -> usize {
     }
 }
 
-#[inline]
+#[inline(always)]
 #[cfg(target_pointer_width = "32")]
 fn get_hash_at(input: &[u8], pos: usize) -> usize {
     hash(get_batch(input, pos)) as usize
 }
 
-#[inline]
+#[inline(always)]
 fn token_from_literal(lit_len: usize) -> u8 {
     if lit_len < 0xF {
         // Since we can fit the literals length into it, there is no need for saturation.
@@ -98,7 +100,8 @@ fn token_from_literal(lit_len: usize) -> u8 {
         0xF0
     }
 }
-#[inline]
+
+#[inline(always)]
 fn token_from_literal_and_match_length(lit_len: usize, duplicate_length: usize) -> u8 {
     let mut token = if lit_len < 0xF {
         // Since we can fit the literals length into it, there is no need for saturation.
@@ -128,7 +131,7 @@ fn token_from_literal_and_match_length(lit_len: usize, duplicate_length: usize) 
 /// `candidate` is the candidate position in `source`
 ///
 /// The function ignores the last 5 bytes (END_OFFSET) in input as this should be literals.
-#[inline]
+#[inline(always)]
 #[cfg(feature = "safe-encode")]
 fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
     const USIZE_SIZE: usize = core::mem::size_of::<usize>();
@@ -173,7 +176,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
 /// `candidate` is the candidate position in `source`
 ///
 /// The function ignores the last 5 bytes (END_OFFSET) in input as this should be literals.
-#[inline]
+#[inline(always)]
 #[cfg(not(feature = "safe-encode"))]
 fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
     let start = *cur;
@@ -239,7 +242,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
 }
 
 /// Write an integer to the output in LSIC format.
-#[inline]
+#[inline(always)]
 fn write_integer(output: &mut [u8], output_len: &mut usize, mut n: usize) {
     while n >= 0xFF {
         n -= 0xFF;
@@ -267,7 +270,7 @@ fn handle_last_literals(output: &mut [u8], output_len: &mut usize, input: &[u8],
 
 /// Moves the cursors back as long as the bytes match, to find additional bytes in a duplicate
 ///
-#[inline]
+#[inline(always)]
 #[cfg(feature = "safe-encode")]
 pub fn backtrack_match(
     input: &[u8],
@@ -289,7 +292,7 @@ pub fn backtrack_match(
 
 /// Moves the cursors back as long as the bytes match, to find additional bytes in a duplicate
 ///
-#[inline]
+#[inline(always)]
 #[cfg(not(feature = "safe-encode"))]
 pub fn backtrack_match(
     input: &[u8],
@@ -418,7 +421,7 @@ fn compress_internal<T: HashTable>(
         dict.put_at(hash, cur - 2 + ext_dict.len());
 
         let token = token_from_literal_and_match_length(lit_len, duplicate_length);
-        // TODO: return error 
+        // TODO: return error
         assert!(output_len + 1 + 8 + lit_len + 2 + 8 < output.len());
         // Push the token to the output stream.
         push_byte(output, &mut output_len, token);
@@ -445,41 +448,41 @@ fn compress_internal<T: HashTable>(
     }
 }
 
-#[inline]
+#[inline(always)]
 #[cfg(feature = "safe-encode")]
 fn push_byte(output: &mut [u8], output_len: &mut usize, el: u8) {
     output[*output_len] = el;
     *output_len += 1;
 }
 
-#[inline]
+#[inline(always)]
 #[cfg(not(feature = "safe-encode"))]
-fn push_byte(output: &mut Vec<u8>, el: u8) {
+fn push_byte(output: &mut [u8], output_len: &mut usize, el: u8) {
     unsafe {
-        core::ptr::write(output.as_mut_ptr().add(output.len()), el);
-        output.set_len(output.len() + 1);
+        core::ptr::write(output.as_mut_ptr().add(*output_len), el);
     }
+    *output_len += 1;
 }
 
-#[inline]
+#[inline(always)]
 #[cfg(feature = "safe-encode")]
 fn push_u16(output: &mut [u8], output_len: &mut usize, el: u16) {
     output[*output_len..*output_len + 2].copy_from_slice(&el.to_le_bytes());
     *output_len += 2;
 }
 
-#[inline]
+#[inline(always)]
 #[cfg(not(feature = "safe-encode"))]
-fn push_u16(output: &mut Vec<u8>, el: u16) {
+fn push_u16(output: &mut [u8], output_len: &mut usize, el: u16) {
     unsafe {
-        let out_ptr = output.as_mut_ptr().add(output.len());
-        core::ptr::write(out_ptr, el as u8);
-        core::ptr::write(out_ptr.add(1), (el >> 8) as u8);
-        output.set_len(output.len() + 2);
-    }
+        output
+            .get_unchecked_mut(*output_len..*output_len + 2)
+            .copy_from_slice(&el.to_le_bytes())
+    };
+    *output_len += 2;
 }
 
-#[inline]
+#[inline(always)]
 #[cfg(feature = "safe-encode")]
 fn copy_literals_wild(
     output: &mut [u8],
@@ -492,17 +495,23 @@ fn copy_literals_wild(
     *output_len += len
 }
 
-#[inline]
+#[inline(always)]
 #[cfg(not(feature = "safe-encode"))]
-fn copy_literals_wild(output: &mut Vec<u8>, input: &[u8], input_start: usize, len: usize) {
+fn copy_literals_wild(
+    output: &mut [u8],
+    output_len: &mut usize,
+    input: &[u8],
+    input_start: usize,
+    len: usize,
+) {
     use crate::block::wild_copy_from_src_8;
     unsafe {
         wild_copy_from_src_8(
             input.as_ptr().add(input_start),
-            output.as_mut_ptr().add(output.len()),
+            output.as_mut_ptr().add(*output_len),
             len,
         );
-        output.set_len(output.len() + len);
+        *output_len += len;
     }
 }
 
@@ -578,7 +587,7 @@ pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
 
 /// Compress all bytes of `input`.
 ///
-#[inline]
+#[inline(always)]
 pub fn compress(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
     let mut compressed = Vec::new();
@@ -586,7 +595,7 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
     compressed
 }
 
-#[inline]
+#[inline(always)]
 #[cfg(not(feature = "safe-encode"))]
 fn read_u32_ptr(input: *const u8) -> u32 {
     let mut num: u32 = 0;
@@ -596,7 +605,7 @@ fn read_u32_ptr(input: *const u8) -> u32 {
     num
 }
 
-#[inline]
+#[inline(always)]
 #[cfg(not(feature = "safe-encode"))]
 fn read_usize_ptr(input: *const u8) -> usize {
     let mut num: usize = 0;
@@ -609,7 +618,8 @@ fn read_usize_ptr(input: *const u8) -> usize {
     }
     num
 }
-#[inline]
+
+#[inline(always)]
 #[cfg(not(feature = "safe-encode"))]
 fn read_u16_ptr(input: *const u8) -> u16 {
     let mut num: u16 = 0;
