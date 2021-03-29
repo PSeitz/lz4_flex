@@ -21,6 +21,7 @@ criterion = "0.3.3"
 lz4 = "1.23.1"
 lz4-compress = "0.1.1"
 more-asserts = "0.2.1"
+snap = "1.0"
 
 [dev-dependencies.lz-fear]
 git = "https://github.com/main--/rust-lz-fear"
@@ -37,8 +38,8 @@ twox-hash = { version = "1", default-features = false }
 
 [profile.bench]
 codegen-units = 1
-debug = false
-lto = true
+# debug = true
+# lto = true
 opt-level = 3
 
 [profile.release]
