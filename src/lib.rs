@@ -30,7 +30,7 @@ extern crate alloc;
 
 pub mod block;
 #[cfg(feature = "std")]
-mod frame;
+pub mod frame;
 
 pub use block::compress::{compress, compress_into, compress_prepend_size};
 

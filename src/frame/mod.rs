@@ -6,7 +6,7 @@ pub mod header;
 
 #[derive(Debug)]
 pub enum Error {
-    SkippableFrame(usize),
+    SkippableFrame(u32),
     CompressionError(/* TBD */),
     DecompressionError(crate::block::DecompressError),
     UnimplementedBlocksize(u8),
@@ -18,11 +18,17 @@ pub enum Error {
     HeaderChecksumError,
     BlockTooBig,
     LinkedBlocksNotSupported,
+    InvalidBlockInfo,
 }
 
 impl From<Error> for io::Error {
     fn from(e: Error) -> Self {
         io::Error::new(io::ErrorKind::Other, e)
+    }
+}
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Error::IoError(e)
     }
 }
 
