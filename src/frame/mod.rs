@@ -1,7 +1,9 @@
 pub mod compress;
 pub mod decompress;
 
-pub use compress::compress;
+
+const MAGIC_NUMBER: u32 = 0x184D2204;
+const END_MARK: u32 = 0;
 
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
@@ -35,7 +37,7 @@ pub enum BlockMode {
 
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
-pub enum ContentChecksum {
+pub enum Checksum {
     NoChecksum = 0,
     ChecksumEnabled,
 }
@@ -49,7 +51,7 @@ pub(crate) struct LZ4FFrameInfo {
     pub content_size: Option<u64>,
     pub block_size_id: BlockSize,
     pub block_mode: BlockMode,
-    pub content_checksum_flag: ContentChecksum,
+    pub content_checksum_flag: Checksum,
     // pub reserved: [u32; 5],
 }
 
@@ -67,9 +69,9 @@ impl LZ4FFrameInfo {
             BlockMode::Linked
         };
         let content_checksum_flag = if (flg_byte & 1 << 2) as usize == 1 {
-            ContentChecksum::ChecksumEnabled
+            Checksum::ChecksumEnabled
         } else {
-            ContentChecksum::NoChecksum
+            Checksum::NoChecksum
         };
 
         // let content_size_included = (flg_byte & 1 << 4) == 1;
