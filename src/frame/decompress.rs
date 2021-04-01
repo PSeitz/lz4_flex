@@ -1,4 +1,4 @@
-use std::{convert::TryInto, hash::Hasher, io, mem::size_of};
+use std::{convert::TryInto, fmt, hash::Hasher, io, mem::size_of};
 use twox_hash::XxHash32;
 
 use super::header::{self, BlockInfo, BlockMode, FrameInfo};
@@ -83,8 +83,11 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.frame_info.is_none() {
             let mut buffer = [0u8; header::MAX_FRAME_INFO_SIZE];
-            // TODO: handle read Ok(0)
-            self.r.read_exact(&mut buffer[..7])?;
+            match self.r.read(&mut buffer[..7])? {
+                0 => return Ok(0),
+                7 => (),
+                read => self.r.read_exact(&mut buffer[read..7])?,
+            }
             let required = FrameInfo::read_size(&buffer[..7])?;
             if required != 7 {
                 self.r.read_exact(&mut buffer[7..required])?;
@@ -159,8 +162,8 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
     }
 }
 
-impl<R: std::fmt::Debug + io::Read> std::fmt::Debug for FrameDecoder<R> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<R: fmt::Debug + io::Read> fmt::Debug for FrameDecoder<R> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("FrameDecoder")
             .field("r", &self.r)
             // .field("dec", &self.dec)

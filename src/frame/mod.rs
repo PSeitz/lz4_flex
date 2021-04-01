@@ -4,6 +4,9 @@ pub mod compress;
 pub mod decompress;
 pub mod header;
 
+pub use compress::FrameEncoder;
+pub use decompress::FrameDecoder;
+
 #[derive(Debug)]
 pub enum Error {
     SkippableFrame(u32),

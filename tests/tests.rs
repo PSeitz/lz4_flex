@@ -7,82 +7,36 @@ extern crate more_asserts;
 // use crate::block::compress::compress_into_2;
 use lz4::block::{compress as lz4_cpp_block_compress, decompress as lz4_cpp_block_decompress};
 use lz4_compress::compress as lz4_rust_compress;
-use lz4_flex::block::{compress_prepend_size, decompress_size_prepended};
-use lz4_flex::{compress, decompress};
-use std::str;
+use lz4_flex::{
+    block::{compress_prepend_size, decompress_size_prepended},
+    compress, decompress,
+    frame::{FrameDecoder, FrameEncoder},
+};
+
+use std::{io::prelude::*, str};
 
 const COMPRESSION1K: &'static [u8] = include_bytes!("../benches/compression_1k.txt");
 const COMPRESSION34K: &'static [u8] = include_bytes!("../benches/compression_34k.txt");
 const COMPRESSION65: &'static [u8] = include_bytes!("../benches/compression_65k.txt");
 const COMPRESSION66JSON: &'static [u8] = include_bytes!("../benches/compression_66k_JSON.txt");
-// const COMPRESSION10MB: &'static [u8] = include_bytes!("../benches/dickens.txt");
+const COMPRESSION10MB: &'static [u8] = include_bytes!("../benches/dickens.txt");
 
-// #[bench]
-// fn bench_compression_small(b: &mut test::Bencher) {
-//     b.iter(|| {
-//         let _compressed = compress("To cute to die! Save the red panda!".as_bytes());
-//     })
-// }
+fn compress_framed(input: &[u8]) -> Vec<u8> {
+    let mut enc = FrameEncoder::new(Vec::new());
+    enc.write_all(input).unwrap();
+    enc.finish().unwrap()
+}
 
-// #[bench]
-// fn bench_compression_medium(b: &mut test::Bencher) {
-//     b.iter(|| {
-//         let _compressed = compress(r#"An iterator that knows its exact length.
-//         Many Iterators don't know how many times they will iterate, but some do. If an iterator knows how many times it can iterate, providing access to that information can be useful. For example, if you want to iterate backwards, a good start is to know where the end is.
-//         When implementing an ExactSizeIterator, you must also implement Iterator. When doing so, the implementation of size_hint must return the exact size of the iterator.
-//         The len method has a default implementation, so you usually shouldn't implement it. However, you may be able to provide a more performant implementation than the default, so overriding it in this case makes sense."#.as_bytes());
-//     })
-// }
-
-// #[bench]
-// fn bench_compression_65k(b: &mut test::Bencher) {
-//     b.iter(|| {
-//         compress(COMPRESSION65);
-//     })
-// }
-
-// #[ignore]
-// #[bench]
-// fn bench_compression_10_mb(b: &mut test::Bencher) {
-//     b.iter(|| {
-//         compress(COMPRESSION10MB);
-//     })
-// }
-
-// #[bench]
-// fn bench_decompression_small(b: &mut test::Bencher) {
-//     let comp = compress("To cute to die! Save the red panda!".as_bytes());
-//     b.iter(|| {
-//         decompress(&comp)
-//     })
-// }
-
-// #[bench]
-// fn bench_decompression_medium(b: &mut test::Bencher) {
-//     let comp = compress(r#"An iterator that knows its exact length.
-//         Many Iterators don't know how many times they will iterate, but some do. If an iterator knows how many times it can iterate, providing access to that information can be useful. For example, if you want to iterate backwards, a good start is to know where the end is.
-//         When implementing an ExactSizeIterator, you must also implement Iterator. When doing so, the implementation of size_hint must return the exact size of the iterator.
-//         The len method has a default implementation, so you usually shouldn't implement it. However, you may be able to provide a more performant implementation than the default, so overriding it in this case makes sense."#.as_bytes());
-//     b.iter(|| {
-//         decompress(&comp)
-//     })
-// }
-
-// #[bench]
-// fn bench_decompression_10_mb(b: &mut test::Bencher) {
-//     let comp = compress(COMPRESSION10MB);
-//     b.iter(|| {
-//         decompress(&comp)
-//     })
-// }
-
-/// Test that the compressed string decompresses to the original string.
-fn inverse(s: &str) {
-    inverse_bytes(s.as_bytes());
+fn decompress_framed(input: &[u8]) -> Result<Vec<u8>, lz4_flex::frame::Error> {
+    let mut de = FrameDecoder::new(input);
+    let mut out = Vec::new();
+    de.read_to_end(&mut out)?;
+    Ok(out)
 }
 
 /// Test that the compressed string decompresses to the original string.
-fn inverse_bytes(bytes: &[u8]) {
+fn inverse(bytes: impl AsRef<[u8]>) {
+    let bytes = bytes.as_ref();
     // compress with rust, decompress with rust
     let compressed_flex = compress(bytes);
     let decompressed = decompress(&compressed_flex, bytes.len()).unwrap();
@@ -98,6 +52,13 @@ fn inverse_bytes(bytes: &[u8]) {
     // compress with rust, decompress with rust, prepend size
     let compressed_flex = compress_prepend_size(bytes);
     let decompressed = decompress_size_prepended(&compressed_flex).unwrap();
+    assert_eq!(decompressed, bytes);
+
+    // Framed format
+    // compress with rust, decompress with rust
+    let compressed_flex = compress_framed(bytes);
+    dbg!(&compressed_flex);
+    let decompressed = decompress_framed(&compressed_flex).unwrap();
     assert_eq!(decompressed, bytes);
 }
 
@@ -125,19 +86,17 @@ fn lz4_cpp_compatibility(bytes: &[u8]) {
 #[test]
 #[cfg_attr(miri, ignore)]
 fn yopa() {
-    const COMPRESSION10MB: &'static [u8] = include_bytes!("../benches/dickens.txt");
     let compressed = compress(COMPRESSION10MB);
     decompress(&compressed, COMPRESSION10MB.len()).unwrap();
 
-    lz4_cpp_block_compress(COMPRESSION10MB, None, false).unwrap();
+    let cpp_compressed = lz4_cpp_block_compress(COMPRESSION10MB, None, false).unwrap();
+    decompress(&cpp_compressed, COMPRESSION10MB.len()).unwrap();
 
-    const COMPRESSION66K: &'static [u8] = include_bytes!("../benches/compression_65k.txt");
-    let compressed = compress(COMPRESSION66K);
-    decompress(&compressed, COMPRESSION66K.len()).unwrap();
+    let compressed = compress(COMPRESSION65);
+    decompress(&compressed, COMPRESSION65.len()).unwrap();
 
-    lz4_cpp_block_compress(COMPRESSION66K, None, false).unwrap();
+    lz4_cpp_block_compress(COMPRESSION65, None, false).unwrap();
 
-    const COMPRESSION34K: &'static [u8] = include_bytes!("../benches/compression_34k.txt");
     let compressed = compress(COMPRESSION34K);
     decompress(&compressed, COMPRESSION34K.len()).unwrap();
 
@@ -149,18 +108,14 @@ fn yopa() {
 #[test]
 #[cfg_attr(miri, ignore)]
 fn compare_compression() {
-    print_compression_ration(include_bytes!("../benches/compression_34k.txt"), "34k");
-    print_compression_ration(
-        include_bytes!("../benches/compression_66k_JSON.txt"),
-        "66k JSON",
-    );
+    print_compression_ration(COMPRESSION34K, "34k");
+    print_compression_ration(COMPRESSION66JSON, "66k JSON");
 }
 
 #[test]
 fn test_minimum_compression_ratio() {
-    let input = include_bytes!("../benches/compression_34k.txt");
-    let compressed = compress(input);
-    let ratio = compressed.len() as f64 / input.len() as f64;
+    let compressed = compress(COMPRESSION34K);
+    let ratio = compressed.len() as f64 / COMPRESSION34K.len() as f64;
     assert_lt!(ratio, 0.585); // TODO check why compression is not deterministic (fails in ci for 0.58)
 }
 
@@ -295,7 +250,7 @@ fn small_compressible_2() {
 
 #[test]
 fn small_compressible_3() {
-    compress("AAAAAAAAAAAZZZZZZZZAAAAAAAA".as_bytes());
+    inverse("AAAAAAAAAAAZZZZZZZZAAAAAAAA");
 }
 
 #[test]
@@ -367,7 +322,7 @@ fn bug_fuzz() {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 46, 0, 0, 8, 0, 138,
     ];
-    inverse_bytes(data);
+    inverse(data);
 }
 #[test]
 fn bug_fuzz_2() {
@@ -377,7 +332,7 @@ fn bug_fuzz_2() {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 65, 0, 0, 128, 10, 1, 10, 1, 0, 122,
     ];
-    inverse_bytes(data);
+    inverse(data);
 }
 #[test]
 fn bug_fuzz_3() {
@@ -390,7 +345,7 @@ fn bug_fuzz_3() {
         15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 61, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 0,
         48, 45, 0, 1, 0, 0, 1, 0,
     ];
-    inverse_bytes(data);
+    inverse(data);
 }
 
 #[test]
@@ -423,20 +378,20 @@ fn big_compression() {
         s.push((n as u8).wrapping_mul(0xA).wrapping_add(33) ^ 0xA2);
     }
 
-    assert_eq!(&decompress(&compress(&s), s.len()).unwrap(), &s);
+    inverse(s);
 }
 
 #[test]
 fn test_json_66k() {
-    inverse_bytes(COMPRESSION66JSON);
+    inverse(COMPRESSION66JSON);
 }
 #[test]
 fn test_text_65k() {
-    inverse_bytes(COMPRESSION65);
+    inverse(COMPRESSION65);
 }
 #[test]
 fn test_text_34k() {
-    inverse_bytes(COMPRESSION34K);
+    inverse(COMPRESSION34K);
 }
 
 #[cfg(test)]
@@ -444,7 +399,13 @@ mod test_compression {
     use super::*;
 
     fn print_ratio(text: &str, val1: usize, val2: usize) {
-        println!("{:?} {:.3} {} -> {}", text, val1 as f32 / val2 as f32, val1, val2);
+        println!(
+            "{:?} {:.3} {} -> {}",
+            text,
+            val1 as f32 / val2 as f32,
+            val1,
+            val2
+        );
     }
 
     #[test]

@@ -95,7 +95,7 @@ Data Blocks
 
 */
 #[derive(Debug, Clone)]
-pub(crate) struct FrameInfo {
+pub struct FrameInfo {
     pub content_size: Option<u64>,
     pub dict_id: Option<u32>,
     pub block_size: BlockSize,
@@ -118,17 +118,13 @@ impl Default for FrameInfo {
 }
 
 impl FrameInfo {
-    pub(crate) fn read_size(mut input: &[u8]) -> Result<usize, Error> {
+    pub(crate) fn read_size(input: &[u8]) -> Result<usize, Error> {
         let mut required = 7;
         if input.len() < 7 {
             return Ok(required);
         }
 
-        let magic_num = {
-            let mut buffer = [0u8; size_of::<u32>()];
-            input.read_exact(&mut buffer)?;
-            u32::from_le_bytes(buffer)
-        };
+        let magic_num = u32::from_le_bytes(input[0..4].try_into().unwrap());
 
         if flags::SKIPPABLE_MAGIC.contains(&magic_num) {
             return Ok(8);
@@ -157,7 +153,7 @@ impl FrameInfo {
         required
     }
 
-    pub(crate) fn write(&self, mut output: &mut [u8]) -> Result<usize, Error> {
+    pub(crate) fn write(&self, output: &mut [u8]) -> Result<usize, Error> {
         let write_size = self.write_size();
         if output.len() < write_size {
             return Err(Error::IoError(io::ErrorKind::UnexpectedEof.into()));
@@ -166,20 +162,20 @@ impl FrameInfo {
         assert!(write_size <= buffer.len());
         buffer[0..4].copy_from_slice(&flags::MAGIC_NUMBER.to_le_bytes());
         buffer[4] = flags::SUPPORTED_VERSION;
+        buffer[5] = (self.block_size as u8) << flags::BLOCK_SIZE_MASK_RSHIFT;
         if self.block_mode == BlockMode::Independent {
             buffer[4] |= flags::INDEPENDENT_BLOCKS;
         }
-        buffer[5] = (self.block_size as u8) << flags::BLOCK_SIZE_MASK_RSHIFT;
         if let Some(size) = self.content_size {
             buffer[4] |= flags::CONTENT_SIZE;
-            buffer[5..5 + 8].copy_from_slice(&size.to_le_bytes());
+            buffer[6..6 + 8].copy_from_slice(&size.to_le_bytes());
         }
         if let Some(dict_id) = self.dict_id {
             buffer[4] |= flags::DICTIONARY_ID;
             let offset = if self.content_size.is_some() {
-                5 + 8
+                6 + 8
             } else {
-                5
+                6
             };
             buffer[offset..offset + 4].copy_from_slice(&dict_id.to_le_bytes());
         }
@@ -187,8 +183,8 @@ impl FrameInfo {
         hasher.write(&buffer[..write_size - 1]);
         let checksum = (hasher.finish() >> 8) as u8;
         buffer[write_size - 1] = checksum;
-        output.write_all(&buffer[..write_size])?;
-        Ok(self.write_size())
+        output[..write_size].copy_from_slice(&buffer[..write_size]);
+        Ok(write_size)
     }
 
     pub(crate) fn read(mut input: &[u8]) -> Result<FrameInfo, Error> {
@@ -199,21 +195,21 @@ impl FrameInfo {
             input.read_exact(&mut buffer)?;
             u32::from_le_bytes(buffer)
         };
-        if magic_num != flags::MAGIC_NUMBER {
-            return Err(Error::WrongMagicNumber);
-        }
         if flags::SKIPPABLE_MAGIC.contains(&magic_num) {
             let mut buffer = [0u8; size_of::<u32>()];
             input.read_exact(&mut buffer)?;
             let user_data_len = u32::from_le_bytes(buffer.try_into().unwrap());
             return Err(Error::SkippableFrame(user_data_len));
         }
+        if magic_num != flags::MAGIC_NUMBER {
+            return Err(Error::WrongMagicNumber);
+        }
 
         // fixed size section
-        let (flag_byte, bd_byte) = {
+        let [flag_byte, bd_byte] = {
             let mut buffer = [0u8, 0];
             input.read_exact(&mut buffer)?;
-            (buffer[0], buffer[1])
+            buffer
         };
 
         if flag_byte & flags::VERSION_MASK != flags::SUPPORTED_VERSION {
@@ -229,7 +225,7 @@ impl FrameInfo {
         let content_checksum = flag_byte & flags::CONTENT_CHECKSUM != 0;
         let block_checksums = flag_byte & flags::BLOCK_CHECKSUMS != 0;
 
-        let block_size = match bd_byte & flags::BLOCK_SIZE_MASK >> flags::BLOCK_SIZE_MASK_RSHIFT {
+        let block_size = match (bd_byte & flags::BLOCK_SIZE_MASK) >> flags::BLOCK_SIZE_MASK_RSHIFT {
             i @ 0..=3 => return Err(Error::UnimplementedBlocksize(i)),
             4 => BlockSize::Max64KB,
             5 => BlockSize::Max256KB,
@@ -260,7 +256,7 @@ impl FrameInfo {
             buffer[0]
         };
         let mut hasher = XxHash32::with_seed(0);
-        hasher.write(&original_input[..original_input.len() - input.len()]);
+        hasher.write(&original_input[..original_input.len() - input.len() - 1]);
         let header_hash = (hasher.finish() >> 8) as u8;
         if header_hash != expected_checksum {
             return Err(Error::HeaderChecksumError);
@@ -277,6 +273,7 @@ impl FrameInfo {
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum BlockInfo {
     Compressed(u32),
     Uncompressed(u32),
