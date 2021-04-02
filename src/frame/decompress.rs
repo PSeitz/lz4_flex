@@ -62,6 +62,27 @@ impl<R: io::Read> FrameDecoder<R> {
         &mut self.r
     }
 
+    fn read_frame_info(&mut self) -> Result<usize, io::Error> {
+        let mut buffer = [0u8; header::MAX_FRAME_INFO_SIZE];
+        match self.r.read(&mut buffer[..7])? {
+            0 => return Ok(0),
+            7 => (),
+            read => self.r.read_exact(&mut buffer[read..7])?,
+        }
+        let required = FrameInfo::read_size(&buffer[..7])?;
+        if required != 7 {
+            self.r.read_exact(&mut buffer[7..required])?;
+        }
+        let frame_info = FrameInfo::read(&buffer[..required])?;
+        self.dst.resize(frame_info.block_size.get_size(), 0);
+        self.src.resize(frame_info.block_size.get_size(), 0);
+        if frame_info.block_mode == BlockMode::Linked {
+            return Err(Error::LinkedBlocksNotSupported.into());
+        }
+        self.frame_info = Some(frame_info);
+        Ok(required)
+    }
+
     fn read_checksum(&mut self) -> Result<u32, io::Error> {
         let mut checksum_buffer = [0u8; size_of::<u32>()];
         self.r.read_exact(&mut checksum_buffer[..])?;
@@ -81,24 +102,8 @@ impl<R: io::Read> FrameDecoder<R> {
 
 impl<R: io::Read> io::Read for FrameDecoder<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if self.frame_info.is_none() {
-            let mut buffer = [0u8; header::MAX_FRAME_INFO_SIZE];
-            match self.r.read(&mut buffer[..7])? {
-                0 => return Ok(0),
-                7 => (),
-                read => self.r.read_exact(&mut buffer[read..7])?,
-            }
-            let required = FrameInfo::read_size(&buffer[..7])?;
-            if required != 7 {
-                self.r.read_exact(&mut buffer[7..required])?;
-            }
-            let frame_info = FrameInfo::read(&buffer[..required])?;
-            self.dst.resize(frame_info.block_size.get_size(), 0);
-            self.src.resize(frame_info.block_size.get_size(), 0);
-            if frame_info.block_mode == BlockMode::Linked {
-                return Err(Error::LinkedBlocksNotSupported.into());
-            }
-            self.frame_info = Some(frame_info);
+        if self.frame_info.is_none() && self.read_frame_info()? == 0 {
+            return Ok(0);
         }
         loop {
             if self.dsts < self.dste {

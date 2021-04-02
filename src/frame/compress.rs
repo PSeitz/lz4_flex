@@ -179,6 +179,9 @@ impl<W: io::Write> Inner<W> {
     fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
         if !self.wrote_frame_info {
             self.wrote_frame_info = true;
+            if self.frame_info.block_mode == BlockMode::Linked {
+                return Err(Error::LinkedBlocksNotSupported.into());
+            }
             let mut frame_info_buffer = [0u8; MAX_FRAME_INFO_SIZE];
             let size = self.frame_info.write(&mut frame_info_buffer)?;
             self.w.write_all(&frame_info_buffer[..size])?;
