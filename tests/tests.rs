@@ -2,10 +2,7 @@
 
 #[macro_use]
 extern crate more_asserts;
-// extern crate test;
 
-// use crate::block::compress::compress_into_2;
-use lz4::block::{compress as lz4_cpp_block_compress, decompress as lz4_cpp_block_decompress};
 use lz4_compress::compress as lz4_rust_compress;
 use lz4_flex::{
     block::{compress_prepend_size, decompress_size_prepended},
@@ -21,13 +18,37 @@ const COMPRESSION65: &'static [u8] = include_bytes!("../benches/compression_65k.
 const COMPRESSION66JSON: &'static [u8] = include_bytes!("../benches/compression_66k_JSON.txt");
 const COMPRESSION10MB: &'static [u8] = include_bytes!("../benches/dickens.txt");
 
-fn compress_framed(input: &[u8]) -> Vec<u8> {
+fn lz4_cpp_block_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
+    let mut out = Vec::new();
+    lzzzz::lz4::compress_to_vec(input, &mut out, lzzzz::lz4::ACC_LEVEL_DEFAULT).unwrap();
+    Ok(out)
+}
+
+fn lz4_cpp_frame_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
+    let mut out = Vec::new();
+    lzzzz::lz4f::compress_to_vec(input, &mut out, &lzzzz::lz4f::Preferences::default()).unwrap();
+    Ok(out)
+}
+
+fn lz4_cpp_block_decompress(input: &[u8], decomp_len: usize) -> Result<Vec<u8>, lzzzz::Error> {
+    let mut out = vec![0u8; decomp_len];
+    lzzzz::lz4::decompress(input, &mut out)?;
+    Ok(out)
+}
+
+fn lz4_cpp_frame_decompress(input: &[u8]) -> Result<Vec<u8>, lzzzz::lz4f::Error> {
+    let mut out = Vec::new();
+    lzzzz::lz4f::decompress_to_vec(input, &mut out)?;
+    Ok(out)
+}
+
+fn compress_frame(input: &[u8]) -> Vec<u8> {
     let mut enc = FrameEncoder::new(Vec::new());
     enc.write_all(input).unwrap();
     enc.finish().unwrap()
 }
 
-fn decompress_framed(input: &[u8]) -> Result<Vec<u8>, lz4_flex::frame::Error> {
+fn decompress_frame(input: &[u8]) -> Result<Vec<u8>, lz4_flex::frame::Error> {
     let mut de = FrameDecoder::new(input);
     let mut out = Vec::new();
     de.read_to_end(&mut out)?;
@@ -42,24 +63,18 @@ fn inverse(bytes: impl AsRef<[u8]>) {
     let decompressed = decompress(&compressed_flex, bytes.len()).unwrap();
     assert_eq!(decompressed, bytes);
 
-    lz4_cpp_compatibility(bytes);
-
-    // compress with rust, decompress with rust
-    let compressed_flex = compress(bytes);
-    let decompressed = decompress(&compressed_flex, bytes.len()).unwrap();
-    assert_eq!(decompressed, bytes);
-
     // compress with rust, decompress with rust, prepend size
     let compressed_flex = compress_prepend_size(bytes);
     let decompressed = decompress_size_prepended(&compressed_flex).unwrap();
     assert_eq!(decompressed, bytes);
 
-    // Framed format
+    // Frame format
     // compress with rust, decompress with rust
-    let compressed_flex = compress_framed(bytes);
-    dbg!(&compressed_flex);
-    let decompressed = decompress_framed(&compressed_flex).unwrap();
+    let compressed_flex = compress_frame(bytes);
+    let decompressed = decompress_frame(&compressed_flex).unwrap();
     assert_eq!(decompressed, bytes);
+
+    lz4_cpp_compatibility(bytes);
 }
 
 /// disabled in miri case
@@ -68,17 +83,26 @@ fn lz4_cpp_compatibility(_bytes: &[u8]) {}
 
 #[cfg(not(miri))]
 fn lz4_cpp_compatibility(bytes: &[u8]) {
-    let compressed_flex = compress(bytes);
-
     // compress with lz4 cpp, decompress with rust
-    let compressed = lz4_cpp_block_compress(bytes, None, false).unwrap();
+    let compressed = lz4_cpp_block_compress(bytes).unwrap();
     let decompressed = decompress(&compressed, bytes.len()).unwrap();
+    assert_eq!(decompressed, bytes);
+
+    // compress with rust, decompress with lz4 cpp
+    let compressed_flex = compress(bytes);
+    let decompressed = lz4_cpp_block_decompress(&compressed_flex, bytes.len()).unwrap();
+    assert_eq!(decompressed, bytes);
+
+    // Frame format
+    // compress with lz4 cpp, decompress with rust
+    let compressed = lz4_cpp_frame_compress(bytes).unwrap();
+    let decompressed = decompress_frame(&compressed).unwrap();
     assert_eq!(decompressed, bytes);
 
     if bytes.len() != 0 {
         // compress with rust, decompress with lz4 cpp
-        let decompressed =
-            lz4_cpp_block_decompress(&compressed_flex, Some(bytes.len() as i32)).unwrap();
+        let compressed_flex = compress_frame(bytes);
+        let decompressed = lz4_cpp_frame_decompress(&compressed_flex).unwrap();
         assert_eq!(decompressed, bytes);
     }
 }
@@ -89,18 +113,18 @@ fn yopa() {
     let compressed = compress(COMPRESSION10MB);
     decompress(&compressed, COMPRESSION10MB.len()).unwrap();
 
-    let cpp_compressed = lz4_cpp_block_compress(COMPRESSION10MB, None, false).unwrap();
+    let cpp_compressed = lz4_cpp_block_compress(COMPRESSION10MB).unwrap();
     decompress(&cpp_compressed, COMPRESSION10MB.len()).unwrap();
 
     let compressed = compress(COMPRESSION65);
     decompress(&compressed, COMPRESSION65.len()).unwrap();
 
-    lz4_cpp_block_compress(COMPRESSION65, None, false).unwrap();
+    lz4_cpp_block_compress(COMPRESSION65).unwrap();
 
     let compressed = compress(COMPRESSION34K);
     decompress(&compressed, COMPRESSION34K.len()).unwrap();
 
-    lz4_cpp_block_compress(COMPRESSION34K, None, false).unwrap();
+    lz4_cpp_block_compress(COMPRESSION34K).unwrap();
 
     lz4_rust_compress(COMPRESSION34K);
 }
@@ -144,7 +168,7 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
     let decompressed = decompress(&compressed, input.len()).unwrap();
     assert_eq!(decompressed, input);
 
-    let compressed = lz4_cpp_block_compress(input, None, false).unwrap();
+    let compressed = lz4_cpp_block_compress(input).unwrap();
     // println!("{:?}", compressed);
     println!(
         "Lz4 Cpp Compression Ratio {:?} {:?}",
@@ -425,7 +449,7 @@ mod test_compression {
     mod lz4_linked {
         use super::*;
         fn get_compressed_size(input: &[u8]) -> usize {
-            let output = lz4::block::compress(input, None, false).unwrap();
+            let output = lz4_cpp_block_compress(input).unwrap();
             output.len()
         }
 
@@ -444,25 +468,4 @@ mod test_compression {
             );
         }
     }
-}
-
-#[test]
-#[cfg_attr(miri, ignore)]
-fn test_compare_compress() {
-    let mut input: &[u8] = &[10, 12, 14, 16];
-
-    let mut cache = vec![];
-    let mut encoder = lz4::EncoderBuilder::new()
-        .level(2)
-        .build(&mut cache)
-        .unwrap();
-    // let mut read = *input;
-    std::io::copy(&mut input, &mut encoder).unwrap();
-    let (comp_lz4, _result) = encoder.finish();
-
-    println!("{:?}", comp_lz4);
-
-    let input: &[u8] = &[10, 12, 14, 16];
-    let out = compress(&input);
-    dbg!(&out);
 }

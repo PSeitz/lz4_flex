@@ -99,6 +99,11 @@ pub fn decompress_into_with_dict(
     output: &mut Vec<u8>,
     ext_dict: &[u8],
 ) -> Result<(), DecompressError> {
+    // TODO: move this up in the callstack so we can avoid
+    // initializing the table too.
+    if input.is_empty() {
+        return Ok(());
+    }
     // Decode into our vector.
     let mut input_pos = 0;
     // let mut output_ptr = output.as_mut_ptr();

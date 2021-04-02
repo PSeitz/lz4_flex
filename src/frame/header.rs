@@ -12,7 +12,7 @@ use std::{
 
 mod flags {
     pub const VERSION_MASK: u8 = 0b11000000;
-    pub const SUPPORTED_VERSION: u8 = 0b11000000;
+    pub const SUPPORTED_VERSION: u8 = 0b01000000;
     pub const BLOCK_SIZE_MASK: u8 = 0b01110000;
     pub const BLOCK_SIZE_MASK_RSHIFT: u8 = 4;
 
@@ -22,7 +22,7 @@ mod flags {
     pub const CONTENT_CHECKSUM: u8 = 0b00000100;
     pub const DICTIONARY_ID: u8 = 0b00000001;
 
-    pub const UNCOMPRESSED_SIZE: u32 = 0xF0000000;
+    pub const UNCOMPRESSED_SIZE: u32 = 0x80000000;
 
     pub const MAGIC_NUMBER: u32 = 0x184D2204;
     pub const SKIPPABLE_MAGIC: std::ops::RangeInclusive<u32> = 0x184D2A50..=0x184D2A5F;
@@ -166,23 +166,23 @@ impl FrameInfo {
         if self.block_mode == BlockMode::Independent {
             buffer[4] |= flags::INDEPENDENT_BLOCKS;
         }
+        let mut offset = 6;
         if let Some(size) = self.content_size {
             buffer[4] |= flags::CONTENT_SIZE;
-            buffer[6..6 + 8].copy_from_slice(&size.to_le_bytes());
+            buffer[offset..offset + 8].copy_from_slice(&size.to_le_bytes());
+            offset += 8;
         }
         if let Some(dict_id) = self.dict_id {
             buffer[4] |= flags::DICTIONARY_ID;
-            let offset = if self.content_size.is_some() {
-                6 + 8
-            } else {
-                6
-            };
             buffer[offset..offset + 4].copy_from_slice(&dict_id.to_le_bytes());
+            offset += 4;
         }
         let mut hasher = XxHash32::with_seed(0);
-        hasher.write(&buffer[..write_size - 1]);
+        hasher.write(&buffer[4..offset]);
         let checksum = (hasher.finish() >> 8) as u8;
-        buffer[write_size - 1] = checksum;
+        buffer[offset] = checksum;
+        offset += 1;
+        debug_assert_eq!(offset, write_size);
         output[..write_size].copy_from_slice(&buffer[..write_size]);
         Ok(write_size)
     }
@@ -191,12 +191,12 @@ impl FrameInfo {
         let original_input = input;
         // 4 byte Magic
         let magic_num = {
-            let mut buffer = [0u8; size_of::<u32>()];
+            let mut buffer = [0u8; 4];
             input.read_exact(&mut buffer)?;
             u32::from_le_bytes(buffer)
         };
         if flags::SKIPPABLE_MAGIC.contains(&magic_num) {
-            let mut buffer = [0u8; size_of::<u32>()];
+            let mut buffer = [0u8; 4];
             input.read_exact(&mut buffer)?;
             let user_data_len = u32::from_le_bytes(buffer.try_into().unwrap());
             return Err(Error::SkippableFrame(user_data_len));
@@ -237,14 +237,14 @@ impl FrameInfo {
         // var len section
         let mut content_size = None;
         if flag_byte & flags::CONTENT_SIZE != 0 {
-            let mut buffer = [0u8; size_of::<u64>()];
+            let mut buffer = [0u8; 8];
             input.read_exact(&mut buffer).unwrap();
             content_size = Some(u64::from_le_bytes(buffer.try_into().unwrap()));
         }
 
         let mut dict_id = None;
         if flag_byte & flags::DICTIONARY_ID != 0 {
-            let mut buffer = [0u8; size_of::<u32>()];
+            let mut buffer = [0u8; 4];
             input.read_exact(&mut buffer)?;
             dict_id = Some(u32::from_le_bytes(buffer.try_into().unwrap()));
         }
@@ -256,7 +256,7 @@ impl FrameInfo {
             buffer[0]
         };
         let mut hasher = XxHash32::with_seed(0);
-        hasher.write(&original_input[..original_input.len() - input.len() - 1]);
+        hasher.write(&original_input[4..original_input.len() - input.len() - 1]);
         let header_hash = (hasher.finish() >> 8) as u8;
         if header_hash != expected_checksum {
             return Err(Error::HeaderChecksumError);
@@ -282,7 +282,7 @@ pub(crate) enum BlockInfo {
 
 impl BlockInfo {
     pub(crate) fn read(mut input: &[u8]) -> Result<Self, Error> {
-        let mut size_buffer = [0u8; size_of::<u32>()];
+        let mut size_buffer = [0u8; 4];
         input.read_exact(&mut size_buffer)?;
         let size = u32::from_le_bytes(size_buffer.try_into().unwrap());
         if size == 0 {
