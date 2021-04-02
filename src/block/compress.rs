@@ -421,8 +421,7 @@ fn compress_internal<T: HashTable>(
         dict.put_at(hash, cur - 2 + ext_dict.len());
 
         let token = token_from_literal_and_match_length(lit_len, duplicate_length);
-        // TODO: return error
-        assert!(output_len + 1 + 8 + lit_len + 2 + 8 < output.len());
+
         // Push the token to the output stream.
         push_byte(output, &mut output_len, token);
         // If we were unable to fit the literals length into the token, write the extensional

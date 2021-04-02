@@ -53,7 +53,8 @@ use core::{fmt, ptr};
 const MFLIMIT: usize = 12;
 
 /// The last 5 bytes of input are always literals. Therefore, the last sequence contains at least 5 bytes.
-const END_OFFSET: usize = 5;
+// FIXME: 7 otherwise hashing may read beyond bounds on 64 bit systems.
+const END_OFFSET: usize = 7;
 
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
 /// Minimum length of a block
