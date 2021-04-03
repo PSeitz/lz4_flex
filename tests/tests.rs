@@ -25,8 +25,11 @@ fn lz4_cpp_block_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
 }
 
 fn lz4_cpp_frame_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
+    let pref = lzzzz::lz4f::PreferencesBuilder::new()
+        .block_mode(lzzzz::lz4f::BlockMode::Independent)
+        .build();
     let mut out = Vec::new();
-    lzzzz::lz4f::compress_to_vec(input, &mut out, &lzzzz::lz4f::Preferences::default()).unwrap();
+    lzzzz::lz4f::compress_to_vec(input, &mut out, &pref).unwrap();
     Ok(out)
 }
 
@@ -105,28 +108,6 @@ fn lz4_cpp_compatibility(bytes: &[u8]) {
         let decompressed = lz4_cpp_frame_decompress(&compressed_flex).unwrap();
         assert_eq!(decompressed, bytes);
     }
-}
-
-#[test]
-#[cfg_attr(miri, ignore)]
-fn yopa() {
-    let compressed = compress(COMPRESSION10MB);
-    decompress(&compressed, COMPRESSION10MB.len()).unwrap();
-
-    let cpp_compressed = lz4_cpp_block_compress(COMPRESSION10MB).unwrap();
-    decompress(&cpp_compressed, COMPRESSION10MB.len()).unwrap();
-
-    let compressed = compress(COMPRESSION65);
-    decompress(&compressed, COMPRESSION65.len()).unwrap();
-
-    lz4_cpp_block_compress(COMPRESSION65).unwrap();
-
-    let compressed = compress(COMPRESSION34K);
-    decompress(&compressed, COMPRESSION34K.len()).unwrap();
-
-    lz4_cpp_block_compress(COMPRESSION34K).unwrap();
-
-    lz4_rust_compress(COMPRESSION34K);
 }
 
 #[test]
@@ -406,6 +387,11 @@ fn big_compression() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore)]
+fn test_text_10mb() {
+    inverse(COMPRESSION10MB);
+}
+#[test]
 fn test_json_66k() {
     inverse(COMPRESSION66JSON);
 }
@@ -416,6 +402,11 @@ fn test_text_65k() {
 #[test]
 fn test_text_34k() {
     inverse(COMPRESSION34K);
+}
+
+#[test]
+fn test_text_1k() {
+    inverse(COMPRESSION1K);
 }
 
 #[cfg(test)]

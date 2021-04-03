@@ -1,7 +1,6 @@
 extern crate criterion;
 
 use self::criterion::*;
-use lz4::block::compress as lz4_linked_block_compress;
 use lz_fear::raw::compress2;
 use lz_fear::raw::decompress_raw;
 use lz_fear::raw::U16Table;
@@ -20,6 +19,13 @@ const ALL: &[&[u8]] = &[
     // COMPRESSION66K as &[u8],
     // COMPRESSION95K_VERY_GOOD_LOGO as &[u8],
 ];
+
+
+fn lz4_linked_block_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
+    let mut out = Vec::new();
+    lzzzz::lz4::compress_to_vec(input, &mut out, lzzzz::lz4::ACC_LEVEL_DEFAULT).unwrap();
+    Ok(out)
+}
 
 fn compress_lz4_fear(input: &[u8]) -> Vec<u8> {
     let mut buf = Vec::new();
@@ -62,12 +68,12 @@ fn bench_compression_throughput(c: &mut Criterion) {
         // );
 
         // group.bench_with_input(BenchmarkId::new("lz4_cpp", input_bytes), &input, |b, i| {
-        //     b.iter(|| lz4_linked_block_compress(&i, None, false))
+        //     b.iter(|| lz4_linked_block_compress(&i))
         // });
 
-        group.bench_with_input(BenchmarkId::new("snap", input_bytes), &input, |b, i| {
-            b.iter(|| compress_snap(&i))
-        });
+        // group.bench_with_input(BenchmarkId::new("snap", input_bytes), &input, |b, i| {
+        //     b.iter(|| compress_snap(&i))
+        // });
     }
 
     group.finish();
@@ -83,6 +89,12 @@ pub fn decompress_snap(input: &[u8]) -> Vec<u8> {
     snap::raw::Decoder::new().decompress_vec(input).unwrap()
 }
 
+fn lz4_cpp_block_decompress(input: &[u8], decomp_len: usize) -> Result<Vec<u8>, lzzzz::Error> {
+    let mut out = vec![0u8; decomp_len];
+    lzzzz::lz4::decompress(input, &mut out)?;
+    Ok(out)
+}
+
 fn bench_decompression_throughput(c: &mut Criterion) {
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Linear);
 
@@ -96,7 +108,7 @@ fn bench_decompression_throughput(c: &mut Criterion) {
         // let comp_fear_rust = compress_lz4_fear(&input);
         // let comp_rust = lz4_compress::compress(&input);
 
-        let comp_lz4 = lz4::block::compress(&input, None, false).unwrap();
+        let comp_lz4 = lz4_linked_block_compress(&input).unwrap();
         group.throughput(Throughput::Bytes(comp_lz4.len() as _));
 
         group.bench_with_input(
@@ -120,17 +132,17 @@ fn bench_decompression_throughput(c: &mut Criterion) {
         //     &comp_lz4,
         //     |b, i| {
         //         b.iter(|| {
-        //             let output = lz4::block::decompress(&i, Some(input.len() as i32));
+        //             let output = lz4_cpp_block_decompress(&i, input.len());
         //             output
         //         })
         //     },
         // );
 
-        let comp_snap = compress_snap(&input);
-        group.throughput(Throughput::Bytes(comp_snap.len() as _));
-        group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
-            b.iter(|| decompress_snap(&i))
-        });
+        // let comp_snap = compress_snap(&input);
+        // group.throughput(Throughput::Bytes(comp_snap.len() as _));
+        // group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
+        //     b.iter(|| decompress_snap(&i))
+        // });
     }
 
     group.finish();

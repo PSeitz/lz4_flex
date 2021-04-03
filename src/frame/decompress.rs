@@ -1,3 +1,4 @@
+use core::str;
 use std::{convert::TryInto, fmt, hash::Hasher, io, mem::size_of};
 use twox_hash::XxHash32;
 
@@ -23,6 +24,11 @@ pub struct FrameDecoder<R: io::Read> {
     /// The decompressed bytes buffer. Bytes are decompressed from src to dst
     /// before being passed back to the caller.
     dst: Vec<u8>,
+    /// Holds previous dst, only used during linked
+    saved_dst_offset: usize,
+    saved_dst_len: usize,
+    /// How many bytes where uncompressed
+    stream_offset: usize,
     /// Index into dst: starting point of bytes not yet given back to caller.
     dsts: usize,
     /// Index into dst: ending point of bytes not yet given back to caller.
@@ -42,6 +48,9 @@ impl<R: io::Read> FrameDecoder<R> {
             // dec: Decoder::new(),
             src: Default::default(),
             dst: Default::default(),
+            saved_dst_offset: 0,
+            saved_dst_len: 0,
+            stream_offset: 0,
             dsts: 0,
             dste: 0,
             frame_info: None,
@@ -74,11 +83,14 @@ impl<R: io::Read> FrameDecoder<R> {
             self.r.read_exact(&mut buffer[7..required])?;
         }
         let frame_info = FrameInfo::read(&buffer[..required])?;
-        self.dst.resize(frame_info.block_size.get_size(), 0);
         self.src.resize(frame_info.block_size.get_size(), 0);
+        let mut dst_size = frame_info.block_size.get_size();
         if frame_info.block_mode == BlockMode::Linked {
             return Err(Error::LinkedBlocksNotSupported.into());
+
+            dst_size = dst_size * 2 + 64 * 1024;
         }
+        self.dst.resize(dst_size, 0);
         self.frame_info = Some(frame_info);
         Ok(required)
     }
@@ -113,6 +125,7 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                 self.dsts = dste;
                 return Ok(len);
             }
+
             let block_info = {
                 let mut buffer = [0u8; 4];
                 self.r.read_exact(&mut buffer)?;
@@ -121,6 +134,9 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
             match block_info {
                 BlockInfo::Uncompressed(len) => {
                     let len = len as usize;
+                    if len > self.src.len() {
+                        return Err(Error::BlockTooBig.into());
+                    }
                     self.r.read_exact(&mut self.dst[..len])?;
                     if self.frame_info.as_ref().unwrap().block_checksums {
                         let expected_checksum = self.read_checksum()?;
@@ -128,6 +144,7 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                     }
                     self.dsts = 0;
                     self.dste = len;
+                    self.stream_offset += len;
                 }
                 BlockInfo::Compressed(len) => {
                     let len = len as usize;
@@ -139,12 +156,12 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                         let expected_checksum = self.read_checksum()?;
                         self.check_block_checksum(&self.src[..len], expected_checksum)?;
                     }
-                    let dst =
-                        crate::block::decompress::decompress(&self.src[..len], self.dst.len())
+                    let decomp_size =
+                        crate::block::decompress::decompress_into(&self.src[..len], &mut self.dst)
                             .map_err(Error::DecompressionError)?;
-                    self.dst[..dst.len()].copy_from_slice(&dst[..]);
                     self.dsts = 0;
-                    self.dste = dst.len();
+                    self.dste = decomp_size;
+                    self.stream_offset += decomp_size;
                 }
 
                 BlockInfo::EndMark => {

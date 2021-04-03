@@ -215,9 +215,7 @@ impl FrameInfo {
 
         if flg_byte & FLG_VERSION_MASK != FLG_SUPPORTED_VERSION_BITS {
             // version is always 01
-            return Err(Error::UnsupportedVersion(
-                flg_byte & FLG_VERSION_MASK,
-            ));
+            return Err(Error::UnsupportedVersion(flg_byte & FLG_VERSION_MASK));
         }
 
         if flg_byte & FLG_RESERVED_MASK != 0 || bd_byte & BD_RESERVED_MASK != 0 {
@@ -232,15 +230,14 @@ impl FrameInfo {
         let content_checksum = flg_byte & FLG_CONTENT_CHECKSUM != 0;
         let block_checksums = flg_byte & FLG_BLOCK_CHECKSUMS != 0;
 
-        let block_size =
-            match (bd_byte & BD_BLOCK_SIZE_MASK) >> BD_BLOCK_SIZE_MASK_RSHIFT {
-                i @ 0..=3 => return Err(Error::UnimplementedBlocksize(i)),
-                4 => BlockSize::Max64KB,
-                5 => BlockSize::Max256KB,
-                6 => BlockSize::Max1MB,
-                7 => BlockSize::Max4MB,
-                _ => unreachable!(),
-            };
+        let block_size = match (bd_byte & BD_BLOCK_SIZE_MASK) >> BD_BLOCK_SIZE_MASK_RSHIFT {
+            i @ 0..=3 => return Err(Error::UnimplementedBlocksize(i)),
+            4 => BlockSize::Max64KB,
+            5 => BlockSize::Max256KB,
+            6 => BlockSize::Max1MB,
+            7 => BlockSize::Max4MB,
+            _ => unreachable!(),
+        };
 
         // var len section
         let mut content_size = None;
@@ -296,9 +293,7 @@ impl BlockInfo {
         if size == 0 {
             Ok(BlockInfo::EndMark)
         } else if size & BLOCK_UNCOMPRESSED_SIZE_BIT != 0 {
-            Ok(BlockInfo::Uncompressed(
-                size & !BLOCK_UNCOMPRESSED_SIZE_BIT,
-            ))
+            Ok(BlockInfo::Uncompressed(size & !BLOCK_UNCOMPRESSED_SIZE_BIT))
         } else {
             Ok(BlockInfo::Compressed(size))
         }

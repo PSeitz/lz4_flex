@@ -325,6 +325,7 @@ fn compress_internal<T: HashTable>(
     output: &mut [u8],
     dict: &mut T,
     ext_dict: &[u8],
+    stream_offset: usize,
 ) -> std::io::Result<usize> {
     assert!(ext_dict.len() < u16::MAX as usize);
     assert!(LZ4_MIN_LENGTH > END_OFFSET);
@@ -338,7 +339,7 @@ fn compress_internal<T: HashTable>(
     let mut cur;
     let mut literal_start = 0;
 
-    if ext_dict.is_empty() {
+    if stream_offset == 0 {
         // According to the spec we can't start with a match,
         // except when referencing another block.
         let hash = get_hash_at(input, 0);
@@ -375,7 +376,7 @@ fn compress_internal<T: HashTable>(
             // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
             let hash = get_hash_at(input, cur);
             candidate = dict.get_at(hash);
-            dict.put_at(hash, cur + ext_dict.len());
+            dict.put_at(hash, cur + stream_offset);
 
             // Two requirements to the candidate exists:
             // - We should not return a position which is merely a hash collision, so w that the
@@ -386,13 +387,13 @@ fn compress_internal<T: HashTable>(
                 continue;
             }
 
-            if candidate >= ext_dict.len() {
-                candidate -= ext_dict.len();
+            if candidate >= stream_offset {
+                candidate -= stream_offset;
                 candidate_source = input;
                 offset = (cur - candidate) as u16;
             } else {
                 candidate_source = ext_dict;
-                offset = (ext_dict.len() + cur - candidate) as u16;
+                offset = (stream_offset + cur - candidate) as u16;
             }
 
             if get_batch(candidate_source, candidate) == get_batch(input, cur) {
@@ -418,7 +419,7 @@ fn compress_internal<T: HashTable>(
             count_same_bytes(input, &mut cur, candidate_source, candidate + MINMATCH);
 
         let hash = get_hash_at(input, cur - 2);
-        dict.put_at(hash, cur - 2 + ext_dict.len());
+        dict.put_at(hash, cur - 2 + stream_offset);
 
         let token = token_from_literal_and_match_length(lit_len, duplicate_length);
 
@@ -544,15 +545,33 @@ pub fn compress_into_with_dict(input: &[u8], compressed: &mut Vec<u8>, dict_data
     let compressed_len = if dict_data.len() + input.len() < u16::MAX as usize {
         let mut dict = HashTableU16::new(dict_size, dict_bitshift);
         init_dict(&mut dict, dict_data);
-        compress_internal(input, &mut compressed[start_len..], &mut dict, dict_data)
+        compress_internal(
+            input,
+            &mut compressed[start_len..],
+            &mut dict,
+            dict_data,
+            dict_data.len(),
+        )
     } else if dict_data.len() + input.len() < u32::MAX as usize {
         let mut dict = HashTableU32::new(dict_size, dict_bitshift);
         init_dict(&mut dict, dict_data);
-        compress_internal(input, &mut compressed[start_len..], &mut dict, dict_data)
+        compress_internal(
+            input,
+            &mut compressed[start_len..],
+            &mut dict,
+            dict_data,
+            dict_data.len(),
+        )
     } else {
         let mut dict = HashTableUsize::new(dict_size, dict_bitshift);
         init_dict(&mut dict, dict_data);
-        compress_internal(input, &mut compressed[start_len..], &mut dict, dict_data)
+        compress_internal(
+            input,
+            &mut compressed[start_len..],
+            &mut dict,
+            dict_data,
+            dict_data.len(),
+        )
     }
     .unwrap();
     compressed.truncate(start_len + compressed_len);
@@ -726,12 +745,13 @@ mod tests {
         let input: &[u8] = &[
             10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
         ];
-        let mut out = Vec::new();
-        compress_into_with_dict(&input, &mut out, &input);
-        let mut trip = Vec::new();
-        crate::block::decompress::decompress_into_with_dict(&out, &mut trip, &input).unwrap();
-        assert_eq!(input, trip);
-        assert!(out.len() < compress(input).len());
+        let mut compressed = Vec::new();
+        compress_into_with_dict(&input, &mut compressed, &input);
+        let mut uncompressed = vec![0u8; input.len()];
+        crate::block::decompress::decompress_into_with_dict(&compressed, &mut uncompressed, &input)
+            .unwrap();
+        assert_eq!(input, uncompressed);
+        assert!(compressed.len() < compress(input).len());
     }
 
     // From the spec:

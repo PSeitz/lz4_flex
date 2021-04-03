@@ -76,44 +76,27 @@ fn is_safe_distance(input_pos: usize, in_len: usize) -> bool {
     input_pos < in_len
 }
 
-/// We copy 24 byte blocks, because aligned copies are faster
-const BLOCK_COPY_SIZE: usize = 24;
-
-#[cold]
-fn copy_24(output: &mut Vec<u8>, offset: usize) {
-    let mut dst = [0u8; BLOCK_COPY_SIZE];
-    let i = output.len() - offset;
-    dst.copy_from_slice(&output[i..i + BLOCK_COPY_SIZE]);
-    output.extend_from_slice(&dst);
-}
-
 /// Decompress all bytes of `input` into `output`.
 #[inline]
-pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), DecompressError> {
+pub fn decompress_into(input: &[u8], output: &mut [u8]) -> Result<usize, DecompressError> {
     decompress_into_with_dict(input, output, b"")
 }
 
 #[inline]
 pub fn decompress_into_with_dict(
     input: &[u8],
-    output: &mut Vec<u8>,
+    output: &mut [u8],
     ext_dict: &[u8],
-) -> Result<(), DecompressError> {
+) -> Result<usize, DecompressError> {
     // TODO: move this up in the callstack so we can avoid
     // initializing the table too.
     if input.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
     // Decode into our vector.
     let mut input_pos = 0;
-    // let mut output_ptr = output.as_mut_ptr();
+    let mut output_len = 0;
 
-    // #[cfg(feature = "safe-decode")]
-    // let output_start = output_ptr as usize;
-
-    if input.is_empty() {
-        return Err(DecompressError::ExpectedAnotherByte);
-    }
     // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer
     // is empty.
     let in_len = input.len() - 1;
@@ -122,7 +105,7 @@ pub fn decompress_into_with_dict(
     loop {
         if input.len() < input_pos + 1 {
             return Err(DecompressError::LiteralOutOfBounds);
-        };
+        }
 
         // Read the token. The token is the first byte in a block. It is divided into two 4-bit
         // subtokens, the higher and the lower.
@@ -140,10 +123,12 @@ pub fn decompress_into_with_dict(
 
             if input.len() < input_pos + literal_length {
                 return Err(DecompressError::LiteralOutOfBounds);
-            };
+            }
 
             // copy literal
-            output.extend_from_slice(&input[input_pos..input_pos + literal_length]);
+            output[output_len..output_len + literal_length]
+                .copy_from_slice(&input[input_pos..input_pos + literal_length]);
+            output_len += literal_length;
             input_pos += literal_length;
 
             let offset = read_u16(input, &mut input_pos) as usize;
@@ -152,24 +137,25 @@ pub fn decompress_into_with_dict(
 
             // Write the duplicate segment to the output buffer from the output buffer
             // The blocks can overlap, make sure they are at least BLOCK_COPY_SIZE apart
-            if ext_dict.is_empty() && offset > output.len() {
-                copy_from_dict(output, ext_dict, offset, match_length)?;
-            } else if match_length + BLOCK_COPY_SIZE >= offset {
-                duplicate_overlapping_slice(output, offset, match_length)?;
+            if !ext_dict.is_empty() && offset > output_len {
+                copy_from_dict(output, &mut output_len, ext_dict, offset, match_length)?;
+            } else if match_length + 24 >= offset {
+                duplicate_overlapping_slice(output, &mut output_len, offset, match_length)?;
             } else {
-                let old_len = output.len();
-                if match_length <= 16 {
-                    let mut dst = [0u8; 16];
-                    let (start, did_overflow) = output.len().overflowing_sub(offset);
-                    if did_overflow {
-                        return Err(DecompressError::OffsetOutOfBounds);
-                    }
-                    dst.copy_from_slice(&output[start..start + 16]);
-                    output.extend_from_slice(&dst);
-                } else {
-                    copy_24(output, offset)
+                let (start, did_overflow) = output_len.overflowing_sub(offset);
+                if did_overflow {
+                    return Err(DecompressError::OffsetOutOfBounds);
                 }
-                output.truncate(old_len + match_length);
+                if output_len + 24 < output.len() {
+                    if match_length <= 16 {
+                        output.copy_within(start..start + 16, output_len);
+                    } else {
+                        output.copy_within(start..start + 24, output_len);
+                    }
+                } else {
+                    output.copy_within(start..start + match_length, output_len)
+                }
+                output_len += match_length;
             }
 
             continue;
@@ -188,8 +174,10 @@ pub fn decompress_into_with_dict(
 
             if input.len() < input_pos + literal_length {
                 return Err(DecompressError::LiteralOutOfBounds);
-            };
-            output.extend_from_slice(&input[input_pos..input_pos + literal_length]);
+            }
+            output[output_len..output_len + literal_length]
+                .copy_from_slice(&input[input_pos..input_pos + literal_length]);
+            output_len += literal_length;
             input_pos += literal_length;
         }
 
@@ -215,54 +203,68 @@ pub fn decompress_into_with_dict(
             match_length += read_integer(input, &mut input_pos) as usize;
         }
 
-        if !ext_dict.is_empty() && offset > output.len() {
-            copy_from_dict(output, ext_dict, offset, match_length)?;
+        if !ext_dict.is_empty() && offset > output_len {
+            copy_from_dict(output, &mut output_len, ext_dict, offset, match_length)?;
         } else {
             // We now copy from the already decompressed buffer. This allows us for storing duplicates
             // by simply referencing the other location.
-            duplicate_slice(output, offset, match_length)?;
+            duplicate_slice(output, &mut output_len, offset, match_length)?;
         }
     }
-    Ok(())
+    Ok(output_len)
 }
 
 #[inline]
 fn copy_from_dict(
-    output: &mut Vec<u8>,
+    output: &mut [u8],
+    output_len: &mut usize,
     ext_dict: &[u8],
     offset: usize,
     match_length: usize,
 ) -> Result<(), DecompressError> {
-    let (start, did_overflow_1) = ext_dict.len().overflowing_sub(offset - output.len());
+    let (start, did_overflow_1) = ext_dict.len().overflowing_sub(offset - *output_len);
     let (end, did_overflow_2) = start.overflowing_add(match_length);
     if did_overflow_1 || did_overflow_2 || end > ext_dict.len() {
         return Err(DecompressError::OffsetOutOfBounds);
     }
-    output.extend_from_slice(&ext_dict[start..end]);
+    let (output_end, did_overflow) = output_len.overflowing_add(match_length);
+    if did_overflow || output_end > output.len() {
+        return Err(DecompressError::OutputTooSmall {
+            actual_size: 0,
+            expected_size: 0,
+        });
+    }
+    output[*output_len..output_end].copy_from_slice(&ext_dict[start..end]);
+    *output_len += match_length;
     Ok(())
 }
 
 /// extends output by self-referential copies
 #[inline]
 fn duplicate_slice(
-    output: &mut Vec<u8>,
+    output: &mut [u8],
+    output_len: &mut usize,
     offset: usize,
     match_length: usize,
 ) -> Result<(), DecompressError> {
     if match_length + 16 >= offset {
-        duplicate_overlapping_slice(output, offset, match_length)?;
+        duplicate_overlapping_slice(output, output_len, offset, match_length)?;
     } else {
-        let old_len = output.len();
-        let mut dst = [0u8; 16];
-        let (val, did_overflow) = output.len().overflowing_sub(offset);
+        let (start, did_overflow) = (*output_len).overflowing_sub(offset);
         if did_overflow {
             return Err(DecompressError::OffsetOutOfBounds);
         }
-        for i in (val..val + match_length).step_by(16) {
-            dst.copy_from_slice(&output[i..i + 16]);
-            output.extend_from_slice(&dst);
+        if *output_len + match_length + 16 < output.len() {
+            let new_size = *output_len + match_length;
+            for i in (start..start + match_length).step_by(16) {
+                output.copy_within(i..i + 16, *output_len);
+                *output_len += 16;
+            }
+            *output_len = new_size;
+        } else {
+            output.copy_within(start..start + match_length, *output_len);
+            *output_len += match_length;
         }
-        output.truncate(old_len + match_length);
     }
     Ok(())
 }
@@ -270,15 +272,19 @@ fn duplicate_slice(
 /// self-referential copy for the case data start (end of output - offset) + match_length overlaps into output
 #[inline]
 fn duplicate_overlapping_slice(
-    output: &mut Vec<u8>,
+    output: &mut [u8],
+    output_len: &mut usize,
     offset: usize,
     match_length: usize,
 ) -> Result<(), DecompressError> {
     if offset == 1 {
-        output.resize(output.len() + match_length, output[output.len() - 1]);
-        Ok(())
+        let byte = output[*output_len - 1];
+        for b in &mut output[*output_len..*output_len + match_length] {
+            *b = byte;
+        }
+        *output_len += match_length;
     } else {
-        let (start, did_overflow) = output.len().overflowing_sub(offset);
+        let (start, did_overflow) = (*output_len).overflowing_sub(offset);
         if did_overflow {
             return Err(DecompressError::OffsetOutOfBounds);
         }
@@ -289,11 +295,11 @@ fn duplicate_overlapping_slice(
             }
         }
         for i in start..start + match_length {
-            let b = output[i];
-            output.push(b);
+            output[*output_len] = output[i];
+            *output_len += 1;
         }
-        Ok(())
     }
+    Ok(())
 }
 
 /// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in litte endian.
@@ -301,19 +307,21 @@ fn duplicate_overlapping_slice(
 #[inline]
 pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressError> {
     let (uncompressed_size, input) = super::uncompressed_size(input)?;
-    // Allocate a vector to contain the decompressed stream.
-    let mut vec = Vec::with_capacity(uncompressed_size);
-    decompress_into(input, &mut vec)?;
-
-    Ok(vec)
+    decompress(input, uncompressed_size)
 }
 
 /// Decompress all bytes of `input` into a new vec.
 #[inline]
 pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
     // Allocate a vector to contain the decompressed stream.
-    let mut vec = Vec::with_capacity(uncompressed_size);
-    decompress_into(input, &mut vec)?;
+    let mut vec = vec![0; uncompressed_size];
+    let decomp_len = decompress_into(input, &mut vec)?;
+    if decomp_len != uncompressed_size {
+        return Err(DecompressError::OutputSizeDiffers {
+            expected_size: uncompressed_size,
+            actual_size: decomp_len,
+        });
+    }
     Ok(vec)
 }
 
