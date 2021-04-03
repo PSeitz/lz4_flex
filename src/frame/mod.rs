@@ -16,6 +16,7 @@ pub enum Error {
     UnsupportedVersion(u8),
     IoError(io::Error),
     WrongMagicNumber,
+    ReservedBitsSet,
     ContentChecksumError,
     BlockChecksumError,
     HeaderChecksumError,
