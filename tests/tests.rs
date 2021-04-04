@@ -26,7 +26,7 @@ fn lz4_cpp_block_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
 
 fn lz4_cpp_frame_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
     let pref = lzzzz::lz4f::PreferencesBuilder::new()
-        .block_mode(lzzzz::lz4f::BlockMode::Independent)
+        .block_mode(lzzzz::lz4f::BlockMode::Linked)
         .build();
     let mut out = Vec::new();
     lzzzz::lz4f::compress_to_vec(input, &mut out, &pref).unwrap();

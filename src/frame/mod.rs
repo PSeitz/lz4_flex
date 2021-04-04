@@ -18,6 +18,7 @@ pub enum Error {
     WrongMagicNumber,
     ReservedBitsSet,
     ContentChecksumError,
+    ContentLengthError { expected: u64, actual: u64 },
     BlockChecksumError,
     HeaderChecksumError,
     BlockTooBig,

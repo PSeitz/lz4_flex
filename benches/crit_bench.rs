@@ -20,7 +20,6 @@ const ALL: &[&[u8]] = &[
     // COMPRESSION95K_VERY_GOOD_LOGO as &[u8],
 ];
 
-
 fn lz4_linked_block_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
     let mut out = Vec::new();
     lzzzz::lz4::compress_to_vec(input, &mut out, lzzzz::lz4::ACC_LEVEL_DEFAULT).unwrap();
@@ -130,12 +129,7 @@ fn bench_decompression_throughput(c: &mut Criterion) {
         // group.bench_with_input(
         //     BenchmarkId::new("lz4_cpp", input_bytes),
         //     &comp_lz4,
-        //     |b, i| {
-        //         b.iter(|| {
-        //             let output = lz4_cpp_block_decompress(&i, input.len());
-        //             output
-        //         })
-        //     },
+        //     |b, i| b.iter(|| lz4_cpp_block_decompress(&i, input.len())),
         // );
 
         // let comp_snap = compress_snap(&input);

@@ -1,15 +1,13 @@
 use std::{
-    convert::TryInto,
     fmt,
     hash::Hasher,
     io::{self, Write},
-    mem::size_of,
 };
 use twox_hash::XxHash32;
 
-use crate::{block, compress_into};
+use crate::compress_into;
 
-use super::header::{self, BlockInfo, BlockMode, FrameInfo, BLOCK_INFO_SIZE, MAX_FRAME_INFO_SIZE};
+use super::header::{BlockInfo, BlockMode, FrameInfo, BLOCK_INFO_SIZE, MAX_FRAME_INFO_SIZE};
 use super::Error;
 
 /// A writer for compressing a Snappy stream.
@@ -42,11 +40,7 @@ pub struct FrameEncoder<W: io::Write> {
 struct Inner<W> {
     /// The underlying writer.
     w: W,
-    /// An encoder that we reuse that does the actual block based compression.
-    // enc: Encoder,
-    /// A CRC32 checksummer that is configured to either use the portable
-    /// fallback version or the SSE4.2 accelerated version when the right CPU
-    /// features are available.
+    /// Xxhash32 used when content checksum is enabled.
     content_hasher: XxHash32,
     /// The compressed bytes buffer. Bytes are compressed from src (usually)
     /// to dst before being written to w.

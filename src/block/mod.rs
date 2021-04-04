@@ -42,6 +42,8 @@ pub use decompress::decompress_size_prepended;
 use core::convert::TryInto;
 use core::{fmt, ptr};
 
+pub(crate) const WINDOW_SIZE: usize = 64 * 1024;
+
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
 /// The last match must start at least 12 bytes before the end of block. The last match is part of the penultimate sequence.
 /// It is followed by the last sequence, which contains only literals.
@@ -132,9 +134,9 @@ pub enum DecompressError {
         expected_size: usize,
         actual_size: usize,
     },
-    OutputSizeDiffers {
-        expected_size: usize,
-        actual_size: usize,
+    UncompressedSizeDiffers {
+        expected: usize,
+        actual: usize,
     },
     /// Literal is out of bounds of the input
     LiteralOutOfBounds,
@@ -179,13 +181,10 @@ impl fmt::Display for DecompressError {
             DecompressError::OffsetOutOfBounds => {
                 f.write_str("the offset to copy is not contained in the decompressed buffer")
             }
-            DecompressError::OutputSizeDiffers {
-                expected_size,
-                actual_size,
-            } => write!(
+            DecompressError::UncompressedSizeDiffers { expected, actual } => write!(
                 f,
-                "the expected decompressed output size is {}, got {}",
-                expected_size, actual_size,
+                "the expected decompressed output size is {}, actual {}",
+                expected, actual,
             ),
         }
     }

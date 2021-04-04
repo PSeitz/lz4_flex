@@ -747,11 +747,44 @@ mod tests {
         ];
         let mut compressed = Vec::new();
         compress_into_with_dict(&input, &mut compressed, &input);
-        let mut uncompressed = vec![0u8; input.len()];
-        crate::block::decompress::decompress_into_with_dict(&compressed, &mut uncompressed, &input)
-            .unwrap();
-        assert_eq!(input, uncompressed);
         assert!(compressed.len() < compress(input).len());
+        let mut uncompressed = vec![0u8; input.len()];
+        crate::block::decompress::decompress_into_with_dict(
+            &compressed,
+            &mut uncompressed,
+            0,
+            &input,
+        )
+        .unwrap();
+        assert_eq!(input, uncompressed);
+    }
+
+    #[cfg(feature = "safe-decode")]
+    #[test]
+    fn test_dict_match_crossing() {
+        let input: &[u8] = &[
+            10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 1, 2,
+        ];
+        let mut compressed = Vec::new();
+        compress_into_with_dict(&input, &mut compressed, &input);
+        assert!(compressed.len() < compress(input).len());
+        let mut uncompressed = vec![0u8; input.len() * 2];
+        // copy second half of the dict into output
+        let dict_cutoff = input.len() / 2;
+        let output_start = input.len() - dict_cutoff;
+        uncompressed[..output_start].copy_from_slice(&input[dict_cutoff..]);
+        let uncomp_len = crate::block::decompress::decompress_into_with_dict(
+            &compressed,
+            &mut uncompressed,
+            output_start,
+            &input[..dict_cutoff],
+        )
+        .unwrap();
+        assert_eq!(input.len(), uncomp_len);
+        assert_eq!(
+            input,
+            &uncompressed[output_start..output_start + uncomp_len]
+        );
     }
 
     // From the spec:

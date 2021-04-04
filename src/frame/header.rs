@@ -7,7 +7,6 @@ use std::{
     hash::Hasher,
     io,
     io::{Read, Write},
-    mem::size_of,
 };
 
 const FLG_RESERVED_MASK: u8 = 0b00000010;
