@@ -14,6 +14,83 @@ use crate::block::MFLIMIT;
 use crate::block::MINMATCH;
 use alloc::vec::Vec;
 
+/// Sink is used as target to compress data into a preallocated space.
+/// It can be created from a `Vec` or a `Slice`
+/// # Examples
+/// ```
+/// use lz4_flex::block::compress::Sink;
+/// let mut data = Vec::new();
+/// data.resize(5, 0);
+/// let mut sink: Sink = (&mut data).into();
+/// ```
+pub struct Sink<'a>{
+    output: &'a mut[u8],
+    pos: usize
+}
+
+impl<'a> From<&'a mut Vec<u8>> for Sink<'a> {
+    fn from(vec: &'a mut Vec<u8>) -> Self {
+        Sink{
+            output: vec,
+            pos: 0
+        }
+    }
+}
+
+impl<'a> From<&'a mut [u8]> for Sink<'a> {
+    fn from(vec: &'a mut [u8]) -> Self {
+        Sink{
+            output: vec,
+            pos: 0
+        }
+    }
+}
+
+impl<'a> Sink<'a> {
+    #[cfg(feature = "safe-encode")]
+    #[inline]
+    fn push(&mut self, byte: u8){
+        self.output[self.pos] = byte;
+        self.pos += 1;
+    }
+   
+    #[inline]
+    fn extend_from_slice(&mut self, data: &[u8]){
+        self.output[self.pos .. self.pos + data.len()].copy_from_slice(data);   
+        self.pos += data.len();
+    }
+
+    #[inline]
+    #[cfg(not(feature = "safe-encode"))]
+    fn as_mut_ptr(&mut self) -> *mut u8{
+        unsafe{self.output.as_mut_ptr().add(self.pos)}
+    }
+    pub fn get_data(&self) -> &[u8]{
+       &self.output[0..self.pos] 
+    }
+    #[inline]
+    pub fn len(&self) -> usize{
+        self.pos
+    }
+    #[inline]
+    #[cfg(not(feature = "safe-encode"))]
+    fn set_len(&mut self, len: usize) {
+        self.pos = len;
+    }
+}
+
+#[test]
+fn test_sink() {
+    let mut data = Vec::new();
+    data.resize(5, 0);
+    let mut sink: Sink = (&mut data).into();
+    assert_eq!(sink.get_data(), &[]);
+    assert_eq!(sink.len(), 0);
+    sink.extend_from_slice(&[1,2,3]);
+    assert_eq!(sink.get_data(), &[1,2,3]);
+    assert_eq!(sink.len(), 3);
+}
+
 #[cfg(feature = "safe-encode")]
 use core::convert::TryInto;
 
@@ -249,7 +326,7 @@ fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
 /// Write an integer to the output in LSIC format.
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn write_integer(output: &mut Vec<u8>, mut n: usize) {
+fn write_integer(output: &mut Sink, mut n: usize) {
     while n >= 0xFF {
         n -= 0xFF;
         push_byte(output, 0xFF);
@@ -262,30 +339,29 @@ fn write_integer(output: &mut Vec<u8>, mut n: usize) {
 /// Write an integer to the output in LSIC format.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn write_integer(output: &mut Vec<u8>, mut n: usize) {
+fn write_integer(output: &mut Sink, mut n: usize) {
     // Write the 0xFF bytes as long as the integer is higher than said value.
     push_u32(output, 0xFFFFFFFF);
     while n >= 4 * 0xFF {
         n -= 4 * 0xFF;
-        unsafe{output.set_len(output.len() + 4);}
+        output.set_len(output.len() + 4);
         push_u32(output, 0xFFFFFFFF);
     }
 
     // Updating output len for the remainder
-    unsafe{output.set_len(output.len() + 1 + n / 255);}
-    let last_index = output.len() - 1;
+    output.set_len(output.len() + 1 + n / 255);
     unsafe{
         // Write the remaining byte.
-        *output.get_unchecked_mut(last_index) = (n % 255) as u8;
+        *output.as_mut_ptr().sub(1) = (n % 255) as u8;
     };
 
 }
 
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn push_u32(output: &mut Vec<u8>, el: u32) {
+fn push_u32(output: &mut Sink, el: u32) {
     unsafe {
-        let out_ptr = output.as_mut_ptr().add(output.len());
+        let out_ptr = output.as_mut_ptr();
         core::ptr::copy_nonoverlapping(el.to_le_bytes().as_ptr(), out_ptr, 4);
     }
 }
@@ -293,7 +369,7 @@ fn push_u32(output: &mut Vec<u8>, el: u32) {
 /// Handle the last bytes from the input as literals
 #[cold]
 fn handle_last_literals(
-    output: &mut Vec<u8>,
+    output: &mut Sink,
     input: &[u8],
     input_size: usize,
     start: usize,
@@ -342,10 +418,12 @@ pub fn backtrack_match(candidate: &mut usize, cur: &mut usize, literal_start: us
 ///
 /// Every four bytes are hashed, and in the resulting slot their position in the input buffer
 /// is placed in the dict. This way we can easily look up a candidate to back references.
+///
+/// returns the new end position of the Sink (=added elements, if start pos in the sink was 0)
 #[inline]
 pub fn compress_into_with_table<T: HashTable>(
     input: &[u8],
-    output: &mut Vec<u8>,
+    output: &mut Sink,
     dict: &mut T,
 ) -> usize {
     let input_size = input.len();
@@ -461,30 +539,30 @@ pub fn compress_into_with_table<T: HashTable>(
 
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn push_byte(output: &mut Vec<u8>, el: u8) {
+fn push_byte(output: &mut Sink, el: u8) {
     output.push(el);
 }
 
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn push_byte(output: &mut Vec<u8>, el: u8) {
+fn push_byte(output: &mut Sink, el: u8) {
     unsafe {
-        core::ptr::write(output.as_mut_ptr().add(output.len()), el);
+        core::ptr::write(output.as_mut_ptr(), el);
         output.set_len(output.len() + 1);
     }
 }
 
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn push_u16(output: &mut Vec<u8>, el: u16) {
+fn push_u16(output: &mut Sink, el: u16) {
     output.extend_from_slice(&el.to_le_bytes());
 }
 
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn push_u16(output: &mut Vec<u8>, el: u16) {
+fn push_u16(output: &mut Sink, el: u16) {
     unsafe {
-        let out_ptr = output.as_mut_ptr().add(output.len());
+        let out_ptr = output.as_mut_ptr();
         core::ptr::write(out_ptr, el as u8);
         core::ptr::write(out_ptr.add(1), (el >> 8) as u8);
         output.set_len(output.len() + 2);
@@ -492,23 +570,24 @@ fn push_u16(output: &mut Vec<u8>, el: u16) {
 }
 
 #[inline]
-fn copy_literals(output: &mut Vec<u8>, input: &[u8]) {
+fn copy_literals(output: &mut Sink, input: &[u8]) {
     output.extend_from_slice(input);
 }
 
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn copy_literals_wild(output: &mut Vec<u8>, input: &[u8], input_start:usize, len:usize) {
+fn copy_literals_wild(output: &mut Sink, input: &[u8], input_start:usize, len:usize) {
     output.extend_from_slice(&input[input_start..input_start + len]);
 }
 
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn copy_literals_wild(output: &mut Vec<u8>, input: &[u8], input_start:usize, len:usize) {
+fn copy_literals_wild(output: &mut Sink, input: &[u8], input_start:usize, len:usize) {
     use crate::block::wild_copy_from_src_8;
     unsafe{
-        wild_copy_from_src_8(input.as_ptr().add(input_start), output.as_mut_ptr().add(output.len()), len);
-        output.set_len(output.len() + len);
+        wild_copy_from_src_8(input.as_ptr().add(input_start), output.as_mut_ptr(), len);
+        //output.set_len(output.len() + len);
+        output.pos += len;
     }
 }
 
@@ -521,21 +600,36 @@ pub fn get_maximum_output_size(input_len: usize) -> usize {
 /// Compress all bytes of `input` into `output`.
 /// The method chooses an appropriate hashtable to lookup duplicates and calls `compress_into_with_table`
 ///
-/// The method will reserve the required space on the output vec.
+/// returns the new end position of the Sink (=added elements, if start pos in the sink was 0)
 #[inline]
-pub fn compress_into(input: &[u8], compressed: &mut Vec<u8>) {
-    compressed.reserve(get_maximum_output_size(input.len()));
+pub fn compress_into(input: &[u8], compressed: &mut Sink) -> usize{
+
     let (dict_size, dict_bitshift) = get_table_size(input.len());
     if input.len() < u16::MAX as usize {
         let mut dict = HashTableU16::new(dict_size, dict_bitshift);
-        compress_into_with_table(input, compressed, &mut dict);
+        compress_into_with_table(input, compressed, &mut dict)
     } else if input.len() < u32::MAX as usize {
         let mut dict = HashTableU32::new(dict_size, dict_bitshift);
-        compress_into_with_table(input, compressed, &mut dict);
+        compress_into_with_table(input, compressed, &mut dict)
     } else {
         let mut dict = HashTableUsize::new(dict_size, dict_bitshift);
-        compress_into_with_table(input, compressed, &mut dict);
+        compress_into_with_table(input, compressed, &mut dict)
     }
+}
+fn get_output_vec(input: &[u8])-> Vec<u8> {
+    let max_size = get_maximum_output_size(input.len());
+    
+    let mut compressed = Vec::with_capacity(max_size);
+    #[cfg(not(feature = "safe-encode"))]
+    {
+        unsafe{compressed.set_len(max_size)};
+    }
+    #[cfg(feature = "safe-encode")]
+    {
+        compressed.resize(max_size,0);
+    }
+    compressed
+
 }
 
 /// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as litte endian.
@@ -543,14 +637,19 @@ pub fn compress_into(input: &[u8], compressed: &mut Vec<u8>) {
 #[inline]
 pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
-    let mut compressed = Vec::new();
-    compressed.extend_from_slice(&[0, 0, 0, 0]);
-    compress_into(input, &mut compressed);
+    let mut compressed = get_output_vec(input); 
+    //compress_into(input, &mut sink);
     let size = input.len() as u32;
     compressed[0] = size as u8;
     compressed[1] = (size >> 8) as u8;
     compressed[2] = (size >> 16) as u8;
     compressed[3] = (size >> 24) as u8;
+    let new_pos = {
+        let mut sink: Sink = (&mut compressed).into();
+        sink.pos = 4;
+        compress_into(input, &mut sink)
+    };
+    compressed.resize(new_pos, 0);
     compressed
 }
 
@@ -559,8 +658,12 @@ pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
 #[inline]
 pub fn compress(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
-    let mut compressed = Vec::new();
-    compress_into(input, &mut compressed);
+    let mut compressed = get_output_vec(input); 
+    let new_pos = {
+        let mut sink = (&mut compressed).into();
+        compress_into(input, &mut sink)
+    };
+    compressed.resize(new_pos, 0);
     compressed
 }
 

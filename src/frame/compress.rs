@@ -6,10 +6,13 @@ use std::io::Write;
 
 /// Configure compression settings.
 pub struct CompressionSettings {
+    #[allow(dead_code)]
     independent_blocks: bool,
     /// add block checksum
+    #[allow(dead_code)]
     block_checksums: Checksum,
     /// add content checksum
+    #[allow(dead_code)]
     content_checksum: Checksum,
     /// sets the block size, see [`BlockSize`]
     block_size: BlockSize,
