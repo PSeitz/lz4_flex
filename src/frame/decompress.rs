@@ -129,13 +129,12 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                 if self.dsts + max_block_size > self.dst.len() {
                     // Output might not fit in the buffer.
                     // The ext_dict will become the last WINDOW_SIZE bytes
-                    debug_assert!(self.dsts >= crate::block::WINDOW_SIZE);
-                    debug_assert!(self.dsts - crate::block::WINDOW_SIZE >= max_block_size);
+                    debug_assert!(self.dsts >= max_block_size + crate::block::WINDOW_SIZE);
                     self.ext_dict_offset = self.dsts - crate::block::WINDOW_SIZE;
                     self.ext_dict_len = crate::block::WINDOW_SIZE;
                     // Output goes in the beginning of the buffer again.
                     self.dsts = 0;
-                } else if self.dsts + self.ext_dict_len >= crate::block::WINDOW_SIZE {
+                } else if self.dsts + self.ext_dict_len > crate::block::WINDOW_SIZE {
                     // Shrink ext_dict in favor of output prefix.
                     let delta = self.ext_dict_len.min(self.dsts);
                     self.ext_dict_offset += delta;

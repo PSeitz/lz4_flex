@@ -311,42 +311,45 @@ pub fn backtrack_match(
     }
 }
 
-/// Compress all bytes of `input` into `output`.
+/// Compress all bytes of `input[input_pos..]` into `output`.
 ///
-/// T:HashTable is the dictionary of previously encoded sequences.
+/// `dict` is the dictionary of previously encoded sequences.
 ///
 /// This is used to find duplicates in the stream so they are not written multiple times.
 ///
 /// Every four bytes are hashed, and in the resulting slot their position in the input buffer
 /// is placed in the dict. This way we can easily look up a candidate to back references.
 #[inline]
-fn compress_internal<T: HashTable>(
+pub(crate) fn compress_internal<T: HashTable>(
     input: &[u8],
+    input_pos: usize,
     output: &mut [u8],
     dict: &mut T,
     ext_dict: &[u8],
-    stream_offset: usize,
+    input_stream_offset: usize,
 ) -> std::io::Result<usize> {
-    assert!(ext_dict.len() < u16::MAX as usize);
     assert!(LZ4_MIN_LENGTH > END_OFFSET);
+    assert!(input_pos <= input.len());
+    assert!(ext_dict.len() <= super::WINDOW_SIZE);
+    assert!(ext_dict.len() <= input_stream_offset);
+
     let mut output_len = 0;
-    if input.len() < LZ4_MIN_LENGTH {
+    if input_pos + LZ4_MIN_LENGTH > input.len() {
         handle_last_literals(output, &mut output_len, input, 0);
         return Ok(output_len);
     }
 
+    let ext_dict_stream_offset = input_stream_offset - ext_dict.len();
     let end_pos_check = input.len() - MFLIMIT;
-    let mut cur;
-    let mut literal_start = 0;
+    let mut literal_start = input_pos;
+    let mut cur = input_pos;
 
-    if stream_offset == 0 {
+    if cur == 0 && input_stream_offset == 0 {
         // According to the spec we can't start with a match,
         // except when referencing another block.
         let hash = get_hash_at(input, 0);
         dict.put_at(hash, 0);
         cur = 1;
-    } else {
-        cur = 0;
     }
 
     loop {
@@ -376,24 +379,29 @@ fn compress_internal<T: HashTable>(
             // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
             let hash = get_hash_at(input, cur);
             candidate = dict.get_at(hash);
-            dict.put_at(hash, cur + stream_offset);
+            dict.put_at(hash, cur + input_stream_offset);
 
             // Two requirements to the candidate exists:
             // - We should not return a position which is merely a hash collision, so w that the
             //   candidate actually matches what we search for.
             // - We can address up to 16-bit offset, hence we are only able to address the candidate if
             //   its offset is less than or equals to 0xFFFF.
-            if candidate + MAX_DISTANCE < cur {
+            if input_stream_offset + cur - candidate > MAX_DISTANCE {
                 continue;
             }
 
-            if candidate >= stream_offset {
-                candidate -= stream_offset;
+            if candidate >= input_stream_offset {
+                // match within input
+                offset = (input_stream_offset + cur - candidate) as u16;
+                candidate -= input_stream_offset;
                 candidate_source = input;
-                offset = (cur - candidate) as u16;
-            } else {
+            } else if candidate >= ext_dict_stream_offset {
+                // match within ext dict
+                offset = (input_stream_offset + cur - candidate) as u16;
+                candidate -= ext_dict_stream_offset;
                 candidate_source = ext_dict;
-                offset = (stream_offset + cur - candidate) as u16;
+            } else {
+                continue;
             }
 
             if get_batch(candidate_source, candidate) == get_batch(input, cur) {
@@ -419,7 +427,7 @@ fn compress_internal<T: HashTable>(
             count_same_bytes(input, &mut cur, candidate_source, candidate + MINMATCH);
 
         let hash = get_hash_at(input, cur - 2);
-        dict.put_at(hash, cur - 2 + stream_offset);
+        dict.put_at(hash, cur - 2 + input_stream_offset);
 
         let token = token_from_literal_and_match_length(lit_len, duplicate_length);
 
@@ -547,6 +555,7 @@ pub fn compress_into_with_dict(input: &[u8], compressed: &mut Vec<u8>, dict_data
         init_dict(&mut dict, dict_data);
         compress_internal(
             input,
+            0,
             &mut compressed[start_len..],
             &mut dict,
             dict_data,
@@ -557,6 +566,7 @@ pub fn compress_into_with_dict(input: &[u8], compressed: &mut Vec<u8>, dict_data
         init_dict(&mut dict, dict_data);
         compress_internal(
             input,
+            0,
             &mut compressed[start_len..],
             &mut dict,
             dict_data,
@@ -567,6 +577,7 @@ pub fn compress_into_with_dict(input: &[u8], compressed: &mut Vec<u8>, dict_data
         init_dict(&mut dict, dict_data);
         compress_internal(
             input,
+            0,
             &mut compressed[start_len..],
             &mut dict,
             dict_data,
