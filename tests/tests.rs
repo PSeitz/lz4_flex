@@ -325,9 +325,8 @@ fn not_compressible() {
     inverse("as6yhol.;jrew5tyuikbfewedfyjltre22459ba");
     inverse("jhflkdjshaf9p8u89ybkvjsdbfkhvg4ut08yfrr");
 }
-
 #[test]
-fn short() {
+fn short_1() {
     inverse("ahhd");
     inverse("ahd");
     inverse("x-29");
@@ -336,6 +335,10 @@ fn short() {
     inverse(".");
     inverse("ajsdh");
     inverse("aaaaaa");
+}
+
+#[test]
+fn short_2() {
     inverse("aaaaaabcbcbcbc");
 }
 
@@ -364,7 +367,11 @@ fn bug_fuzz_3() {
     let data = &[36, 16, 0, 0, 79, 177, 176, 176, 171, 1, 0, 255, 207, 79, 79, 79, 79, 79, 1, 1, 49, 0, 16, 0, 79, 79, 79, 79, 79, 1, 0, 255, 36, 79, 79, 79, 79, 79, 1, 0, 255, 207, 79, 79, 79, 79, 79, 1, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 8, 207, 1, 207, 207, 79, 199, 79, 79, 40, 79, 1, 1, 1, 1, 1, 1, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 79, 15, 15, 14, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 61, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 0, 48, 45, 0, 1, 0, 0, 1, 0];
     inverse_bytes(data);
 }
-
+#[test]
+fn bug_fuzz_4() {
+    let data = &[147];
+    inverse_bytes(data);
+}
 #[test]
 fn compression_works() {
     let s = r#"An iterator that knows its exact length.

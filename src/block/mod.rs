@@ -41,6 +41,7 @@ pub use decompress::decompress_size_prepended;
 
 use core::convert::TryInto;
 use core::{fmt, ptr};
+use alloc::vec::Vec;
 
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
 /// The last match must start at least 12 bytes before the end of block. The last match is part of the penultimate sequence.
@@ -189,4 +190,90 @@ fn uncompressed_size(input: &[u8]) -> Result<(usize, &[u8]), DecompressError> {
     let uncompressed_size = u32::from_le_bytes(*size) as usize;
     let rest = &input[4..];
     Ok((uncompressed_size, rest))
+}
+
+
+/// Sink is used as target to de/compress data into a preallocated space.
+/// It can be created from a `Vec` or a `Slice`. The new pos on the data after the operation
+/// can be retrieved via `sink.pos()`
+/// # Examples
+/// ```
+/// use lz4_flex::block::Sink;
+/// let mut data = Vec::new();
+/// data.resize(5, 0);
+/// let mut sink: Sink = (&mut data).into();
+/// ```
+pub struct Sink<'a>{
+    output: &'a mut[u8],
+    pos: usize
+}
+
+impl<'a> From<&'a mut Vec<u8>> for Sink<'a> {
+    fn from(vec: &'a mut Vec<u8>) -> Self {
+        Sink{
+            output: vec,
+            pos: 0
+  
+        }
+    }
+}
+
+impl<'a> From<&'a mut [u8]> for Sink<'a> {
+    fn from(vec: &'a mut [u8]) -> Self {
+        Sink{
+            output: vec,
+            pos: 0
+        }
+    }
+}
+
+impl<'a> Sink<'a> {
+    #[inline]
+    pub(crate) fn push(&mut self, byte: u8){
+        self.output[self.pos] = byte;
+        self.pos += 1;
+    }
+   
+    #[inline]
+    pub(crate) fn extend_from_slice(&mut self, data: &[u8]){
+        self.output[self.pos .. self.pos + data.len()].copy_from_slice(data);   
+        self.pos += data.len();
+    }
+
+    #[inline]
+    #[cfg(not(feature = "safe-encode"))]
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut u8{
+        unsafe{self.output.as_mut_ptr().add(self.pos)}
+    }
+    pub fn get_data(&self) -> &[u8]{
+       &self.output[0..self.pos] 
+    }
+    #[inline]
+    pub fn pos(&self) -> usize{
+        self.pos
+    }
+    #[inline]
+    pub fn capacity(&self) -> usize{
+        self.output.len()
+    }
+    #[inline]
+    pub(crate) fn set_pos(&mut self, len: usize) {
+        self.pos = len;
+    }
+
+    pub(crate) fn as_slice(&self) -> &[u8]{
+        &self.output
+    }
+}
+
+#[test]
+fn test_sink() {
+    let mut data = Vec::new();
+    data.resize(5, 0);
+    let mut sink: Sink = (&mut data).into();
+    assert_eq!(sink.get_data(), &[]);
+    assert_eq!(sink.pos(), 0);
+    sink.extend_from_slice(&[1,2,3]);
+    assert_eq!(sink.get_data(), &[1,2,3]);
+    assert_eq!(sink.pos(), 3);
 }

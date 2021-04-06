@@ -2,6 +2,7 @@
 use crate::block::wild_copy_from_src_16;
 use crate::block::DecompressError;
 use alloc::vec::Vec;
+use crate::block::Sink;
 
 // copy_on_self uses 16byte wild copy, to avoid overlapping copies we add 12. Minimum length of match_length is 4 totaling to 16. 
 const SAFE_DUPLICATE_COPY_RANGE: usize = 12;
@@ -128,7 +129,7 @@ const BLOCK_COPY_SIZE: usize = 24;
 
 /// Decompress all bytes of `input` into `output`.
 #[inline]
-pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), DecompressError> {
+pub fn decompress_into(input: &[u8], output: &mut Sink) -> Result<(), DecompressError> {
     // Decode into our vector.
     let mut input_pos = 0;
     let mut output_ptr = output.as_mut_ptr();
@@ -171,10 +172,10 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
                 if input.len() < input_pos + literal_length {
                     return Err(DecompressError::LiteralOutOfBounds);
                 };
-                if output.len() < (output_ptr as usize - output_start + literal_length) {
+                if output.capacity() < (output_ptr as usize - output_start + literal_length) {
                     return Err(DecompressError::OutputTooSmall {
                         expected_size: (output_ptr as usize - output_start + literal_length),
-                        actual_size: output.len(),
+                        actual_size: output.capacity(),
                     });
                 };
             }
@@ -246,10 +247,10 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
                 if input.len() < input_pos + literal_length {
                     return Err(DecompressError::LiteralOutOfBounds);
                 };
-                if output.len() < (output_ptr as usize - output_start + literal_length) {
+                if output.capacity() < (output_ptr as usize - output_start + literal_length) {
                     return Err(DecompressError::OutputTooSmall {
                         expected_size: (output_ptr as usize - output_start + literal_length),
-                        actual_size: output.len(),
+                        actual_size: output.capacity(),
                     });
                 };
             }
@@ -322,12 +323,15 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
 pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressError> {
     let (uncompressed_size, input) = super::uncompressed_size(input)?;
     // Allocate a vector to contain the decompressed stream. we may wildcopy out of bounds, so the vector needs to have ad additional BLOCK_COPY_SIZE capacity
-    let mut vec = Vec::with_capacity(uncompressed_size + 4 + BLOCK_COPY_SIZE);
+    let mut vec: Vec<u8> = Vec::with_capacity(uncompressed_size + 4 + BLOCK_COPY_SIZE);
+    unsafe {
+        vec.set_len(uncompressed_size + 4 + BLOCK_COPY_SIZE);
+    }
+    let mut sink: Sink = (&mut vec).into();
+    decompress_into(input, &mut sink)?;
     unsafe {
         vec.set_len(uncompressed_size);
     }
-    decompress_into(input, &mut vec)?;
-
     Ok(vec)
 }
 
@@ -335,11 +339,15 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
 #[inline]
 pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
     // Allocate a vector to contain the decompressed stream. we may wildcopy out of bounds, so the vector needs to have ad additional BLOCK_COPY_SIZE capacity
-    let mut vec = Vec::with_capacity(uncompressed_size + 4 + BLOCK_COPY_SIZE);
+    let mut vec: Vec<u8> = Vec::with_capacity(uncompressed_size + 4 + BLOCK_COPY_SIZE);
+    unsafe {
+        vec.set_len(uncompressed_size + 4 + BLOCK_COPY_SIZE);
+    }
+    let mut sink: Sink = (&mut vec).into();
+    decompress_into(input, &mut sink)?;
     unsafe {
         vec.set_len(uncompressed_size);
     }
-    decompress_into(input, &mut vec)?;
 
     Ok(vec)
 }

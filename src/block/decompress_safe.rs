@@ -2,6 +2,7 @@
 
 use crate::block::DecompressError;
 use alloc::vec::Vec;
+use crate::block::Sink;
 
 /// Read an integer LSIC (linear small integer code) encoded.
 ///
@@ -79,16 +80,16 @@ fn is_safe_distance(input_pos: usize, in_len: usize) -> bool {
 const BLOCK_COPY_SIZE: usize = 24;
 
 #[cold]
-fn copy_24(output: &mut Vec<u8>, offset: usize) {
+fn copy_24(output: &mut Sink, offset: usize) {
     let mut dst = [0u8; BLOCK_COPY_SIZE];
-    let i = output.len() - offset;
-    dst.clone_from_slice(&output[i..i + BLOCK_COPY_SIZE]);
+    let i = output.pos() - offset;
+    dst.clone_from_slice(&output.as_slice()[i..i + BLOCK_COPY_SIZE]);
     output.extend_from_slice(&dst);
 }
 
 /// Decompress all bytes of `input` into `output`.
 #[inline]
-pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), DecompressError> {
+pub fn decompress_into(input: &[u8], output: &mut Sink) -> Result<(), DecompressError> {
     // Decode into our vector.
     let mut input_pos = 0;
     // let mut output_ptr = output.as_mut_ptr();
@@ -140,19 +141,19 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
             if match_length + BLOCK_COPY_SIZE >= offset {
                 duplicate_overlapping_slice(output, offset, match_length)?;
             } else {
-                let old_len = output.len();
+                let old_len = output.pos();
                 if match_length <= 16 {
                     let mut dst = [0u8; 16];
-                    let (start, did_overflow) = output.len().overflowing_sub(offset);
+                    let (start, did_overflow) = output.pos().overflowing_sub(offset);
                     if did_overflow {
                         return Err(DecompressError::OffsetOutOfBounds);
                     }
-                    dst.clone_from_slice(&output[start..start + 16]);
+                    dst.clone_from_slice(&output.as_slice()[start..start + 16]);
                     output.extend_from_slice(&dst);
                 } else {
                     copy_24(output, offset)
                 }
-                output.truncate(old_len + match_length);
+                output.set_pos(old_len + match_length);
             }
 
             continue;
@@ -208,24 +209,24 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
 /// extends output by self-referential copies
 #[inline]
 pub fn duplicate_slice(
-    output: &mut Vec<u8>,
+    output: &mut Sink,
     offset: usize,
     match_length: usize,
 ) -> Result<(), DecompressError> {
     if match_length + 16 >= offset {
         duplicate_overlapping_slice(output, offset, match_length)?;
     } else {
-        let old_len = output.len();
+        let old_len = output.pos();
         let mut dst = [0u8; 16];
-        let (val, did_overflow) = output.len().overflowing_sub(offset);
+        let (val, did_overflow) = output.pos().overflowing_sub(offset);
         if did_overflow {
             return Err(DecompressError::OffsetOutOfBounds);
         }
         for i in (val..val + match_length).step_by(16) {
-            dst.clone_from_slice(&output[i..i + 16]);
+            dst.clone_from_slice(&output.as_slice()[i..i + 16]);
             output.extend_from_slice(&dst);
         }
-        output.truncate(old_len + match_length);
+        output.set_pos(old_len + match_length);
     }
     Ok(())
 }
@@ -233,27 +234,31 @@ pub fn duplicate_slice(
 /// self-referential copy for the case data start (end of output - offset) + match_length overlaps into output
 #[inline]
 fn duplicate_overlapping_slice(
-    output: &mut Vec<u8>,
+    sink: &mut Sink,
     offset: usize,
     match_length: usize,
 ) -> Result<(), DecompressError> {
     if offset == 1 {
-        output.resize(output.len() + match_length, output[output.len() - 1]);
+        let val = sink.as_slice()[sink.pos() - 1];
+        let start = sink.pos();
+        sink.output[start..start + match_length].fill(val);
+        sink.pos += match_length;
+        //sink.resize(sink.len() + match_length, sink[sink.len() - 1]);
         Ok(())
     } else {
-        let (start, did_overflow) = output.len().overflowing_sub(offset);
+        let (start, did_overflow) = sink.pos().overflowing_sub(offset);
         if did_overflow {
             return Err(DecompressError::OffsetOutOfBounds);
         }
         #[cfg(feature = "checked-decode")]
         {
-            if output.is_empty() {
+            if sink.output.len()== 0 {
                 return Err(DecompressError::UnexpectedOutputEmpty);
             }
         }
         for i in start..start + match_length {
-            let b = output[i];
-            output.push(b);
+            let b = sink.as_slice()[i];
+            sink.push(b);
         }
         Ok(())
     }
@@ -265,8 +270,10 @@ fn duplicate_overlapping_slice(
 pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressError> {
     let (uncompressed_size, input) = super::uncompressed_size(input)?;
     // Allocate a vector to contain the decompressed stream.
-    let mut vec = Vec::with_capacity(uncompressed_size);
-    decompress_into(input, &mut vec)?;
+    let mut vec: Vec<u8> = Vec::with_capacity(uncompressed_size);
+    vec.resize(uncompressed_size, 0);
+    let mut sink: Sink = (&mut vec).into();
+    decompress_into(input, &mut sink)?;
 
     Ok(vec)
 }
@@ -275,8 +282,10 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
 #[inline]
 pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
     // Allocate a vector to contain the decompressed stream.
-    let mut vec = Vec::with_capacity(uncompressed_size);
-    decompress_into(input, &mut vec)?;
+    let mut vec: Vec<u8> = Vec::with_capacity(uncompressed_size);
+    vec.resize(uncompressed_size, 0);
+    let mut sink: Sink = (&mut vec).into();
+    decompress_into(input, &mut sink)?;
     Ok(vec)
 }
 
