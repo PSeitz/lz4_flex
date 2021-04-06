@@ -32,6 +32,7 @@ pub struct FrameEncoder<W: io::Write> {
     srce: usize,
     ext_dict_offset: usize,
     ext_dict_len: usize,
+    src_stream_offset: usize,
     /// Encoder table
     compression_table: HashTableU32,
     /// The underlying writer.
@@ -72,6 +73,7 @@ impl<W: io::Write> FrameEncoder<W> {
             srce: 0,
             ext_dict_offset: 0,
             ext_dict_len: 0,
+            src_stream_offset: 0,
         }
     }
 
@@ -183,6 +185,12 @@ impl<W: io::Write> FrameEncoder<W> {
         let max_block_size = self.frame_info.block_size.get_size();
         let (src, compressed_result) = if self.srcs != self.srce {
             if self.frame_info.block_mode == BlockMode::Linked {
+                // Reposition the compression table if we're anywhere near an overflowing hazard
+                if self.src_stream_offset + self.src.len() >= u32::MAX as usize / 2 {
+                    self.compression_table
+                        .reposition((self.src_stream_offset - self.ext_dict_len) as _);
+                    self.src_stream_offset = self.ext_dict_len;
+                }
                 let src = &self.src[..self.srce.min(self.srcs + max_block_size)];
                 let res = compress_internal(
                     src,
@@ -190,8 +198,7 @@ impl<W: io::Write> FrameEncoder<W> {
                     &mut self.dst,
                     &mut self.compression_table,
                     &self.src[self.ext_dict_offset..self.ext_dict_offset + self.ext_dict_len],
-                    // TODO: needs to be reset every 1gb to avoid overflow
-                    self.content_len as usize - self.srcs,
+                    self.src_stream_offset,
                 );
                 (&src[self.srcs..], res)
             } else {
@@ -236,6 +243,7 @@ impl<W: io::Write> FrameEncoder<W> {
                     debug_assert!(self.srce >= max_block_size + crate::block::WINDOW_SIZE);
                     self.ext_dict_offset = self.srce - crate::block::WINDOW_SIZE;
                     self.ext_dict_len = crate::block::WINDOW_SIZE;
+                    self.src_stream_offset += self.srce;
                     // Input goes in the beginning of the buffer again.
                     self.srcs = 0;
                     self.srce = 0;
@@ -269,6 +277,7 @@ impl<W: fmt::Debug + io::Write> fmt::Debug for FrameEncoder<W> {
             .field("srce", &self.srce)
             .field("ext_dict_offset", &self.ext_dict_offset)
             .field("ext_dict_len", &self.ext_dict_len)
+            .field("src_stream_offset", &self.src_stream_offset)
             .finish()
     }
 }

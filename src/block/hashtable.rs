@@ -60,9 +60,9 @@ impl HashTable for HashTableUsize {
 
     #[inline]
     fn clear(&mut self) {
-        let len = self.dict.len();
-        self.dict.clear();
-        self.dict.resize(len, 0);
+        for i in &mut self.dict {
+            *i = 0;
+        }
     }
 }
 
@@ -80,6 +80,13 @@ impl HashTableU32 {
         Self {
             dict,
             dict_bitshift,
+        }
+    }
+
+    #[cold]
+    pub fn reposition(&mut self, offset: u32) {
+        for i in &mut self.dict {
+            *i = i.saturating_sub(offset);
         }
     }
 }
@@ -106,9 +113,9 @@ impl HashTable for HashTableU32 {
     }
     #[inline]
     fn clear(&mut self) {
-        let len = self.dict.len();
-        self.dict.clear();
-        self.dict.resize(len, 0);
+        for i in &mut self.dict {
+            *i = 0;
+        }
     }
 }
 
@@ -152,9 +159,9 @@ impl HashTable for HashTableU16 {
     }
     #[inline]
     fn clear(&mut self) {
-        let len = self.dict.len();
-        self.dict.clear();
-        self.dict.resize(len, 0);
+        for i in &mut self.dict {
+            *i = 0;
+        }
     }
 }
 

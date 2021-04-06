@@ -110,7 +110,7 @@ impl Default for FrameInfo {
             content_size: None,
             dict_id: None,
             block_size: BlockSize::Max64KB,
-            block_mode: BlockMode::Independent,
+            block_mode: BlockMode::Linked,
             block_checksums: false,
             content_checksum: false,
         }

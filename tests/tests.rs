@@ -27,6 +27,7 @@ fn lz4_cpp_block_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
 fn lz4_cpp_frame_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
     let pref = lzzzz::lz4f::PreferencesBuilder::new()
         .block_mode(lzzzz::lz4f::BlockMode::Linked)
+        .block_size(lzzzz::lz4f::BlockSize::Max64KB)
         .build();
     let mut out = Vec::new();
     lzzzz::lz4f::compress_to_vec(input, &mut out, &pref).unwrap();
@@ -114,8 +115,10 @@ fn lz4_cpp_compatibility(bytes: &[u8]) {
 #[test]
 #[cfg_attr(miri, ignore)]
 fn compare_compression() {
+    print_compression_ration(COMPRESSION1K, "1k");
     print_compression_ration(COMPRESSION34K, "34k");
     print_compression_ration(COMPRESSION66JSON, "66k JSON");
+    print_compression_ration(COMPRESSION10MB, "10mb");
 }
 
 #[test]

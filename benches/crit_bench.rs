@@ -10,6 +10,7 @@ const COMPRESSION1K: &'static [u8] = include_bytes!("compression_1k.txt");
 const COMPRESSION34K: &'static [u8] = include_bytes!("compression_34k.txt");
 const COMPRESSION65K: &'static [u8] = include_bytes!("compression_65k.txt");
 const COMPRESSION66K: &'static [u8] = include_bytes!("compression_66k_JSON.txt");
+const COMPRESSION10MB: &'static [u8] = include_bytes!("dickens.txt");
 const COMPRESSION95K_VERY_GOOD_LOGO: &'static [u8] = include_bytes!("../logo.jpg");
 
 const ALL: &[&[u8]] = &[
@@ -17,6 +18,7 @@ const ALL: &[&[u8]] = &[
     COMPRESSION34K as &[u8],
     // COMPRESSION65K as &[u8],
     // COMPRESSION66K as &[u8],
+    // COMPRESSION10MB as &[u8],
     // COMPRESSION95K_VERY_GOOD_LOGO as &[u8],
 ];
 
