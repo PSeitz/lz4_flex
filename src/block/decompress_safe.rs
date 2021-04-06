@@ -63,6 +63,12 @@ fn check_token() {
     assert_eq!(does_token_fit(0b10110000), true);
 }
 
+/// The algorithm can copy over the origignal size, because of blocked copies, so the capacity of the sink needs 
+/// to be slightly larger.
+fn decompress_sink_size(uncompressed_size: usize) -> usize {
+    uncompressed_size + 4 + BLOCK_COPY_SIZE
+}
+
 /// The token consists of two parts, the literal length (upper 4 bits) and match_length (lower 4 bits)
 /// if the literal length and match_length are both below 15, we don't need to read additional data, so the token does fit the metadata.
 #[inline]
@@ -271,7 +277,7 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
     let (uncompressed_size, input) = super::uncompressed_size(input)?;
     // Allocate a vector to contain the decompressed stream.
     let mut vec: Vec<u8> = Vec::with_capacity(uncompressed_size);
-    vec.resize(uncompressed_size, 0);
+    vec.resize(decompress_sink_size(uncompressed_size), 0);
     let mut sink: Sink = (&mut vec).into();
     decompress_into(input, &mut sink)?;
 
@@ -283,7 +289,7 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
 pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
     // Allocate a vector to contain the decompressed stream.
     let mut vec: Vec<u8> = Vec::with_capacity(uncompressed_size);
-    vec.resize(uncompressed_size, 0);
+    vec.resize(decompress_sink_size(uncompressed_size), 0);
     let mut sink: Sink = (&mut vec).into();
     decompress_into(input, &mut sink)?;
     Ok(vec)

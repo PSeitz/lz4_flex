@@ -34,6 +34,13 @@ fn duplicate_overlapping(output_ptr: &mut *mut u8, mut start: *const u8, match_l
     }
 }
 
+/// The algorithm can copy over the origignal size, because of blocked copies, so the capacity of the sink needs 
+/// to be slightly larger.
+fn decompress_sink_size(uncompressed_size: usize) -> usize {
+    uncompressed_size + 4 + BLOCK_COPY_SIZE
+}
+
+
 /// Read an integer LSIC (linear small integer code) encoded.
 ///
 /// In LZ4, we encode small integers in a way that we can have an arbitrary number of bytes. In
@@ -327,7 +334,7 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
     // Allocate a vector to contain the decompressed stream. we may wildcopy out of bounds, so the vector needs to have ad additional BLOCK_COPY_SIZE capacity
     let mut vec: Vec<u8> = Vec::with_capacity(uncompressed_size + 4 + BLOCK_COPY_SIZE);
     unsafe {
-        vec.set_len(uncompressed_size + 4 + BLOCK_COPY_SIZE);
+        vec.set_len(decompress_sink_size(uncompressed_size));
     }
     let mut sink: Sink = (&mut vec).into();
     decompress_into(input, &mut sink)?;
@@ -343,7 +350,7 @@ pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, Dec
     // Allocate a vector to contain the decompressed stream. we may wildcopy out of bounds, so the vector needs to have ad additional BLOCK_COPY_SIZE capacity
     let mut vec: Vec<u8> = Vec::with_capacity(uncompressed_size + 4 + BLOCK_COPY_SIZE);
     unsafe {
-        vec.set_len(uncompressed_size + 4 + BLOCK_COPY_SIZE);
+        vec.set_len(decompress_sink_size(uncompressed_size));
     }
     let mut sink: Sink = (&mut vec).into();
     decompress_into(input, &mut sink)?;

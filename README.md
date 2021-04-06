@@ -30,17 +30,17 @@ Compression and decompression uses no usafe via the default feature flags "safe-
 
 Safe:
 ```
-lz4_flex = { version = "0.7.5" }
+lz4_flex = { version = "1.0.0" }
 ```
 
 Performance:
 ```
-lz4_flex = { version = "0.7.5", default-features = false }
+lz4_flex = { version = "1.0.0", default-features = false }
 ```
 
 Warning: If you don't trust your input, use checked-decode in order to avoid out of bounds access.
 ```
-lz4_flex = { version = "0.7.5", default-features = false, features = ["checked-decode"] }
+lz4_flex = { version = "1.0.0", default-features = false, features = ["checked-decode"] }
 ```
 
 ```rust
@@ -64,7 +64,7 @@ The lz4-flex version is tested with the feature flags safe-decode and safe-encod
 - lz4_cpp: https://crates.io/crates/lz4
 - lz-fear: https://github.com/main--/rust-lz-fear
 
-### Results v0.7.2 18-01-2021 (safe-decode and safe-encode off)
+### Results v1.0.0 06-04-2021 (safe-decode and safe-encode off)
 `cargo bench --no-default-features`
 
 Executed on Core i7-6700 Linux Mint.
@@ -73,7 +73,7 @@ Executed on Core i7-6700 Linux Mint.
 
 ![Decompress](./decompress_bench.svg)
 
-### Results v0.7.2 18-01-2021 (safe-decode and safe-encode on)
+### Results v1.0.0 06-04-2021 (safe-decode and safe-encode on)
 `cargo bench`
 
 Executed on Core i7-6700 Linux Mint.
