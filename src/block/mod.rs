@@ -241,7 +241,7 @@ impl<'a> Sink<'a> {
     }
 
     #[inline]
-    #[cfg(not(feature = "safe-encode"))]
+    #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
     pub(crate) fn as_mut_ptr(&mut self) -> *mut u8{
         unsafe{self.output.as_mut_ptr().add(self.pos)}
     }
