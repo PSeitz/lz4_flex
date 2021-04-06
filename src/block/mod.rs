@@ -39,9 +39,9 @@ pub use decompress_safe::decompress_size_prepended;
 #[cfg(not(feature = "safe-decode"))]
 pub use decompress::decompress_size_prepended;
 
+use alloc::vec::Vec;
 use core::convert::TryInto;
 use core::{fmt, ptr};
-use alloc::vec::Vec;
 
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
 /// The last match must start at least 12 bytes before the end of block. The last match is part of the penultimate sequence.
@@ -156,7 +156,7 @@ impl fmt::Display for DecompressError {
                         "output ({:?}) is too small for the decompressed data",
                         actual_size
                     )
-                }else{
+                } else {
                     write!(
                         f,
                         "output ({:?}) is too small for the decompressed data, {:?}",
@@ -192,7 +192,6 @@ fn uncompressed_size(input: &[u8]) -> Result<(usize, &[u8]), DecompressError> {
     Ok((uncompressed_size, rest))
 }
 
-
 /// Sink is used as target to de/compress data into a preallocated space.
 /// It can be created from a `Vec` or a `Slice`. The new pos on the data after the operation
 /// can be retrieved via `sink.pos()`
@@ -203,57 +202,56 @@ fn uncompressed_size(input: &[u8]) -> Result<(usize, &[u8]), DecompressError> {
 /// data.resize(5, 0);
 /// let mut sink: Sink = (&mut data).into();
 /// ```
-pub struct Sink<'a>{
-    output: &'a mut[u8],
-    pos: usize
+pub struct Sink<'a> {
+    output: &'a mut [u8],
+    pos: usize,
 }
 
 impl<'a> From<&'a mut Vec<u8>> for Sink<'a> {
     fn from(vec: &'a mut Vec<u8>) -> Self {
-        Sink{
+        Sink {
             output: vec,
-            pos: 0
-  
+            pos: 0,
         }
     }
 }
 
 impl<'a> From<&'a mut [u8]> for Sink<'a> {
     fn from(vec: &'a mut [u8]) -> Self {
-        Sink{
+        Sink {
             output: vec,
-            pos: 0
+            pos: 0,
         }
     }
 }
 
 impl<'a> Sink<'a> {
     #[inline]
-    pub(crate) fn push(&mut self, byte: u8){
+    pub(crate) fn push(&mut self, byte: u8) {
         self.output[self.pos] = byte;
         self.pos += 1;
     }
-   
+
     #[inline]
-    pub(crate) fn extend_from_slice(&mut self, data: &[u8]){
-        self.output[self.pos .. self.pos + data.len()].copy_from_slice(data);   
+    pub(crate) fn extend_from_slice(&mut self, data: &[u8]) {
+        self.output[self.pos..self.pos + data.len()].copy_from_slice(data);
         self.pos += data.len();
     }
 
     #[inline]
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
-    pub(crate) fn as_mut_ptr(&mut self) -> *mut u8{
-        unsafe{self.output.as_mut_ptr().add(self.pos)}
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut u8 {
+        unsafe { self.output.as_mut_ptr().add(self.pos) }
     }
-    pub fn get_data(&self) -> &[u8]{
-       &self.output[0..self.pos] 
+    pub fn get_data(&self) -> &[u8] {
+        &self.output[0..self.pos]
     }
     #[inline]
-    pub fn pos(&self) -> usize{
+    pub fn pos(&self) -> usize {
         self.pos
     }
     #[inline]
-    pub fn capacity(&self) -> usize{
+    pub fn capacity(&self) -> usize {
         self.output.len()
     }
     #[inline]
@@ -261,7 +259,7 @@ impl<'a> Sink<'a> {
         self.pos = len;
     }
 
-    pub(crate) fn as_slice(&self) -> &[u8]{
+    pub(crate) fn as_slice(&self) -> &[u8] {
         &self.output
     }
 }
@@ -273,7 +271,7 @@ fn test_sink() {
     let mut sink: Sink = (&mut data).into();
     assert_eq!(sink.get_data(), &[]);
     assert_eq!(sink.pos(), 0);
-    sink.extend_from_slice(&[1,2,3]);
-    assert_eq!(sink.get_data(), &[1,2,3]);
+    sink.extend_from_slice(&[1, 2, 3]);
+    assert_eq!(sink.get_data(), &[1, 2, 3]);
     assert_eq!(sink.pos(), 3);
 }

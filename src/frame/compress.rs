@@ -1,5 +1,5 @@
-use super::{BlockSize, Checksum, END_MARK};
 use super::MAGIC_NUMBER;
+use super::{BlockSize, Checksum, END_MARK};
 use crate::block::compress::compress as compress_block;
 use std::io::Read;
 use std::io::Write;
@@ -32,7 +32,11 @@ impl<'a> Default for CompressionSettings {
 /// Compress all bytes of `input` into `output`.
 #[allow(dead_code)]
 #[inline]
-pub fn compress_with_settings<R: Read, W: Write>(input: &mut R, output: &mut W, settings: &CompressionSettings) -> std::io::Result<()> {
+pub fn compress_with_settings<R: Read, W: Write>(
+    input: &mut R,
+    output: &mut W,
+    settings: &CompressionSettings,
+) -> std::io::Result<()> {
     // Write Frame header
     let buf = MAGIC_NUMBER.to_le_bytes();
     output.write(&buf)?;

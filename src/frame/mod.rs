@@ -1,7 +1,6 @@
 pub mod compress;
 pub mod decompress;
 
-
 const MAGIC_NUMBER: u32 = 0x184D2204;
 const END_MARK: u32 = 0;
 

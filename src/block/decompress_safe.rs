@@ -1,8 +1,8 @@
 //! The decompression algorithm.
 
 use crate::block::DecompressError;
-use alloc::vec::Vec;
 use crate::block::Sink;
+use alloc::vec::Vec;
 
 /// Read an integer LSIC (linear small integer code) encoded.
 ///
@@ -252,7 +252,7 @@ fn duplicate_overlapping_slice(
         }
         #[cfg(feature = "checked-decode")]
         {
-            if sink.output.len()== 0 {
+            if sink.output.len() == 0 {
                 return Err(DecompressError::UnexpectedOutputEmpty);
             }
         }

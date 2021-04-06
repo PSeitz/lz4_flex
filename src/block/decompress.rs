@@ -1,10 +1,10 @@
 //! The decompression algorithm.
 use crate::block::wild_copy_from_src_16;
 use crate::block::DecompressError;
-use alloc::vec::Vec;
 use crate::block::Sink;
+use alloc::vec::Vec;
 
-// copy_on_self uses 16byte wild copy, to avoid overlapping copies we add 12. Minimum length of match_length is 4 totaling to 16. 
+// copy_on_self uses 16byte wild copy, to avoid overlapping copies we add 12. Minimum length of match_length is 4 totaling to 16.
 const SAFE_DUPLICATE_COPY_RANGE: usize = 12;
 
 /// Copies data to output_ptr by self-referential copy from start and match_length
@@ -14,7 +14,7 @@ fn duplicate(output_ptr: &mut *mut u8, start: *const u8, match_length: usize) {
     // self-referential copies: http://ticki.github.io/img/lz4_runs_encoding_diagram.svg
     // Check overlap copy
 
-    if (*output_ptr as usize) < start  as usize + match_length + SAFE_DUPLICATE_COPY_RANGE {
+    if (*output_ptr as usize) < start as usize + match_length + SAFE_DUPLICATE_COPY_RANGE {
         duplicate_overlapping(output_ptr, start, match_length);
     } else {
         copy_on_self(output_ptr, start, match_length);
@@ -212,8 +212,7 @@ pub fn decompress_into(input: &[u8], output: &mut Sink) -> Result<(), Decompress
             let match_length = (4 + (token & 0xF)) as usize;
             // Write the duplicate segment to the output buffer from the output buffer
             // The blocks can overlap, make sure they are at least BLOCK_COPY_SIZE apart
-            if (output_ptr as usize) < start_ptr as usize + match_length + BLOCK_COPY_SIZE
-            {
+            if (output_ptr as usize) < start_ptr as usize + match_length + BLOCK_COPY_SIZE {
                 duplicate_overlapping(&mut output_ptr, start_ptr, match_length);
             } else {
                 unsafe {
@@ -309,7 +308,10 @@ pub fn decompress_into(input: &[u8], output: &mut Sink) -> Result<(), Decompress
             };
             let output_end = output_start + output.capacity();
             if output_ptr as usize + match_length + SAFE_DUPLICATE_COPY_RANGE > output_end {
-                return Err(DecompressError::OutputTooSmall{actual_size: output.capacity(), expected_size: 0});
+                return Err(DecompressError::OutputTooSmall {
+                    actual_size: output.capacity(),
+                    expected_size: 0,
+                });
             };
         }
         duplicate(&mut output_ptr, start_ptr, match_length);
