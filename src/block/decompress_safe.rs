@@ -66,7 +66,7 @@ fn check_token() {
 /// The algorithm can copy over the origignal size, because of blocked copies, so the capacity of the sink needs 
 /// to be slightly larger.
 fn decompress_sink_size(uncompressed_size: usize) -> usize {
-    uncompressed_size + 4 + BLOCK_COPY_SIZE
+    uncompressed_size
 }
 
 /// The token consists of two parts, the literal length (upper 4 bits) and match_length (lower 4 bits)
