@@ -135,6 +135,7 @@ unsafe fn copy_24(start_ptr: *const u8, output_ptr: *mut u8) {
 const BLOCK_COPY_SIZE: usize = 24;
 
 /// Decompress all bytes of `input` into `output`.
+/// `Sink` should be preallocated with a size of `decompress_sink_size`
 #[inline]
 pub fn decompress_into(input: &[u8], output: &mut Sink) -> Result<(), DecompressError> {
     // Decode into our vector.

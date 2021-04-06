@@ -522,7 +522,8 @@ pub fn get_maximum_output_size(input_len: usize) -> usize {
 }
 
 /// Compress all bytes of `input` into `output`.
-/// The method chooses an appropriate hashtable to lookup duplicates and calls `compress_into_with_table`
+/// The method chooses an appropriate hashtable to lookup duplicates and calls `compress_into_with_table`.
+/// Sink should be preallocated with a size of `get_maximum_output_size`.
 ///
 /// returns the new end position of the Sink (=added elements, if start pos in the sink was 0)
 #[inline]
