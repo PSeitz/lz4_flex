@@ -242,13 +242,27 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
 /// Write an integer to the output in LSIC format.
 #[inline]
 fn write_integer(output: &mut [u8], output_len: &mut usize, mut n: usize) {
-    while n >= 0xFF {
-        n -= 0xFF;
-        push_byte(output, output_len, 0xFF);
+    // A predictable branch for the common case
+    if n < 0xFF {
+        push_byte(output, output_len, n as u8);
+        return;
     }
 
-    // Write the remaining byte.
-    push_byte(output, output_len, n as u8)
+    // Write the 0xFF bytes in chunks of 4.
+    while n >= 4 * 0xFF {
+        n -= 4 * 0xFF;
+        push_u32(output, output_len, 0xFFFFFFFF);
+    }
+
+    // Write the last 0..=3 0xFF bytes + remainder.
+    let ffs = n / 0xFF;
+    let rem = n % 0xFF;
+    push_u32(
+        output,
+        output_len,
+        0xFFFFFFFF ^ ((!(rem as u8) as u32) << ((3 - ffs) * 8)).to_be(),
+    );
+    *output_len -= 3 - ffs as usize;
 }
 
 /// Handle the last bytes from the input as literals
@@ -490,6 +504,24 @@ fn push_u16(output: &mut [u8], output_len: &mut usize, el: u16) {
     unsafe {
         output
             .get_unchecked_mut(*output_len..*output_len + 2)
+            .copy_from_slice(&el.to_le_bytes())
+    };
+    *output_len += 2;
+}
+
+#[inline]
+#[cfg(feature = "safe-encode")]
+fn push_u32(output: &mut [u8], output_len: &mut usize, el: u32) {
+    output[*output_len..*output_len + 4].copy_from_slice(&el.to_le_bytes());
+    *output_len += 4;
+}
+
+#[inline]
+#[cfg(not(feature = "safe-encode"))]
+fn push_u32(output: &mut [u8], output_len: &mut usize, el: u32) {
+    unsafe {
+        output
+            .get_unchecked_mut(*output_len..*output_len + 4)
             .copy_from_slice(&el.to_le_bytes())
     };
     *output_len += 2;
