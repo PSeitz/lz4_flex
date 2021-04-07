@@ -36,23 +36,23 @@ impl HashTableUsize {
 }
 
 impl HashTable for HashTableUsize {
-    #[inline(always)]
+    #[inline]
     #[cfg(feature = "safe-encode")]
     fn get_at(&self, hash: usize) -> usize {
         self.dict[hash >> self.dict_bitshift] as usize
     }
-    #[inline(always)]
+    #[inline]
     #[cfg(not(feature = "safe-encode"))]
     fn get_at(&self, hash: usize) -> usize {
         unsafe { *self.dict.get_unchecked(hash >> self.dict_bitshift) as usize }
     }
 
-    #[inline(always)]
+    #[inline]
     #[cfg(feature = "safe-encode")]
     fn put_at(&mut self, hash: usize, val: usize) {
         self.dict[hash >> self.dict_bitshift] = val;
     }
-    #[inline(always)]
+    #[inline]
     #[cfg(not(feature = "safe-encode"))]
     fn put_at(&mut self, hash: usize, val: usize) {
         (*unsafe { self.dict.get_unchecked_mut(hash >> self.dict_bitshift) }) = val;
@@ -91,22 +91,22 @@ impl HashTableU32 {
     }
 }
 impl HashTable for HashTableU32 {
-    #[inline(always)]
+    #[inline]
     #[cfg(feature = "safe-encode")]
     fn get_at(&self, hash: usize) -> usize {
         self.dict[hash >> self.dict_bitshift] as usize
     }
-    #[inline(always)]
+    #[inline]
     #[cfg(not(feature = "safe-encode"))]
     fn get_at(&self, hash: usize) -> usize {
         unsafe { *self.dict.get_unchecked(hash >> self.dict_bitshift) as usize }
     }
-    #[inline(always)]
+    #[inline]
     #[cfg(feature = "safe-encode")]
     fn put_at(&mut self, hash: usize, val: usize) {
         self.dict[hash >> self.dict_bitshift] = val as u32;
     }
-    #[inline(always)]
+    #[inline]
     #[cfg(not(feature = "safe-encode"))]
     fn put_at(&mut self, hash: usize, val: usize) {
         (*unsafe { self.dict.get_unchecked_mut(hash >> self.dict_bitshift) }) = val as u32;
@@ -137,22 +137,22 @@ impl HashTableU16 {
     }
 }
 impl HashTable for HashTableU16 {
-    #[inline(always)]
+    #[inline]
     #[cfg(feature = "safe-encode")]
     fn get_at(&self, hash: usize) -> usize {
         self.dict[hash >> self.dict_bitshift] as usize
     }
-    #[inline(always)]
+    #[inline]
     #[cfg(not(feature = "safe-encode"))]
     fn get_at(&self, hash: usize) -> usize {
         unsafe { *self.dict.get_unchecked(hash >> self.dict_bitshift) as usize }
     }
-    #[inline(always)]
+    #[inline]
     #[cfg(feature = "safe-encode")]
     fn put_at(&mut self, hash: usize, val: usize) {
         self.dict[hash >> self.dict_bitshift] = val as u16;
     }
-    #[inline(always)]
+    #[inline]
     #[cfg(not(feature = "safe-encode"))]
     fn put_at(&mut self, hash: usize, val: usize) {
         (*unsafe { self.dict.get_unchecked_mut(hash >> self.dict_bitshift) }) = val as u16;
