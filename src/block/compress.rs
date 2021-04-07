@@ -324,6 +324,10 @@ pub fn backtrack_match(
 }
 
 /// Compress all bytes of `input[input_pos..]` into `output`.
+/// Bytes in `input[..input_pos]` are treated as a preamble and can be used for lookback.
+/// Bytes in `ext_dict` logically precede `pre[..input_pos]` and can also be used for lookback.
+/// `input_stream_offset` is the logical position of the byte in `input[0]` in the complete
+/// compression stream.
 ///
 /// `dict` is the dictionary of previously encoded sequences.
 ///

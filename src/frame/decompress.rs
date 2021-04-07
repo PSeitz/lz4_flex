@@ -93,14 +93,14 @@ impl<R: io::Read> FrameDecoder<R> {
         Ok(required)
     }
 
-    fn read_checksum(&mut self) -> Result<u32, io::Error> {
+    fn read_checksum(r: &mut R) -> Result<u32, io::Error> {
         let mut checksum_buffer = [0u8; size_of::<u32>()];
-        self.r.read_exact(&mut checksum_buffer[..])?;
+        r.read_exact(&mut checksum_buffer[..])?;
         let checksum = u32::from_le_bytes(checksum_buffer.try_into().unwrap());
         Ok(checksum)
     }
 
-    fn check_block_checksum(&self, data: &[u8], expected_checksum: u32) -> Result<(), io::Error> {
+    fn check_block_checksum(data: &[u8], expected_checksum: u32) -> Result<(), io::Error> {
         let mut block_hasher = XxHash32::with_seed(0);
         block_hasher.write(data);
         let calc_checksum = block_hasher.finish() as u32;
@@ -115,6 +115,7 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
         if self.frame_info.is_none() && self.read_frame_info()? == 0 {
             return Ok(0);
         }
+        let frame_info = self.frame_info.as_ref().unwrap();
         loop {
             if self.dsts < self.dste {
                 let len = std::cmp::min(self.dste - self.dsts, buf.len());
@@ -124,8 +125,8 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                 return Ok(len);
             }
 
-            let max_block_size = self.frame_info.as_mut().unwrap().block_size.get_size();
-            if self.frame_info.as_ref().unwrap().block_mode == BlockMode::Linked {
+            let max_block_size = frame_info.block_size.get_size();
+            if frame_info.block_mode == BlockMode::Linked {
                 if self.dsts + max_block_size > self.dst.len() {
                     // Output might not fit in the buffer.
                     // The ext_dict will become the last WINDOW_SIZE bytes
@@ -157,9 +158,9 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                     }
                     self.r
                         .read_exact(&mut self.dst[self.dsts..self.dsts + len])?;
-                    if self.frame_info.as_ref().unwrap().block_checksums {
-                        let expected_checksum = self.read_checksum()?;
-                        self.check_block_checksum(
+                    if frame_info.block_checksums {
+                        let expected_checksum = Self::read_checksum(&mut self.r)?;
+                        Self::check_block_checksum(
                             &self.dst[self.dsts..self.dsts + len],
                             expected_checksum,
                         )?;
@@ -169,18 +170,17 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                 }
                 BlockInfo::Compressed(len) => {
                     let len = len as usize;
+                    let is_linked = frame_info.block_mode == BlockMode::Linked;
                     if len > max_block_size {
                         return Err(Error::BlockTooBig.into());
                     }
                     self.r.read_exact(&mut self.src[..len])?;
-                    if self.frame_info.as_ref().unwrap().block_checksums {
-                        let expected_checksum = self.read_checksum()?;
-                        self.check_block_checksum(&self.src[..len], expected_checksum)?;
+                    if frame_info.block_checksums {
+                        let expected_checksum = Self::read_checksum(&mut self.r)?;
+                        Self::check_block_checksum(&self.src[..len], expected_checksum)?;
                     }
 
-                    let decomp_size = if self.frame_info.as_ref().unwrap().block_mode
-                        == BlockMode::Linked
-                    {
+                    let decomp_size = if is_linked {
                         let (head, tail) = self.dst.split_at_mut(self.dsts + max_block_size);
                         let ext_dict = if self.ext_dict_len == 0 {
                             b""
@@ -204,7 +204,7 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                 }
 
                 BlockInfo::EndMark => {
-                    if let Some(expected) = self.frame_info.as_ref().unwrap().content_size {
+                    if let Some(expected) = frame_info.content_size {
                         if self.content_len != expected {
                             return Err(Error::ContentLengthError {
                                 expected,
@@ -213,8 +213,8 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                             .into());
                         }
                     }
-                    if self.frame_info.as_ref().unwrap().content_checksum {
-                        let expected_checksum = self.read_checksum()?;
+                    if frame_info.content_checksum {
+                        let expected_checksum = Self::read_checksum(&mut self.r)?;
                         let calc_checksum = self.content_hasher.finish() as u32;
                         if calc_checksum != expected_checksum {
                             return Err(Error::ContentChecksumError.into());
@@ -225,7 +225,7 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                 }
             };
 
-            if self.frame_info.as_ref().unwrap().content_checksum {
+            if frame_info.content_checksum {
                 self.content_hasher.write(&self.dst[self.dsts..self.dste]);
             }
         }
