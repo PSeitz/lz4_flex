@@ -156,12 +156,10 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
         }
     }
 
-    let block_search_len = cur_slice.len().min(cand_slice.len()) / USIZE_SIZE * USIZE_SIZE;
-    let cur_slice = &cur_slice[block_search_len..];
-    let cand_slice = &cand_slice[block_search_len..];
     num += cur_slice
         .iter()
         .zip(cand_slice)
+        .skip(num)
         .take_while(|(a, b)| a == b)
         .count();
 
