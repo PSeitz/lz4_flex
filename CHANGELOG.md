@@ -9,4 +9,4 @@ push has additional overhead to check the capacity which is not required.
 If using this, make sure to allocate enough space for compression and decompression.
 
 * BUG-11 (https://github.com/PSeitz/lz4_flex/issues/11)
-	Allow to compress decompress into a u8 slice
+	Allow to compress/decompress into a u8 slice

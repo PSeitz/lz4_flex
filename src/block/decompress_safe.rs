@@ -63,7 +63,7 @@ fn check_token() {
     assert_eq!(does_token_fit(0b10110000), true);
 }
 
-/// The algorithm can copy over the origignal size, because of blocked copies, so the capacity of the sink needs 
+/// The algorithm can copy over the origignal size, because of blocked copies, so the capacity of the sink needs
 /// to be slightly larger.
 fn decompress_sink_size(uncompressed_size: usize) -> usize {
     uncompressed_size
@@ -87,10 +87,10 @@ const BLOCK_COPY_SIZE: usize = 24;
 
 #[cold]
 fn copy_24(output: &mut Sink, offset: usize) {
-    let mut dst = [0u8; BLOCK_COPY_SIZE];
     let i = output.pos() - offset;
-    dst.clone_from_slice(&output.as_slice()[i..i + BLOCK_COPY_SIZE]);
-    output.extend_from_slice(&dst);
+    output
+        .output
+        .copy_within(i..i + BLOCK_COPY_SIZE, output.pos());
 }
 
 /// Decompress all bytes of `input` into `output`.
@@ -149,13 +149,11 @@ pub fn decompress_into(input: &[u8], output: &mut Sink) -> Result<(), Decompress
             } else {
                 let old_len = output.pos();
                 if match_length <= 16 {
-                    let mut dst = [0u8; 16];
                     let (start, did_overflow) = output.pos().overflowing_sub(offset);
                     if did_overflow {
                         return Err(DecompressError::OffsetOutOfBounds);
                     }
-                    dst.clone_from_slice(&output.as_slice()[start..start + 16]);
-                    output.extend_from_slice(&dst);
+                    output.output.copy_within(start..start + 16, output.pos());
                 } else {
                     copy_24(output, offset)
                 }
@@ -223,14 +221,14 @@ pub fn duplicate_slice(
         duplicate_overlapping_slice(output, offset, match_length)?;
     } else {
         let old_len = output.pos();
-        let mut dst = [0u8; 16];
         let (val, did_overflow) = output.pos().overflowing_sub(offset);
         if did_overflow {
             return Err(DecompressError::OffsetOutOfBounds);
         }
+        // copy in 16 byte steps for more performance
         for i in (val..val + match_length).step_by(16) {
-            dst.clone_from_slice(&output.as_slice()[i..i + 16]);
-            output.extend_from_slice(&dst);
+            output.output.copy_within(i..i + 16, output.pos());
+            output.pos += 16;
         }
         output.set_pos(old_len + match_length);
     }
@@ -249,7 +247,6 @@ fn duplicate_overlapping_slice(
         let start = sink.pos();
         sink.output[start..start + match_length].fill(val);
         sink.pos += match_length;
-        //sink.resize(sink.len() + match_length, sink[sink.len() - 1]);
         Ok(())
     } else {
         let (start, did_overflow) = sink.pos().overflowing_sub(offset);

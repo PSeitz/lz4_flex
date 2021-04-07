@@ -193,7 +193,7 @@ fn uncompressed_size(input: &[u8]) -> Result<(usize, &[u8]), DecompressError> {
 }
 
 /// Sink is used as target to de/compress data into a preallocated space.
-/// Make sure to allocate enough for compression (`get_maximum_output_size`) AND decompression(decompress_sink_size). 
+/// Make sure to allocate enough for compression (`get_maximum_output_size`) AND decompression(decompress_sink_size).
 /// Sink can be created from a `Vec` or a `Slice`. The new pos on the data after the operation
 /// can be retrieved via `sink.pos()`
 /// # Examples
