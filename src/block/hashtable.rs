@@ -60,9 +60,7 @@ impl HashTable for HashTableUsize {
 
     #[inline]
     fn clear(&mut self) {
-        for i in &mut self.dict {
-            *i = 0;
-        }
+        self.dict.fill(0);
     }
 }
 
@@ -113,9 +111,7 @@ impl HashTable for HashTableU32 {
     }
     #[inline]
     fn clear(&mut self) {
-        for i in &mut self.dict {
-            *i = 0;
-        }
+        self.dict.fill(0);
     }
 }
 
@@ -159,9 +155,7 @@ impl HashTable for HashTableU16 {
     }
     #[inline]
     fn clear(&mut self) {
-        for i in &mut self.dict {
-            *i = 0;
-        }
+        self.dict.fill(0);
     }
 }
 

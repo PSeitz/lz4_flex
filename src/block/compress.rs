@@ -131,7 +131,7 @@ fn token_from_literal_and_match_length(lit_len: usize, duplicate_length: usize) 
 /// `source` either the same as input or an external slice
 /// `candidate` is the candidate position in `source`
 ///
-/// The function ignores the last X bytes (END_OFFSET) in input as this should be literals.
+/// The function ignores the last END_OFFSET bytes in input as this should be literals.
 #[inline]
 #[cfg(feature = "safe-encode")]
 fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
@@ -174,7 +174,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
 /// `source` either the same as input or an external slice
 /// `candidate` is the candidate position in `source`
 ///
-/// The function ignores the last 5 bytes (END_OFFSET) in input as this should be literals.
+/// The function ignores the last END_OFFSET bytes in input as this should be literals.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
 fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
@@ -350,6 +350,12 @@ pub(crate) fn compress_internal<T: HashTable>(
     assert!(input_pos <= input.len());
     assert!(ext_dict.len() <= super::WINDOW_SIZE);
     assert!(ext_dict.len() <= input_stream_offset);
+    // TODO: Return an error instead?
+    // Necessary for safety of the unsafe compressor
+    assert!(
+        output.capacity() - output.pos() >= get_maximum_output_size(input.len() - input_pos),
+        "Output too small"
+    );
     assert!(
         input_stream_offset
             .checked_add(input.len())
@@ -588,8 +594,9 @@ fn init_dict<T: HashTable>(dict: &mut T, dict_data: &[u8]) {
         i += 3;
     }
 }
-fn get_output_vec(input: &[u8]) -> Vec<u8> {
-    let max_size = get_maximum_output_size(input.len());
+
+pub(crate) fn get_output_vec(input_len: usize) -> Vec<u8> {
+    let max_size = get_maximum_output_size(input_len);
 
     let mut compressed = Vec::with_capacity(max_size);
     #[cfg(not(feature = "safe-encode"))]
@@ -603,12 +610,12 @@ fn get_output_vec(input: &[u8]) -> Vec<u8> {
     compressed
 }
 
-/// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as litte endian.
+/// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as a little endian u32.
 /// Can be used in conjuction with `decompress_size_prepended`
 #[inline]
 pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
-    let mut compressed = get_output_vec(input);
+    let mut compressed = get_output_vec(4 + input.len());
     let mut sink: Sink = (&mut compressed).into();
     push_u32(&mut sink, input.len() as u32);
     let new_pos = compress_into(input, &mut sink);
@@ -621,9 +628,21 @@ pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
 #[inline]
 pub fn compress(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
-    let mut compressed = get_output_vec(input);
+    let mut compressed = get_output_vec(input.len());
     let mut sink = (&mut compressed).into();
     let new_pos = compress_into(input, &mut sink);
+    compressed.truncate(new_pos);
+    compressed
+}
+
+/// Compress all bytes of `input` with an external dictionary.
+///
+#[inline]
+pub fn compress_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
+    // In most cases, the compression won't expand the size, so we set the input size as capacity.
+    let mut compressed = get_output_vec(input.len());
+    let mut sink = (&mut compressed).into();
+    let new_pos = compress_into_with_dict(input, &mut sink, ext_dict);
     compressed.truncate(new_pos);
     compressed
 }
@@ -760,9 +779,7 @@ mod tests {
         let input: &[u8] = &[
             10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
         ];
-        let mut compressed = get_output_vec(input);
-        let comp_size = compress_into_with_dict(&input, &mut (&mut compressed).into(), &input);
-        compressed.truncate(comp_size);
+        let compressed = compress_with_dict(&input, &input);
 
         assert!(compressed.len() < compress(input).len());
         let mut uncompressed = vec![0u8; input.len()];
@@ -772,7 +789,7 @@ mod tests {
             &input,
         )
         .unwrap();
-        compressed.truncate(uncomp_size);
+        uncompressed.truncate(uncomp_size);
         assert_eq!(input, uncompressed);
     }
 
@@ -782,9 +799,7 @@ mod tests {
         let input: &[u8] = &[
             10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 1, 2,
         ];
-        let mut compressed = get_output_vec(input);
-        let comp_len = compress_into_with_dict(&input, &mut (&mut compressed).into(), &input);
-        compressed.truncate(comp_len);
+        let compressed = compress_with_dict(&input, &input);
         assert!(compressed.len() < compress(input).len());
 
         let mut uncompressed = vec![0u8; input.len() * 2];
@@ -815,33 +830,29 @@ mod tests {
     // so it needs at least one prior byte.
     // When a block can reference data from another block, it can start immediately with a match and no literal,
     // so a block of 12 bytes can be compressed.
-    // #[test]
-    // fn test_conformant_last_block() {
-    //     let _12a: &[u8] = b"aaaaaaaaaaaa";
-    //     let _13a: &[u8] = b"aaaaaaaaaaaaa";
-    //     let _13b: &[u8] = b"bbbbbbbbbbbbb";
+    #[test]
+    fn test_conformant_last_block() {
+        let _12a: &[u8] = b"aaaaaaaaaaaa";
+        let _13a: &[u8] = b"aaaaaaaaaaaaa";
+        let _13b: &[u8] = b"bbbbbbbbbbbbb";
 
-    //     let out = compress(&_12a);
-    //     assert!(out.len() > 12);
-    //     let out = compress(&_13b);
-    //     assert!(out.len() < 13);
+        let out = compress(&_12a);
+        assert!(out.len() > 12);
+        let out = compress(&_13b);
+        assert!(out.len() < 13);
 
-    //     let mut out = Vec::new();
-    //     compress_into_with_dict(&_12a, &mut out, &_13b);
-    //     assert!(out.len() > 12);
+        let out = compress_with_dict(&_12a, &_13b);
+        assert!(out.len() > 12);
 
-    //     let mut out = Vec::new();
-    //     compress_into_with_dict(&_13a, &mut out, &_13b);
-    //     assert!(out.len() < 13);
+        let out = compress_with_dict(&_13a, &_13b);
+        assert!(out.len() < 13);
 
-    //     let mut out = Vec::new();
-    //     compress_into_with_dict(&_13a, &mut out, &_12a);
-    //     assert!(out.len() < 13);
+        let out = compress_with_dict(&_13a, &_12a);
+        assert!(out.len() < 13);
 
-    //     // According to the spec this _could_ compres, but it doesn't in this lib
-    //     // as it aborts compress for any input len < LZ4_MIN_LENGTH
-    //     // let mut out = Vec::new();
-    //     // compress_into_with_dict(&_12a, &mut out, &_12a);
-    //     // assert!(out.len() < 12);
-    // }
+        // According to the spec this _could_ compres, but it doesn't in this lib
+        // as it aborts compression for any input len < LZ4_MIN_LENGTH
+        // let out = compress_with_dict(&_12a, &_12a);
+        // assert!(out.len() < 12);
+    }
 }

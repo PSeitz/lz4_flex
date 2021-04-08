@@ -66,7 +66,7 @@ impl<W: io::Write> FrameEncoder<W> {
             compression_table: HashTableU32::new(dict_size, dict_bitshift),
             content_hasher: XxHash32::with_seed(0),
             content_len: 0,
-            dst: vec![0; max_block_size],
+            dst: crate::block::compress::get_output_vec(max_block_size),
             wrote_frame_info: false,
             frame_info,
             srcs: 0,
