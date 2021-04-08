@@ -17,7 +17,7 @@ name = "crit_bench"
 path = "benches/crit_bench.rs"
 
 [dev-dependencies]
-criterion = "0.3.3"
+criterion = "0.3.4"
 lzzzz = "0.8"
 lz4-compress = "0.1.1"
 more-asserts = "0.2.1"

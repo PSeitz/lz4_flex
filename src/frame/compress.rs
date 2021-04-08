@@ -195,7 +195,7 @@ impl<W: io::Write> FrameEncoder<W> {
                 let res = compress_internal(
                     src,
                     self.srcs,
-                    &mut self.dst,
+                    &mut (&mut self.dst[..]).into(),
                     &mut self.compression_table,
                     &self.src[self.ext_dict_offset..self.ext_dict_offset + self.ext_dict_len],
                     self.src_stream_offset,
@@ -208,16 +208,22 @@ impl<W: io::Write> FrameEncoder<W> {
                 if self.content_len != 0 {
                     self.compression_table.clear();
                 }
-                let res =
-                    compress_internal(src, 0, &mut self.dst, &mut self.compression_table, b"", 0);
+                let res = compress_internal(
+                    src,
+                    0,
+                    &mut (&mut self.dst[..]).into(),
+                    &mut self.compression_table,
+                    b"",
+                    0,
+                );
                 (src, res)
             }
         } else {
-            (&b""[..], Ok(0))
+            (&b""[..], 0)
         };
 
         let (block_info, buf_to_write) = match compressed_result {
-            Ok(comp_len) if comp_len < src.len() => {
+            comp_len if comp_len < src.len() => {
                 (BlockInfo::Compressed(comp_len as _), &self.dst[..comp_len])
             }
             _ => (BlockInfo::Uncompressed(src.len() as _), src),

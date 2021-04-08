@@ -293,9 +293,8 @@ fn not_compressible() {
     inverse("as6yhol.;jrew5tyuikbfewedfyjltre22459ba");
     inverse("jhflkdjshaf9p8u89ybkvjsdbfkhvg4ut08yfrr");
 }
-
 #[test]
-fn short() {
+fn short_1() {
     inverse("ahhd");
     inverse("ahd");
     inverse("x-29");
@@ -304,6 +303,10 @@ fn short() {
     inverse(".");
     inverse("ajsdh");
     inverse("aaaaaa");
+}
+
+#[test]
+fn short_2() {
     inverse("aaaaaabcbcbcbc");
 }
 
@@ -356,7 +359,6 @@ fn bug_fuzz_3() {
     ];
     inverse(data);
 }
-
 #[test]
 fn compression_works() {
     let s = r#"An iterator that knows its exact length.

@@ -189,14 +189,16 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                                 ..self.ext_dict_offset - head.len() + self.ext_dict_len]
                         };
 
+                        let mut sink: crate::block::Sink = head.into();
+                        sink.set_pos(self.dsts);
                         crate::block::decompress::decompress_into_with_dict(
                             &self.src[..len],
-                            head,
-                            self.dsts,
+                            &mut sink,
                             ext_dict,
                         )
                     } else {
-                        crate::block::decompress::decompress_into(&self.src[..len], &mut self.dst)
+                        let mut sink: crate::block::Sink = (&mut self.dst).into();
+                        crate::block::decompress::decompress_into(&self.src[..len], &mut sink)
                     }
                     .map_err(Error::DecompressionError)?;
                     self.dste = self.dsts + decomp_size;
