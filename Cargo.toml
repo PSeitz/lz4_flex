@@ -26,6 +26,10 @@ snap = "1.0"
 [dev-dependencies.lz-fear]
 git = "https://github.com/main--/rust-lz-fear"
 
+[dev-dependencies.lz4_flex_master]
+git = "https://github.com/PSeitz/lz4_flex"
+package = "lz4_flex"
+
 [features]
 default = ["std", "safe-encode", "safe-decode"]
 safe-decode = []

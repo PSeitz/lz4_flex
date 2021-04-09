@@ -57,6 +57,11 @@ fn bench_compression_throughput(c: &mut Criterion) {
             &input,
             |b, i| b.iter(|| lz4_flex::compress(&i)),
         );
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flexx_rust_master", input_bytes),
+            &input,
+            |b, i| b.iter(|| lz4_flex_master::compress(&i)),
+        );
         // group.bench_with_input(
         //     BenchmarkId::new("lz4_redox_rust", input_bytes),
         //     &input,
@@ -110,12 +115,18 @@ fn bench_decompression_throughput(c: &mut Criterion) {
         // let comp_rust = lz4_compress::compress(&input);
 
         let comp_lz4 = lz4_linked_block_compress(&input).unwrap();
-        group.throughput(Throughput::Bytes(comp_lz4.len() as _));
+        group.throughput(Throughput::Bytes(input.len() as _));
 
         group.bench_with_input(
             BenchmarkId::new("lz4_flexx_rust", input_bytes),
             &comp_lz4,
             |b, i| b.iter(|| lz4_flex::decompress(&i, input.len())),
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flexx_rust_master", input_bytes),
+            &comp_lz4,
+            |b, i| b.iter(|| lz4_flex_master::decompress(&i, input.len())),
         );
         // group.bench_with_input(
         //     BenchmarkId::new("lz4_redox_rust", input_bytes),
