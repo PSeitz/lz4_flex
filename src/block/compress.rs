@@ -244,29 +244,38 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
     *cur - start
 }
 
+// Write an integer to the output in LSIC format.
+#[inline]
+#[cfg(feature = "safe-encode")]
+fn write_integer(output: &mut Sink, mut n: usize) {
+    // Note: Since `n` is usually < 0xFF and writing multiple bytes to the output
+    // requires 2 branches of bound check (due to the possibility of add overflows)
+    // the simple byte at a time implementation bellow is faster in most cases.
+    while n >= 0xFF {
+        n -= 0xFF;
+        push_byte(output, 0xFF);
+    }
+    push_byte(output, n as u8);
+}
+
 /// Write an integer to the output in LSIC format.
 #[inline]
+#[cfg(not(feature = "safe-encode"))]
 fn write_integer(output: &mut Sink, mut n: usize) {
-    // A predictable branch for the common case
-    if n < 0xFF {
-        push_byte(output, n as u8);
-        return;
-    }
-
-    // Write the 0xFF bytes in chunks of 4.
+    // Write the 0xFF bytes as long as the integer is higher than said value.
+    push_u32(output, 0xFFFFFFFF);
     while n >= 4 * 0xFF {
         n -= 4 * 0xFF;
+        output.set_pos(output.pos() + 4);
         push_u32(output, 0xFFFFFFFF);
     }
 
-    // Write the last 0..=3 0xFF bytes + remainder.
-    let ffs = n / 0xFF;
-    let rem = n % 0xFF;
-    push_u32(
-        output,
-        0xFFFFFFFF ^ ((!(rem as u8) as u32) << ((3 - ffs) * 8)).to_be(),
-    );
-    output.pos -= 3 - ffs as usize;
+    // Updating output len for the remainder
+    output.set_pos(output.pos() + 1 + n / 255);
+    unsafe {
+        // Write the remaining byte.
+        *output.as_mut_ptr().sub(1) = (n % 255) as u8;
+    };
 }
 
 /// Handle the last bytes from the input as literals
