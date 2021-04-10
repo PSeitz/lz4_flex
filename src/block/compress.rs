@@ -288,19 +288,17 @@ fn handle_last_literals(output: &mut Sink, input: &[u8], start: usize) -> usize 
 ///
 #[inline]
 #[cfg(feature = "safe-encode")]
-pub fn backtrack_match(
+fn backtrack_match(
     input: &[u8],
     cur: &mut usize,
     literal_start: usize,
     source: &[u8],
     candidate: &mut usize,
 ) {
-    let left = input[literal_start..*cur].iter().rev().copied();
-    let right = source[..*candidate].iter().rev().copied();
-    for (a, b) in left.zip(right) {
-        if a != b {
-            break;
-        }
+    // Note: Even if iterator version of this loop has less branches inside the loop it has more
+    // branches before the loop. That in practice seems to make it slower than the while version bellow.
+    // TODO: It should be possible remove all bounds checks, since we are walking backwards
+    while *candidate > 0 && *cur > literal_start && input[*cur - 1] == source[*candidate - 1] {
         *cur -= 1;
         *candidate -= 1;
     }
