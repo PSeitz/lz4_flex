@@ -43,12 +43,12 @@ twox-hash = { version = "1", default-features = false }
 [profile.bench]
 codegen-units = 1
 # debug = true
-# lto = true
+lto = true
 opt-level = 3
 
 [profile.release]
 codegen-units = 1
-debug = true
+# debug = true
 lto = true
 opt-level = 3
 panic = "unwind"

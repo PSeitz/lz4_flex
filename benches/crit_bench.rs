@@ -14,10 +14,10 @@ const COMPRESSION10MB: &'static [u8] = include_bytes!("dickens.txt");
 const COMPRESSION95K_VERY_GOOD_LOGO: &'static [u8] = include_bytes!("../logo.jpg");
 
 const ALL: &[&[u8]] = &[
-    COMPRESSION1K as &[u8],
+    // COMPRESSION1K as &[u8],
     COMPRESSION34K as &[u8],
     // COMPRESSION65K as &[u8],
-    // COMPRESSION66K as &[u8],
+    COMPRESSION66K as &[u8],
     // COMPRESSION10MB as &[u8],
     // COMPRESSION95K_VERY_GOOD_LOGO as &[u8],
 ];
@@ -56,6 +56,17 @@ fn bench_compression_throughput(c: &mut Criterion) {
             BenchmarkId::new("lz4_flexx_rust", input_bytes),
             &input,
             |b, i| b.iter(|| lz4_flex::compress(&i)),
+        );
+        // an empty slice that the compiler can't infer the size
+        let empty_vec = std::env::args()
+            .skip(1000000)
+            .next()
+            .unwrap_or_default()
+            .into_bytes();
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flexx_rust_with_dict", input_bytes),
+            &input,
+            |b, i| b.iter(|| lz4_flex::compress_with_dict(&i, &empty_vec)),
         );
         group.bench_with_input(
             BenchmarkId::new("lz4_flexx_rust_master", input_bytes),
@@ -122,7 +133,17 @@ fn bench_decompression_throughput(c: &mut Criterion) {
             &comp_lz4,
             |b, i| b.iter(|| lz4_flex::decompress(&i, input.len())),
         );
-
+        // an empty slice that the compiler can't infer the size
+        let empty_vec = std::env::args()
+            .skip(1000000)
+            .next()
+            .unwrap_or_default()
+            .into_bytes();
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flexx_rust_with_dict", input_bytes),
+            &comp_lz4,
+            |b, i| b.iter(|| lz4_flex::decompress_with_dict(&i, input.len(), &empty_vec)),
+        );
         group.bench_with_input(
             BenchmarkId::new("lz4_flexx_rust_master", input_bytes),
             &comp_lz4,

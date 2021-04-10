@@ -255,6 +255,7 @@ impl<'a> Sink<'a> {
     pub(crate) fn as_mut_ptr(&mut self) -> *mut u8 {
         unsafe { self.output.as_mut_ptr().add(self.pos) }
     }
+    #[inline]
     pub fn get_data(&self) -> &[u8] {
         &self.output[0..self.pos]
     }

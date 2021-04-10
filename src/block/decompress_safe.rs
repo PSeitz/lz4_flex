@@ -64,8 +64,9 @@ fn check_token() {
     assert_eq!(does_token_fit(0b10110000), true);
 }
 
-/// The algorithm can copy over the origignal size, because of blocked copies, so the capacity of the sink needs
-/// to be slightly larger.
+/// The algorithm can copy over the original size, because of blocked copies,
+/// so the capacity of the sink may need to be slightly larger.
+#[inline]
 fn decompress_sink_size(uncompressed_size: usize) -> usize {
     uncompressed_size
 }
@@ -86,11 +87,20 @@ fn is_safe_distance(input_pos: usize, in_len: usize) -> bool {
 /// Decompress all bytes of `input` into `output`.
 #[inline]
 pub fn decompress_into(input: &[u8], output: &mut Sink) -> Result<usize, DecompressError> {
-    decompress_into_with_dict(input, output, b"")
+    decompress_internal::<false>(input, output, b"")
 }
 
 #[inline]
 pub fn decompress_into_with_dict(
+    input: &[u8],
+    output: &mut Sink,
+    ext_dict: &[u8],
+) -> Result<usize, DecompressError> {
+    decompress_internal::<true>(input, output, ext_dict)
+}
+
+#[inline]
+fn decompress_internal<const USE_DICT: bool>(
     input: &[u8],
     output: &mut Sink,
     ext_dict: &[u8],
@@ -137,16 +147,17 @@ pub fn decompress_into_with_dict(
 
             let mut match_length = (4 + (token & 0xF)) as usize;
 
-            // Write the duplicate segment to the output buffer from the output buffer
-            // The blocks can overlap, make sure they are at least 20 bytes apart
-            if offset > output.pos() {
+            if USE_DICT && offset > output.pos() {
                 let copied = copy_from_dict(output, ext_dict, offset, match_length)?;
                 if copied == match_length {
                     continue;
                 }
-                // match crosses ext_dict and output, offset is still correct as output_len was increased
+                // match crosses ext_dict and output, offset is still correct as output pos increased
                 match_length -= copied;
             }
+
+            // Write the duplicate segment to the output buffer from the output buffer
+            // The blocks can overlap, make sure they are at least 20 bytes apart
             if match_length + 20 >= offset {
                 duplicate_overlapping_slice(output, offset, match_length)?;
             } else {
@@ -207,7 +218,7 @@ pub fn decompress_into_with_dict(
             match_length += read_integer(input, &mut input_pos) as usize;
         }
 
-        if offset > output.pos() {
+        if USE_DICT && offset > output.pos() {
             let copied = copy_from_dict(output, ext_dict, offset, match_length)?;
             if copied == match_length {
                 continue;
@@ -229,23 +240,14 @@ fn copy_from_dict(
     offset: usize,
     mut match_length: usize,
 ) -> Result<usize, DecompressError> {
-    let (start, did_overflow_1) = ext_dict.len().overflowing_sub(offset - output.pos());
-    if did_overflow_1 {
+    // If we're here we know offset > output.pos
+    let (start, did_overflow) = ext_dict.len().overflowing_sub(offset - output.pos());
+    if did_overflow {
         return Err(DecompressError::OffsetOutOfBounds);
     }
+    // Can't copy past ext_dict len, the match may cross dict and output
     match_length = match_length.min(ext_dict.len() - start);
-    let (end, did_overflow_1) = start.overflowing_add(match_length);
-    let (output_end, did_overflow_2) = output.pos().overflowing_add(match_length);
-    if did_overflow_1 || did_overflow_2 {
-        return Err(DecompressError::OffsetOutOfBounds);
-    }
-    if end > ext_dict.len() || output_end > output.capacity() {
-        return Err(DecompressError::OutputTooSmall {
-            actual_size: 0,
-            expected_size: 0,
-        });
-    }
-    output.extend_from_slice(&ext_dict[start..end]);
+    output.extend_from_slice(&ext_dict[start..start + match_length]);
     Ok(match_length)
 }
 
@@ -311,7 +313,7 @@ fn duplicate_overlapping_slice(
 }
 
 /// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in litte endian.
-/// Can be used in conjuction with `compress_prepend_size`
+/// Can be used in conjunction with `compress_prepend_size`
 #[inline]
 pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressError> {
     let (uncompressed_size, input) = super::uncompressed_size(input)?;
@@ -326,6 +328,38 @@ pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, Dec
     vec.resize(decompress_sink_size(uncompressed_size), 0);
     let mut sink: Sink = (&mut vec).into();
     let decomp_len = decompress_into(input, &mut sink)?;
+    if decomp_len != uncompressed_size {
+        return Err(DecompressError::UncompressedSizeDiffers {
+            expected: uncompressed_size,
+            actual: decomp_len,
+        });
+    }
+    Ok(vec)
+}
+
+/// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in litte endian.
+/// Can be used in conjunction with `compress_prepend_size_with_dict`
+#[inline]
+pub fn decompress_size_prepended_with_dict(
+    input: &[u8],
+    ext_dict: &[u8],
+) -> Result<Vec<u8>, DecompressError> {
+    let (uncompressed_size, input) = super::uncompressed_size(input)?;
+    decompress_with_dict(input, uncompressed_size, ext_dict)
+}
+
+/// Decompress all bytes of `input` into a new vec.
+#[inline]
+pub fn decompress_with_dict(
+    input: &[u8],
+    uncompressed_size: usize,
+    ext_dict: &[u8],
+) -> Result<Vec<u8>, DecompressError> {
+    // Allocate a vector to contain the decompressed stream.
+    let mut vec: Vec<u8> = Vec::with_capacity(uncompressed_size);
+    vec.resize(decompress_sink_size(uncompressed_size), 0);
+    let mut sink: Sink = (&mut vec).into();
+    let decomp_len = decompress_into_with_dict(input, &mut sink, ext_dict)?;
     if decomp_len != uncompressed_size {
         return Err(DecompressError::UncompressedSizeDiffers {
             expected: uncompressed_size,

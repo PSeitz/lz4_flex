@@ -192,7 +192,7 @@ impl<W: io::Write> FrameEncoder<W> {
                     self.src_stream_offset = self.ext_dict_len;
                 }
                 let src = &self.src[..self.srce.min(self.srcs + max_block_size)];
-                let res = compress_internal(
+                let res = compress_internal::<_, true>(
                     src,
                     self.srcs,
                     &mut (&mut self.dst[..]).into(),
@@ -208,7 +208,7 @@ impl<W: io::Write> FrameEncoder<W> {
                 if self.content_len != 0 {
                     self.compression_table.clear();
                 }
-                let res = compress_internal(
+                let res = compress_internal::<_, false>(
                     src,
                     0,
                     &mut (&mut self.dst[..]).into(),

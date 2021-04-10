@@ -349,7 +349,7 @@ pub fn backtrack_match(
 ///
 /// returns the new end position of the Sink (=added elements, if start pos in the sink was 0)
 #[inline]
-pub(crate) fn compress_internal<T: HashTable>(
+pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
     input: &[u8],
     input_pos: usize,
     output: &mut Sink,
@@ -361,18 +361,20 @@ pub(crate) fn compress_internal<T: HashTable>(
     assert!(input_pos <= input.len());
     assert!(ext_dict.len() <= super::WINDOW_SIZE);
     assert!(ext_dict.len() <= input_stream_offset);
+    if USE_DICT {
+        assert!(input_stream_offset
+            .checked_add(input.len())
+            .and_then(|i| i.checked_add(ext_dict.len()))
+            .map_or(false, |i| i <= usize::MAX / 2));
+    } else {
+        assert!(input_stream_offset == 0);
+        assert!(ext_dict.is_empty());
+    }
     // TODO: Return an error instead?
     // Necessary for safety of the unsafe compressor
     assert!(
         output.capacity() - output.pos() >= get_maximum_output_size(input.len() - input_pos),
         "Output too small"
-    );
-    assert!(
-        input_stream_offset
-            .checked_add(input.len())
-            .and_then(|i| i.checked_add(ext_dict.len()))
-            .unwrap()
-            <= usize::MAX / 2
     );
 
     if input_pos + LZ4_MIN_LENGTH > input.len() {
@@ -429,7 +431,7 @@ pub(crate) fn compress_internal<T: HashTable>(
                 continue;
             }
 
-            if candidate >= input_stream_offset {
+            if !USE_DICT || candidate >= input_stream_offset {
                 // match within input
                 offset = (input_stream_offset + cur - candidate) as u16;
                 candidate -= input_stream_offset;
@@ -576,7 +578,17 @@ pub fn get_maximum_output_size(input_len: usize) -> usize {
 /// returns the new end position of the Sink (=added elements, if start pos in the sink was 0)
 #[inline]
 pub fn compress_into(input: &[u8], compressed: &mut Sink) -> usize {
-    compress_into_with_dict(input, compressed, b"")
+    let (dict_size, dict_bitshift) = get_table_size(input.len());
+    if input.len() < u16::MAX as usize {
+        let mut dict = HashTableU16::new(dict_size, dict_bitshift);
+        compress_internal::<_, false>(input, 0, compressed, &mut dict, b"", 0)
+    } else if input.len() < u32::MAX as usize {
+        let mut dict = HashTableU32::new(dict_size, dict_bitshift);
+        compress_internal::<_, false>(input, 0, compressed, &mut dict, b"", 0)
+    } else {
+        let mut dict = HashTableUsize::new(dict_size, dict_bitshift);
+        compress_internal::<_, false>(input, 0, compressed, &mut dict, b"", 0)
+    }
 }
 
 #[inline]
@@ -585,15 +597,15 @@ pub fn compress_into_with_dict(input: &[u8], compressed: &mut Sink, dict_data: &
     if dict_data.len() + input.len() < u16::MAX as usize {
         let mut dict = HashTableU16::new(dict_size, dict_bitshift);
         init_dict(&mut dict, dict_data);
-        compress_internal(input, 0, compressed, &mut dict, dict_data, dict_data.len())
+        compress_internal::<_, true>(input, 0, compressed, &mut dict, dict_data, dict_data.len())
     } else if dict_data.len() + input.len() < u32::MAX as usize {
         let mut dict = HashTableU32::new(dict_size, dict_bitshift);
         init_dict(&mut dict, dict_data);
-        compress_internal(input, 0, compressed, &mut dict, dict_data, dict_data.len())
+        compress_internal::<_, true>(input, 0, compressed, &mut dict, dict_data, dict_data.len())
     } else {
         let mut dict = HashTableUsize::new(dict_size, dict_bitshift);
         init_dict(&mut dict, dict_data);
-        compress_internal(input, 0, compressed, &mut dict, dict_data, dict_data.len())
+        compress_internal::<_, true>(input, 0, compressed, &mut dict, dict_data, dict_data.len())
     }
 }
 
