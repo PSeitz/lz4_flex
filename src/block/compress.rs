@@ -157,12 +157,16 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
         }
     }
 
-    num += cur_slice
-        .iter()
-        .zip(cand_slice)
-        .skip(num)
-        .take_while(|(a, b)| a == b)
-        .count();
+    // We're going to intentionally ignore the possibly last 1..USIZE_SIZE bytes
+    // at the end of input/source. This has a tiny negative impact on compression
+    // ratio but makes safe compressor 10% faster.
+    // For future reference this is what we'd like to do:
+    // num += cur_slice
+    //     .iter()
+    //     .zip(cand_slice)
+    //     .skip(num)
+    //     .take_while(|(a, b)| a == b)
+    //     .count();
 
     *cur += num;
     num
