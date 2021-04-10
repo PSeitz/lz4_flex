@@ -755,16 +755,23 @@ mod tests {
         ];
         assert_eq!(count_same_bytes(first, &mut 0, second, 0), 21);
 
-        // 1byte aligned block
+        let ignored_trailling_bytes = END_OFFSET
+            + if cfg!(feature = "safe-encode") {
+                core::mem::size_of::<usize>()
+            } else {
+                0
+            };
         for diff_idx in 0..100 {
             let first: Vec<u8> = (0u8..255).cycle().take(100 + END_OFFSET).collect();
             let mut second = first.clone();
             second[diff_idx] = 255;
             for start in 0..=diff_idx {
-                assert_eq!(
-                    count_same_bytes(&first, &mut start.clone(), &second, start),
-                    diff_idx - start
-                );
+                let same_bytes = count_same_bytes(&first, &mut start.clone(), &second, start);
+                if diff_idx + ignored_trailling_bytes > first.len() {
+                    assert_le!(same_bytes, diff_idx - start);
+                } else {
+                    assert_eq!(same_bytes, diff_idx - start);
+                }
             }
         }
     }
@@ -797,7 +804,7 @@ mod tests {
         assert_eq!(input, uncompressed);
     }
 
-    #[cfg(feature = "safe-decode")]
+    #[cfg(feature = "safe-decode")] // FIXME: temporary while decoder doesn't support ext dict
     #[test]
     fn test_dict_match_crossing() {
         let input: &[u8] = &[
@@ -827,36 +834,38 @@ mod tests {
         );
     }
 
-    // From the spec:
-    // The last match must start at least 12 bytes before the end of block.
-    // The last match is part of the penultimate sequence. It is followed by the last sequence, which contains only literals.
-    // Note that, as a consequence, an independent block < 13 bytes cannot be compressed, because the match must copy "something",
-    // so it needs at least one prior byte.
-    // When a block can reference data from another block, it can start immediately with a match and no literal,
-    // so a block of 12 bytes can be compressed.
+    // The safe count_same_bytes ignores additional trailling bytes, which makes this test invalid
+    #[cfg(not(feature = "safe-encode"))]
     #[test]
     fn test_conformant_last_block() {
+        // From the spec:
+        // The last match must start at least 12 bytes before the end of block.
+        // The last match is part of the penultimate sequence. It is followed by the last sequence, which contains only literals.
+        // Note that, as a consequence, an independent block < 13 bytes cannot be compressed, because the match must copy "something",
+        // so it needs at least one prior byte.
+        // When a block can reference data from another block, it can start immediately with a match and no literal,
+        // so a block of 12 bytes can be compressed.
         let _12a: &[u8] = b"aaaaaaaaaaaa";
         let _13a: &[u8] = b"aaaaaaaaaaaaa";
         let _13b: &[u8] = b"bbbbbbbbbbbbb";
 
         let out = compress(&_12a);
-        assert!(out.len() > 12);
+        assert_gt!(out.len(), 12);
         let out = compress(&_13b);
-        assert!(out.len() < 13);
+        assert_le!(out.len(), 13);
 
         let out = compress_with_dict(&_12a, &_13b);
-        assert!(out.len() > 12);
+        assert_gt!(out.len(), 12);
 
         let out = compress_with_dict(&_13a, &_13b);
-        assert!(out.len() < 13);
+        assert_le!(out.len(), 13);
 
         let out = compress_with_dict(&_13a, &_12a);
-        assert!(out.len() < 13);
+        assert_lt!(out.len(), 13);
 
         // According to the spec this _could_ compres, but it doesn't in this lib
         // as it aborts compression for any input len < LZ4_MIN_LENGTH
         // let out = compress_with_dict(&_12a, &_12a);
-        // assert!(out.len() < 12);
+        // assert_gt!(out.len(), 12);
     }
 }

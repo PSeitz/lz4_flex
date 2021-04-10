@@ -28,6 +28,10 @@ For maximum performance use `no-default-features`.
 
 extern crate alloc;
 
+#[cfg(test)]
+#[macro_use]
+extern crate more_asserts;
+
 pub mod block;
 #[cfg(feature = "std")]
 pub mod frame;
