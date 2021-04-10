@@ -456,6 +456,7 @@ pub(crate) fn compress_internal<T: HashTable>(
         let duplicate_length =
             count_same_bytes(input, &mut cur, candidate_source, candidate + MINMATCH);
 
+        // Note: The `- 2` offset was copied from the reference implementation, it could be arbitrary.
         let hash = get_hash_at(input, cur - 2);
         dict.put_at(hash, cur - 2 + input_stream_offset);
 
@@ -593,6 +594,7 @@ fn init_dict<T: HashTable>(dict: &mut T, dict_data: &[u8]) {
     while i + core::mem::size_of::<usize>() <= dict_data.len() {
         let hash = get_hash_at(dict_data, i);
         dict.put_at(hash, i);
+        // Note: The 3 byte step was copied from the reference implementation, it could be arbitrary.
         i += 3;
     }
 }
