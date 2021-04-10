@@ -117,6 +117,7 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
         }
         let frame_info = self.frame_info.as_ref().unwrap();
         loop {
+            // Fill read buffer if there's uncompressed data left
             if self.dsts < self.dste {
                 let len = std::cmp::min(self.dste - self.dsts, buf.len());
                 let dste = self.dsts.checked_add(len).unwrap();
@@ -125,6 +126,7 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                 return Ok(len);
             }
 
+            // Adjust dst buffer offsets to uncompress the next block
             let max_block_size = frame_info.block_size.get_size();
             if frame_info.block_mode == BlockMode::Linked {
                 if self.dsts + max_block_size > self.dst.len() {
@@ -165,12 +167,12 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                             expected_checksum,
                         )?;
                     }
+
                     self.dste = self.dsts + len;
                     self.content_len += len as u64;
                 }
                 BlockInfo::Compressed(len) => {
                     let len = len as usize;
-                    let is_linked = frame_info.block_mode == BlockMode::Linked;
                     if len > max_block_size {
                         return Err(Error::BlockTooBig.into());
                     }
@@ -180,14 +182,12 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                         Self::check_block_checksum(&self.src[..len], expected_checksum)?;
                     }
 
-                    let decomp_size = if is_linked {
+                    let with_dict_mode =
+                        frame_info.block_mode == BlockMode::Linked && self.ext_dict_len != 0;
+                    let decomp_size = if with_dict_mode {
                         let (head, tail) = self.dst.split_at_mut(self.dsts + max_block_size);
-                        let ext_dict = if self.ext_dict_len == 0 {
-                            b""
-                        } else {
-                            &tail[self.ext_dict_offset - head.len()
-                                ..self.ext_dict_offset - head.len() + self.ext_dict_len]
-                        };
+                        let ext_dict = &tail[self.ext_dict_offset - head.len()
+                            ..self.ext_dict_offset - head.len() + self.ext_dict_len];
 
                         let mut sink: crate::block::Sink = head.into();
                         sink.set_pos(self.dsts);
@@ -197,10 +197,13 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                             ext_dict,
                         )
                     } else {
+                        // Independent blocks OR linked blocks with only prefix data
                         let mut sink: crate::block::Sink = (&mut self.dst).into();
+                        sink.set_pos(self.dsts);
                         crate::block::decompress::decompress_into(&self.src[..len], &mut sink)
                     }
                     .map_err(Error::DecompressionError)?;
+
                     self.dste = self.dsts + decomp_size;
                     self.content_len += decomp_size as u64;
                 }
