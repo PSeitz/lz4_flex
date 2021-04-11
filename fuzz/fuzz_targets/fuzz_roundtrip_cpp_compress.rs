@@ -1,12 +1,10 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
 
-use lz4_flex::decompress_size_prepended;
-use lz4::block::compress as lz4_linked_block_compress;
-
 fuzz_target!(|data: &[u8]| {
     // fuzzed code goes here
-    let compressed = lz4_linked_block_compress(data, None, true).unwrap();
-    let decompressed = decompress_size_prepended(&compressed).unwrap();
+    let mut compressed = Vec::new();
+    lzzzz::lz4::compress_to_vec(data, &mut compressed, lzzzz::lz4::ACC_LEVEL_DEFAULT).unwrap();
+    let decompressed = lz4_flex::decompress(&compressed, data.len()).unwrap();
     assert_eq!(data, decompressed.as_slice());
 });
