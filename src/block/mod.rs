@@ -56,8 +56,7 @@ pub(crate) const WINDOW_SIZE: usize = 64 * 1024;
 const MFLIMIT: usize = 12;
 
 /// The last 5 bytes of input are always literals. Therefore, the last sequence contains at least 5 bytes.
-// FIXME: 7 otherwise hashing may read beyond bounds on 64 bit systems.
-const END_OFFSET: usize = 7;
+const END_OFFSET: usize = 5;
 
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
 /// Minimum length of a block

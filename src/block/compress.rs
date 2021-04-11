@@ -421,7 +421,8 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
             cur = next_cur;
             next_cur += step_size;
 
-            if cur > end_pos_check {
+            // Same as cur + MFLIMIT >= input.len()
+            if cur >= end_pos_check {
                 return handle_last_literals(output, input, literal_start);
             }
             // Find a candidate in the dictionary with the hash of the current four bytes.

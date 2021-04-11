@@ -475,7 +475,6 @@ pub fn decompress_with_dict(
     Ok(vec)
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
