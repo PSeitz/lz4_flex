@@ -263,19 +263,28 @@ fn write_integer(output: &mut Sink, mut n: usize) {
 #[cfg(not(feature = "safe-encode"))]
 fn write_integer(output: &mut Sink, mut n: usize) {
     // Write the 0xFF bytes as long as the integer is higher than said value.
-    push_u32(output, 0xFFFFFFFF);
-    while n >= 4 * 0xFF {
-        n -= 4 * 0xFF;
-        output.set_pos(output.pos() + 4);
-        push_u32(output, 0xFFFFFFFF);
+    if n >= 4 * 0xFF {
+        // In this unlikelly branch we use a fill instead of a loop,
+        // otherwise rustc may output a large unrolled/vectorized loop.
+        let bulk = n / (4 * 0xFF);
+        n %= 4 * 0xFF;
+        unsafe {
+            output
+                .output
+                .get_unchecked_mut(output.pos()..output.pos() + 4 * bulk)
+                .fill(0xFF)
+        }
+        output.set_pos(output.pos() + 4 * bulk);
     }
 
+    // Handle last 1 to 4 bytes
+    push_u32(output, 0xFFFFFFFF);
     // Updating output len for the remainder
-    output.set_pos(output.pos() + 1 + n / 255);
+    output.set_pos(output.pos() - 4 + 1 + n / 255);
     unsafe {
         // Write the remaining byte.
         *output.as_mut_ptr().sub(1) = (n % 255) as u8;
-    };
+    }
 }
 
 /// Handle the last bytes from the input as literals
