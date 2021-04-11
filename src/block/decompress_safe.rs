@@ -2,6 +2,7 @@
 
 use crate::block::DecompressError;
 use crate::block::Sink;
+use crate::block::MINMATCH;
 use alloc::vec::Vec;
 
 /// Read an integer LSIC (linear small integer code) encoded.
@@ -145,7 +146,7 @@ fn decompress_internal<const USE_DICT: bool>(
 
             let offset = read_u16(input, &mut input_pos) as usize;
 
-            let mut match_length = (4 + (token & 0xF)) as usize;
+            let mut match_length = MINMATCH + (token & 0xF) as usize;
 
             if USE_DICT && offset > output.pos() {
                 let copied = copy_from_dict(output, ext_dict, offset, match_length)?;
@@ -158,14 +159,14 @@ fn decompress_internal<const USE_DICT: bool>(
 
             // Write the duplicate segment to the output buffer from the output buffer
             // The blocks can overlap, make sure they are at least 20 bytes apart
-            if match_length + 20 >= offset {
+            if offset < 20 {
                 duplicate_overlapping_slice(output, offset, match_length)?;
             } else {
                 let (start, did_overflow) = output.pos().overflowing_sub(offset);
                 if did_overflow {
                     return Err(DecompressError::OffsetOutOfBounds);
                 }
-                if output.pos() + 20 < output.capacity() {
+                if output.pos() + 20 <= output.capacity() {
                     output.output.copy_within(start..start + 20, output.pos());
                 } else {
                     output
@@ -207,12 +208,12 @@ fn decompress_internal<const USE_DICT: bool>(
         // which will later be copied from data previously decompressed into the output buffer. The
         // initial length is derived from the second part of the token (the lower nibble), we read
         // earlier. Since having a match length of less than 4 would mean negative compression
-        // ratio, we start at 4.
+        // ratio, we start at 4 (MINMATCH).
 
         // The initial match length can maximally be 19. As with the literal length, this indicates
         // that there are more bytes to read.
-        let mut match_length = (4 + (token & 0xF)) as usize;
-        if match_length == 4 + 15 {
+        let mut match_length = MINMATCH + (token & 0xF) as usize;
+        if match_length == MINMATCH + 15 {
             // The match length took the maximal value, indicating that there is more bytes. We
             // read the extra integer.
             match_length += read_integer(input, &mut input_pos) as usize;
@@ -238,17 +239,20 @@ fn copy_from_dict(
     output: &mut Sink,
     ext_dict: &[u8],
     offset: usize,
-    mut match_length: usize,
+    match_length: usize,
 ) -> Result<usize, DecompressError> {
     // If we're here we know offset > output.pos
-    let (start, did_overflow) = ext_dict.len().overflowing_sub(offset - output.pos());
+    debug_assert!(offset > output.pos);
+    let (dict_offset, did_overflow) = ext_dict.len().overflowing_sub(offset - output.pos());
     if did_overflow {
         return Err(DecompressError::OffsetOutOfBounds);
     }
     // Can't copy past ext_dict len, the match may cross dict and output
-    match_length = match_length.min(ext_dict.len() - start);
-    output.extend_from_slice(&ext_dict[start..start + match_length]);
-    Ok(match_length)
+    let dict_match_length = match_length.min(ext_dict.len() - dict_offset);
+    // Sanity check
+    debug_assert!(dict_match_length > 0);
+    output.extend_from_slice(&ext_dict[dict_offset..dict_offset + dict_match_length]);
+    Ok(dict_match_length)
 }
 
 /// extends output by self-referential copies
