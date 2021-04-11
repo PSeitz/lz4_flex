@@ -81,12 +81,16 @@ impl<R: io::Read> FrameDecoder<R> {
             self.r.read_exact(&mut buffer[7..required])?;
         }
         let frame_info = FrameInfo::read(&buffer[..required])?;
-        self.src.resize(frame_info.block_size.get_size(), 0);
-        let mut dst_size = frame_info.block_size.get_size();
-        if frame_info.block_mode == BlockMode::Linked {
-            dst_size = dst_size * 2 + crate::block::WINDOW_SIZE;
-        }
-        self.dst.resize(dst_size, 0);
+        let max_block_size = frame_info.block_size.get_size();
+        self.src.resize(max_block_size, 0);
+        self.dst.resize(
+            if frame_info.block_mode == BlockMode::Linked {
+                max_block_size * 2 + crate::block::WINDOW_SIZE
+            } else {
+                max_block_size
+            },
+            0,
+        );
         self.frame_info = Some(frame_info);
         self.content_hasher = XxHash32::with_seed(0);
         self.content_len = 0;
@@ -185,9 +189,9 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                     let with_dict_mode =
                         frame_info.block_mode == BlockMode::Linked && self.ext_dict_len != 0;
                     let decomp_size = if with_dict_mode {
-                        let (head, tail) = self.dst.split_at_mut(self.dsts + max_block_size);
-                        let ext_dict = &tail[self.ext_dict_offset - head.len()
-                            ..self.ext_dict_offset - head.len() + self.ext_dict_len];
+                        debug_assert!(self.dsts + max_block_size <= self.ext_dict_offset);
+                        let (head, tail) = self.dst.split_at_mut(self.ext_dict_offset);
+                        let ext_dict = &tail[..self.ext_dict_len];
 
                         let mut sink: crate::block::Sink = head.into();
                         sink.set_pos(self.dsts);

@@ -76,7 +76,6 @@ fn inverse(bytes: impl AsRef<[u8]>) {
     // compress with rust, decompress with rust
     let compressed_flex = compress_frame(bytes);
     let decompressed = decompress_frame(&compressed_flex).unwrap();
-    assert_eq!(decompressed.len(), bytes.len());
     assert_eq!(decompressed, bytes);
 
     lz4_cpp_compatibility(bytes);
