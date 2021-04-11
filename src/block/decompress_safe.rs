@@ -341,7 +341,7 @@ pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, Dec
     Ok(vec)
 }
 
-/// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in litte endian.
+/// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in little endian.
 /// Can be used in conjunction with `compress_prepend_size_with_dict`
 #[inline]
 pub fn decompress_size_prepended_with_dict(
