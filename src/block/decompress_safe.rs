@@ -80,11 +80,6 @@ fn does_token_fit(token: u8) -> bool {
         || (token & FIT_TOKEN_MASK_MATCH) == FIT_TOKEN_MASK_MATCH)
 }
 
-#[inline]
-fn is_safe_distance(input_pos: usize, in_len: usize) -> bool {
-    input_pos < in_len
-}
-
 /// Decompress all bytes of `input` into `output`.
 #[inline]
 pub fn decompress_into(input: &[u8], output: &mut Sink) -> Result<usize, DecompressError> {
@@ -113,10 +108,14 @@ fn decompress_internal<const USE_DICT: bool>(
     let mut input_pos = 0;
     let initial_output_pos = output.pos();
 
-    // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer
-    // is empty.
-    let end_pos_check = input.len().saturating_sub(18);
+    let safe_input_pos = input
+        .len()
+        .saturating_sub(16 /* literal copy */ +  2 /* u16 match offset */);
+    let safe_output_pos = output
+        .capacity()
+        .saturating_sub(16 /* literal copy */ + 20 /* match copy */);
 
+    // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer is empty.
     loop {
         if input_pos >= input.len() {
             return Err(DecompressError::LiteralOutOfBounds);
@@ -133,15 +132,21 @@ fn decompress_internal<const USE_DICT: bool>(
         // Checking for hot-loop.
         // In most cases the metadata does fit in a single 1byte token (statistically) and we are in a safe-distance to the end.
         // This enables some optimized handling.
-        if does_token_fit(token) && is_safe_distance(input_pos, end_pos_check) {
+        if does_token_fit(token) && input_pos <= safe_input_pos && output.pos() <= safe_output_pos {
             let literal_length = (token >> 4) as usize;
 
             if input_pos + literal_length > input.len() {
                 return Err(DecompressError::LiteralOutOfBounds);
             }
 
-            // copy literal
-            output.extend_from_slice(&input[input_pos..input_pos + literal_length]);
+            // Copy the literal
+            // The literal is at max 14 bytes, and the is_safe_distance check assures
+            // that we are far away enough from the end so we can safely copy 16 bytes
+            {
+                let pos = output.pos();
+                output.output[pos..pos + 16].copy_from_slice(&input[input_pos..input_pos + 16]);
+            }
+            output.pos += literal_length;
             input_pos += literal_length;
 
             let offset = read_u16(input, &mut input_pos) as usize;
@@ -157,8 +162,9 @@ fn decompress_internal<const USE_DICT: bool>(
                 match_length -= copied;
             }
 
-            // Write the duplicate segment to the output buffer from the output buffer
-            // The blocks can overlap, make sure they are at least 20 bytes apart
+            // In this branch we know that match_length is at most 18 (14 + MINMATCH).
+            // But the blocks can overlap, so make sure they are at least 20 bytes apart
+            // to enable an optimized non-overlaping copy of 20 bytes.
             if offset < 20 {
                 duplicate_overlapping_slice(output, offset, match_length)?;
             } else {
@@ -166,13 +172,7 @@ fn decompress_internal<const USE_DICT: bool>(
                 if did_overflow {
                     return Err(DecompressError::OffsetOutOfBounds);
                 }
-                if output.pos() + 20 <= output.capacity() {
-                    output.output.copy_within(start..start + 20, output.pos());
-                } else {
-                    output
-                        .output
-                        .copy_within(start..start + match_length, output.pos())
-                }
+                output.output.copy_within(start..start + 20, output.pos());
                 output.pos += match_length;
             }
 
