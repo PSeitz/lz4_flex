@@ -1,5 +1,7 @@
 //! The decompression algorithm.
 
+use std::convert::TryInto;
+
 use crate::block::DecompressError;
 use crate::block::Sink;
 use crate::block::MINMATCH;
@@ -20,16 +22,16 @@ use alloc::vec::Vec;
 /// is encoded to _255 + 255 + 255 + 4 = 769_. The bytes after the first 4 is ignored, because
 /// 4 is the first non-0xFF byte.
 #[inline]
-fn read_integer(input: &[u8], input_pos: &mut usize) -> u32 {
+fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, DecompressError> {
     // We start at zero and count upwards.
     let mut n: u32 = 0;
     // If this byte takes value 255 (the maximum value it can take), another byte is read
     // and added to the sum. This repeats until a byte lower than 255 is read.
     loop {
         // We add the next byte until we get a byte which we add to the counting variable.
-
-        let extra: u8 = input[*input_pos];
-        // check alread done in move_cursor
+        let extra: u8 = *input
+            .get(*input_pos)
+            .ok_or(DecompressError::ExpectedAnotherByte)?;
         *input_pos += 1;
         n += extra as u32;
 
@@ -42,15 +44,17 @@ fn read_integer(input: &[u8], input_pos: &mut usize) -> u32 {
     // 255, 255, 255, 8
     // 111, 111, 111, 101
 
-    n
+    Ok(n)
 }
 
 /// Read a little-endian 16-bit integer from the input stream.
 #[inline]
-fn read_u16(input: &[u8], input_pos: &mut usize) -> u16 {
-    let dst = [input[*input_pos], input[*input_pos + 1]];
+fn read_u16(input: &[u8], input_pos: &mut usize) -> Result<u16, DecompressError> {
+    let dst = input
+        .get(*input_pos..*input_pos + 2)
+        .ok_or(DecompressError::ExpectedAnotherByte)?;
     *input_pos += 2;
-    u16::from_le_bytes(dst)
+    Ok(u16::from_le_bytes(dst.try_into().unwrap()))
 }
 
 const FIT_TOKEN_MASK_LITERAL: u8 = 0b00001111;
@@ -117,16 +121,14 @@ fn decompress_internal<const USE_DICT: bool>(
 
     // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer is empty.
     loop {
-        if input_pos >= input.len() {
-            return Err(DecompressError::LiteralOutOfBounds);
-        }
-
         // Read the token. The token is the first byte in a block. It is divided into two 4-bit
         // subtokens, the higher and the lower.
         // This token contains to 4-bit "fields", a higher and a lower, representing the literals'
         // length and the back reference's length, respectively. LSIC is used if either are their
         // maximal values.
-        let token = input[input_pos];
+        let token = *input
+            .get(input_pos)
+            .ok_or(DecompressError::ExpectedAnotherByte)?;
         input_pos += 1;
 
         // Checking for hot-loop.
@@ -149,7 +151,7 @@ fn decompress_internal<const USE_DICT: bool>(
             output.pos += literal_length;
             input_pos += literal_length;
 
-            let offset = read_u16(input, &mut input_pos) as usize;
+            let offset = read_u16(input, &mut input_pos)? as usize;
 
             let mut match_length = MINMATCH + (token & 0xF) as usize;
 
@@ -187,7 +189,7 @@ fn decompress_internal<const USE_DICT: bool>(
             if literal_length == 15 {
                 // The literal_length length took the maximal value, indicating that there is more than 15
                 // literal_length bytes. We read the extra integer.
-                literal_length += read_integer(input, &mut input_pos) as usize;
+                literal_length += read_integer(input, &mut input_pos)? as usize;
             }
 
             if input_pos + literal_length > input.len() {
@@ -203,7 +205,7 @@ fn decompress_internal<const USE_DICT: bool>(
             break;
         }
 
-        let offset = read_u16(input, &mut input_pos) as usize;
+        let offset = read_u16(input, &mut input_pos)? as usize;
         // Obtain the initial match length. The match length is the length of the duplicate segment
         // which will later be copied from data previously decompressed into the output buffer. The
         // initial length is derived from the second part of the token (the lower nibble), we read
@@ -216,7 +218,7 @@ fn decompress_internal<const USE_DICT: bool>(
         if match_length == MINMATCH + 15 {
             // The match length took the maximal value, indicating that there is more bytes. We
             // read the extra integer.
-            match_length += read_integer(input, &mut input_pos) as usize;
+            match_length += read_integer(input, &mut input_pos)? as usize;
         }
 
         if USE_DICT && offset > output.pos() {
@@ -249,15 +251,14 @@ fn copy_from_dict(
     }
     // Can't copy past ext_dict len, the match may cross dict and output
     let dict_match_length = match_length.min(ext_dict.len() - dict_offset);
-    // Sanity check
-    debug_assert!(dict_match_length > 0);
-    output.extend_from_slice(&ext_dict[dict_offset..dict_offset + dict_match_length]);
+    let ext_match = &ext_dict[dict_offset..dict_offset + dict_match_length];
+    output.extend_from_slice(ext_match);
     Ok(dict_match_length)
 }
 
 /// extends output by self-referential copies
 #[inline]
-pub fn duplicate_slice(
+fn duplicate_slice(
     output: &mut Sink,
     offset: usize,
     match_length: usize,

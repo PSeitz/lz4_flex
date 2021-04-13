@@ -55,11 +55,10 @@ unsafe fn copy_from_dict(
     debug_assert!(offset > output_ptr.offset_from(output_base) as usize);
     // If checked-decode is enabled we also know that the offset falls within ext_dict
     debug_assert!(ext_dict.len() + output_ptr.offset_from(output_base) as usize >= offset);
+
     let dict_offset = ext_dict.len() + output_ptr.offset_from(output_base) as usize - offset;
     // Can't copy past ext_dict len, the match may cross dict and output
     let dict_match_length = match_length.min(ext_dict.len() - dict_offset);
-    // Sanity check
-    debug_assert!(dict_match_length > 0);
     core::ptr::copy_nonoverlapping(
         ext_dict.as_ptr().add(dict_offset),
         *output_ptr,

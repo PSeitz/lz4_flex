@@ -103,7 +103,7 @@ fn lz4_cpp_compatibility(bytes: &[u8]) {
     let decompressed = decompress_frame(&compressed).unwrap();
     assert_eq!(decompressed, bytes);
 
-    if bytes.len() != 0 {
+    if !bytes.is_empty() {
         // compress with rust, decompress with lz4 cpp
         let compressed_flex = compress_frame(bytes);
         let decompressed = lz4_cpp_frame_decompress(&compressed_flex).unwrap();
