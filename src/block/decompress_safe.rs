@@ -105,9 +105,6 @@ fn decompress_internal<const USE_DICT: bool>(
     output: &mut Sink,
     ext_dict: &[u8],
 ) -> Result<usize, DecompressError> {
-    if input.is_empty() {
-        return Ok(0);
-    }
     // Decode into our vector.
     let mut input_pos = 0;
     let initial_output_pos = output.pos();

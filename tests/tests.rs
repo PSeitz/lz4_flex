@@ -88,9 +88,13 @@ fn lz4_cpp_compatibility(_bytes: &[u8]) {}
 #[cfg(not(miri))]
 fn lz4_cpp_compatibility(bytes: &[u8]) {
     // compress with lz4 cpp, decompress with rust
-    let compressed = lz4_cpp_block_compress(bytes).unwrap();
-    let decompressed = decompress(&compressed, bytes.len()).unwrap();
-    assert_eq!(decompressed, bytes);
+    if !bytes.is_empty() {
+        // lz4_cpp_block_compress will return empty output for empty input but
+        // that's in the bindings and not the linked library.
+        let compressed = lz4_cpp_block_compress(bytes).unwrap();
+        let decompressed = decompress(&compressed, bytes.len()).unwrap();
+        assert_eq!(decompressed, bytes);
+    }
 
     // compress with rust, decompress with lz4 cpp
     let compressed_flex = compress(bytes);
@@ -103,8 +107,10 @@ fn lz4_cpp_compatibility(bytes: &[u8]) {
     let decompressed = decompress_frame(&compressed).unwrap();
     assert_eq!(decompressed, bytes);
 
+    // compress with rust, decompress with lz4 cpp
     if !bytes.is_empty() {
-        // compress with rust, decompress with lz4 cpp
+        // compress_frame won't write a header if nothing is written to it
+        // which is more in line with io::Write interface?
         let compressed_flex = compress_frame(bytes);
         let decompressed = lz4_cpp_frame_decompress(&compressed_flex).unwrap();
         assert_eq!(decompressed, bytes);

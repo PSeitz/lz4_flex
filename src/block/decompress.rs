@@ -182,8 +182,12 @@ fn decompress_internal<const USE_DICT: bool>(
     output: &mut Sink,
     ext_dict: &[u8],
 ) -> Result<usize, DecompressError> {
-    if input.is_empty() {
-        return Ok(0);
+    #[cfg(not(feature = "checked-decode"))]
+    {
+        // Prevent segfault for empty input even if checked-decode isn't enabled
+        if input.is_empty() {
+            return Err(DecompressError::ExpectedAnotherByte);
+        }
     }
 
     let output_base = output.output.as_mut_ptr();
