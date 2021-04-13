@@ -421,8 +421,8 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
             cur = next_cur;
             next_cur += step_size;
 
-            // Same as cur + MFLIMIT >= input.len()
-            if cur >= end_pos_check {
+            // Same as cur + MFLIMIT > input.len()
+            if cur > end_pos_check {
                 return handle_last_literals(output, input, literal_start);
             }
             // Find a candidate in the dictionary with the hash of the current four bytes.
@@ -815,47 +815,48 @@ mod tests {
         let _out = compress(&input);
     }
 
-    #[cfg(feature = "safe-decode")]
     #[test]
     fn test_dict() {
         let input: &[u8] = &[
             10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
         ];
-        let compressed = compress_with_dict(&input, &input);
+        let dict = input;
+        let compressed = compress_with_dict(&input, &dict);
+        assert_lt!(compressed.len(), compress(input).len());
 
         assert!(compressed.len() < compress(input).len());
         let mut uncompressed = vec![0u8; input.len()];
         let uncomp_size = crate::block::decompress::decompress_into_with_dict(
             &compressed,
             &mut (&mut uncompressed).into(),
-            &input,
+            &dict,
         )
         .unwrap();
         uncompressed.truncate(uncomp_size);
         assert_eq!(input, uncompressed);
     }
 
-    #[cfg(feature = "safe-decode")] // FIXME: temporary while decoder doesn't support ext dict
     #[test]
     fn test_dict_match_crossing() {
         let input: &[u8] = &[
-            10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 1, 2,
+            10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
         ];
-        let compressed = compress_with_dict(&input, &input);
-        assert!(compressed.len() < compress(input).len());
+        let dict = input;
+        let compressed = compress_with_dict(&input, &dict);
+        assert_lt!(compressed.len(), compress(input).len());
 
         let mut uncompressed = vec![0u8; input.len() * 2];
         // copy first half of the input into output
-        let dict_cutoff = input.len() / 2;
-        let output_start = input.len() - dict_cutoff;
-        uncompressed[..output_start].copy_from_slice(&input[dict_cutoff..]);
+        let dict_cutoff = dict.len() / 2;
+        let output_start = dict.len() - dict_cutoff;
+        uncompressed[..output_start].copy_from_slice(&dict[dict_cutoff..]);
 
         let mut sink: Sink = (&mut uncompressed).into();
         sink.set_pos(output_start);
         let uncomp_len = crate::block::decompress::decompress_into_with_dict(
             &compressed,
             &mut sink,
-            &input[..dict_cutoff],
+            &dict[..dict_cutoff],
         )
         .unwrap();
         assert_eq!(input.len(), uncomp_len);
@@ -865,8 +866,6 @@ mod tests {
         );
     }
 
-    // The safe count_same_bytes ignores additional trailling bytes, which makes this test invalid
-    #[cfg(not(feature = "safe-encode"))]
     #[test]
     fn test_conformant_last_block() {
         // From the spec:
@@ -876,27 +875,32 @@ mod tests {
         // so it needs at least one prior byte.
         // When a block can reference data from another block, it can start immediately with a match and no literal,
         // so a block of 12 bytes can be compressed.
-        let _12a: &[u8] = b"aaaaaaaaaaaa";
-        let _13a: &[u8] = b"aaaaaaaaaaaaa";
-        let _13b: &[u8] = b"bbbbbbbbbbbbb";
+        let aaas: &[u8] = b"aaaaaaaaaaaaaaa";
 
-        let out = compress(&_12a);
+        // uncompressible
+        let out = compress(&aaas[..12]);
         assert_gt!(out.len(), 12);
-        let out = compress(&_13b);
+        // compressible
+        let out = compress(&aaas[..13]);
         assert_le!(out.len(), 13);
+        let out = compress(&aaas[..14]);
+        assert_le!(out.len(), 14);
+        let out = compress(&aaas[..15]);
+        assert_le!(out.len(), 15);
 
-        let out = compress_with_dict(&_12a, &_13b);
-        assert_gt!(out.len(), 12);
-
-        let out = compress_with_dict(&_13a, &_13b);
-        assert_le!(out.len(), 13);
-
-        let out = compress_with_dict(&_13a, &_12a);
-        assert_lt!(out.len(), 13);
-
+        // dict uncompressible
+        let out = compress_with_dict(&aaas[..11], &aaas);
+        assert_gt!(out.len(), 11);
+        // compressible
+        let out = compress_with_dict(&aaas[..12], &aaas);
         // According to the spec this _could_ compres, but it doesn't in this lib
         // as it aborts compression for any input len < LZ4_MIN_LENGTH
-        // let out = compress_with_dict(&_12a, &_12a);
-        // assert_gt!(out.len(), 12);
+        assert_gt!(out.len(), 12);
+        let out = compress_with_dict(&aaas[..13], &aaas);
+        assert_le!(out.len(), 13);
+        let out = compress_with_dict(&aaas[..14], &aaas);
+        assert_le!(out.len(), 14);
+        let out = compress_with_dict(&aaas[..15], &aaas);
+        assert_le!(out.len(), 15);
     }
 }

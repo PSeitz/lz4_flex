@@ -209,14 +209,6 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
 
 // }
 
-// the last 5 bytes need to be literals, so the last match block is not allowed to match to the end
-
-// #[test]
-// fn test_end_offset() {
-//     inverse(&[122, 1, 0, 1, 0, 10, 1, 0]);
-//     // inverse("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAA");
-// }
-
 #[cfg(test)]
 mod checked_decode {
     use super::*;
@@ -244,8 +236,9 @@ mod checked_decode {
 
 #[test]
 fn test_end_offset() {
+    // the last 5 bytes need to be literals, so the last match block is not allowed to match to the end
     inverse("AAAAAAAAAAAAAAAAAAAAAAAAaAAAAAAAAAAAAAAAAAAAAAAAA");
-    // inverse("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAA");
+    inverse("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAA");
 }
 #[test]
 fn small_compressible_1() {
