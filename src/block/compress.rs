@@ -137,7 +137,7 @@ fn token_from_literal_and_match_length(lit_len: usize, duplicate_length: usize) 
 fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
     const USIZE_SIZE: usize = core::mem::size_of::<usize>();
     let cur_slice = &input[*cur..input.len() - END_OFFSET];
-    let cand_slice = &source[candidate as usize..];
+    let cand_slice = &source[candidate..];
 
     let mut num = 0;
     for (block1, block2) in cur_slice
@@ -157,16 +157,18 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
         }
     }
 
-    // We're going to intentionally ignore the possibly last 1..USIZE_SIZE bytes
-    // at the end of input/source. This has a tiny negative impact on compression
-    // ratio but makes safe compressor 10% faster.
-    // For future reference this is what we'd like to do:
-    // num += cur_slice
-    //     .iter()
-    //     .zip(cand_slice)
-    //     .skip(num)
-    //     .take_while(|(a, b)| a == b)
-    //     .count();
+    // If we're here we may have 1 to 7 bytes left to check close to the end of input
+    // or source slices. Since this is rare occurrence we mark it cold to get better
+    // ~5% better performance.
+    #[cold]
+    fn count_same_bytes_tail(a: &[u8], b: &[u8], offset: usize) -> usize {
+        a.iter()
+            .zip(b)
+            .skip(offset)
+            .take_while(|(a, b)| a == b)
+            .count()
+    }
+    num += count_same_bytes_tail(cur_slice, cand_slice, num);
 
     *cur += num;
     num
@@ -460,14 +462,6 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
             }
         }
 
-        // Generally count_same_bytes would just count again any additional
-        // matched bytes from backtrack_match, but since the safe version of
-        // `count_same_bytes` ignores a few trailling bytes (for performance reasons)
-        // it may fail to do so and mess up the compressor (eg. emit a match w/ offset 0).
-        // We disable this otherwise as it gives a 6% speedup for the unsafe version.
-        #[cfg(feature = "safe-encode")]
-        let cur_before_backtrack = cur;
-
         // Extend the match backwards if we can
         backtrack_match(
             input,
@@ -477,20 +471,13 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
             &mut candidate,
         );
 
-        #[cfg(feature = "safe-encode")]
-        let backtrack_len = cur_before_backtrack - cur;
-        #[cfg(not(feature = "safe-encode"))]
-        let backtrack_len = 0;
-
         // The length (in bytes) of the literals section.
         let lit_len = cur - literal_start;
 
         // Generate the higher half of the token.
-        cur += backtrack_len + MINMATCH;
-        candidate += backtrack_len + MINMATCH;
-
-        let duplicate_length =
-            backtrack_len + count_same_bytes(input, &mut cur, candidate_source, candidate);
+        cur += MINMATCH;
+        candidate += MINMATCH;
+        let duplicate_length = count_same_bytes(input, &mut cur, candidate_source, candidate);
 
         // Note: The `- 2` offset was copied from the reference implementation, it could be arbitrary.
         let hash = get_hash_at(input, cur - 2);
