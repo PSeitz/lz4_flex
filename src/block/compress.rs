@@ -460,6 +460,15 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
             }
         }
 
+        // Generally count_same_bytes would just count again any additional
+        // matched bytes from backtrack_match, but since the safe version of
+        // `count_same_bytes` ignores a few trailling bytes (for performance reasons)
+        // it may fail to do so and mess up the compressor (eg. emit a match w/ offset 0).
+        // We disable this otherwise as it gives a 6% speedup for the unsafe version.
+        #[cfg(feature = "safe-encode")]
+        let cur_before_backtrack = cur;
+
+        // Extend the match backwards if we can
         backtrack_match(
             input,
             &mut cur,
@@ -468,14 +477,20 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
             &mut candidate,
         );
 
+        #[cfg(feature = "safe-encode")]
+        let backtrack_len = cur_before_backtrack - cur;
+        #[cfg(not(feature = "safe-encode"))]
+        let backtrack_len = 0;
+
         // The length (in bytes) of the literals section.
         let lit_len = cur - literal_start;
 
         // Generate the higher half of the token.
-        cur += MINMATCH;
+        cur += backtrack_len + MINMATCH;
+        candidate += backtrack_len + MINMATCH;
 
         let duplicate_length =
-            count_same_bytes(input, &mut cur, candidate_source, candidate + MINMATCH);
+            backtrack_len + count_same_bytes(input, &mut cur, candidate_source, candidate);
 
         // Note: The `- 2` offset was copied from the reference implementation, it could be arbitrary.
         let hash = get_hash_at(input, cur - 2);

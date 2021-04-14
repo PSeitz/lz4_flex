@@ -363,6 +363,16 @@ fn bug_fuzz_4() {
     inverse(data);
 }
 #[test]
+fn buf_fuzz_5() {
+    let data = &[
+        255, 255, 255, 255, 253, 235, 156, 140, 8, 0, 140, 45, 169, 0, 27, 128, 48, 0, 140, 0, 0,
+        255, 255, 255, 253, 235, 156, 140, 8, 61, 255, 255, 255, 255, 65, 239, 254,
+    ];
+
+    inverse(data);
+}
+
+#[test]
 fn compression_works() {
     let s = r#"An iterator that knows its exact length.
         Many Iterators don't know how many times they will iterate, but some do. If an iterator knows how many times it can iterate, providing access to that information can be useful. For example, if you want to iterate backwards, a good start is to know where the end is.
