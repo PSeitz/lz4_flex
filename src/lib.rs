@@ -36,14 +36,10 @@ pub mod block;
 #[cfg(feature = "std")]
 pub mod frame;
 
-pub use block::compress::{
-    compress, compress_into, compress_into_with_dict, compress_prepend_size, compress_with_dict,
-};
+pub use block::compress::{compress, compress_into, compress_prepend_size};
 
 #[cfg(feature = "safe-decode")]
-pub use block::decompress_safe::{
-    decompress, decompress_into, decompress_size_prepended, decompress_with_dict,
-};
+pub use block::decompress_safe::{decompress, decompress_into, decompress_size_prepended};
 
 #[cfg(not(feature = "safe-decode"))]
 pub use block::decompress::{decompress, decompress_into, decompress_size_prepended};

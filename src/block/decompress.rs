@@ -402,18 +402,7 @@ fn decompress_internal<const USE_DICT: bool>(
 #[inline]
 pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressError> {
     let (uncompressed_size, input) = super::uncompressed_size(input)?;
-    // Allocate a vector to contain the decompressed stream.
-    // We may wildcopy out of bounds, so the vector needs to have additional capacity
-    let mut vec: Vec<u8> = Vec::with_capacity(decompress_sink_size(uncompressed_size));
-    unsafe {
-        vec.set_len(decompress_sink_size(uncompressed_size));
-    }
-    let mut sink: Sink = (&mut vec).into();
-    decompress_into(input, &mut sink)?;
-    unsafe {
-        vec.set_len(uncompressed_size);
-    }
-    Ok(vec)
+    decompress(input, uncompressed_size)
 }
 
 /// Decompress all bytes of `input` into a new vec.
@@ -442,18 +431,7 @@ pub fn decompress_size_prepended_with_dict(
     ext_dict: &[u8],
 ) -> Result<Vec<u8>, DecompressError> {
     let (uncompressed_size, input) = super::uncompressed_size(input)?;
-    // Allocate a vector to contain the decompressed stream.
-    // We may wildcopy out of bounds, so the vector needs to have additional capacity
-    let mut vec: Vec<u8> = Vec::with_capacity(decompress_sink_size(uncompressed_size));
-    unsafe {
-        vec.set_len(decompress_sink_size(uncompressed_size));
-    }
-    let mut sink: Sink = (&mut vec).into();
-    decompress_into_with_dict(input, &mut sink, ext_dict)?;
-    unsafe {
-        vec.set_len(uncompressed_size);
-    }
-    Ok(vec)
+    decompress_with_dict(input, uncompressed_size, ext_dict)
 }
 
 /// Decompress all bytes of `input` into a new vec.
