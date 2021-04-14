@@ -1,6 +1,6 @@
 //! The decompression algorithm.
 
-use std::convert::TryInto;
+use core::convert::TryInto;
 
 use crate::block::DecompressError;
 use crate::block::Sink;
