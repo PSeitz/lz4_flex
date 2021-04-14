@@ -673,12 +673,24 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
 }
 
 /// Compress all bytes of `input` with an external dictionary.
-///
 #[inline]
 pub fn compress_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
     let mut compressed = get_output_vec(input.len());
     let mut sink = (&mut compressed).into();
+    let new_pos = compress_into_with_dict(input, &mut sink, ext_dict);
+    compressed.truncate(new_pos);
+    compressed
+}
+
+/// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as a little endian u32.
+/// Can be used in conjuction with `decompress_size_prepended_with_dict`
+#[inline]
+pub fn compress_prepend_size_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
+    // In most cases, the compression won't expand the size, so we set the input size as capacity.
+    let mut compressed = get_output_vec(4 + input.len());
+    let mut sink: Sink = (&mut compressed).into();
+    push_u32(&mut sink, input.len() as u32);
     let new_pos = compress_into_with_dict(input, &mut sink, ext_dict);
     compressed.truncate(new_pos);
     compressed
