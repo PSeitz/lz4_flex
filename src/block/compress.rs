@@ -131,7 +131,7 @@ fn token_from_literal_and_match_length(lit_len: usize, duplicate_length: usize) 
 /// `source` either the same as input or an external slice
 /// `candidate` is the candidate position in `source`
 ///
-/// The function ignores the last END_OFFSET bytes in input as this should be literals.
+/// The function ignores the last END_OFFSET bytes in input as those should be literals.
 #[inline]
 #[cfg(feature = "safe-encode")]
 fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
@@ -180,7 +180,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
 /// `source` either the same as input or an external slice
 /// `candidate` is the candidate position in `source`
 ///
-/// The function ignores the last END_OFFSET bytes in input as this should be literals.
+/// The function ignores the last END_OFFSET bytes in input as those should be literals.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
 fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
@@ -190,7 +190,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
 
     // compare 4/8 bytes blocks depending on the arch
     const STEP_SIZE: usize = core::mem::size_of::<usize>();
-    while *cur + STEP_SIZE + END_OFFSET < input.len() {
+    while *cur + STEP_SIZE + END_OFFSET <= input.len() {
         let diff = read_usize_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_usize_ptr(source_ptr);
 
         if diff == 0 {
@@ -207,7 +207,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
     // compare 4 bytes block
     #[cfg(target_pointer_width = "64")]
     {
-        if *cur + 4 + END_OFFSET < input.len() {
+        if *cur + 4 + END_OFFSET <= input.len() {
             let diff = read_u32_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u32_ptr(source_ptr);
 
             if diff == 0 {
@@ -223,7 +223,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
     }
 
     // compare 2 bytes block
-    if *cur + 2 + END_OFFSET < input.len() {
+    if *cur + 2 + END_OFFSET <= input.len() {
         let diff = read_u16_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u16_ptr(source_ptr);
 
         if diff == 0 {
@@ -237,7 +237,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
         }
     }
 
-    if *cur + 1 + END_OFFSET < input.len()
+    if *cur + 1 + END_OFFSET <= input.len()
         && unsafe { input.as_ptr().add(*cur).read() } == unsafe { source_ptr.read() }
     {
         *cur += 1;
@@ -800,23 +800,13 @@ mod tests {
         ];
         assert_eq!(count_same_bytes(first, &mut 0, second, 0), 21);
 
-        let ignored_trailling_bytes = END_OFFSET
-            + if cfg!(feature = "safe-encode") {
-                core::mem::size_of::<usize>()
-            } else {
-                0
-            };
         for diff_idx in 0..100 {
             let first: Vec<u8> = (0u8..255).cycle().take(100 + END_OFFSET).collect();
             let mut second = first.clone();
             second[diff_idx] = 255;
             for start in 0..=diff_idx {
                 let same_bytes = count_same_bytes(&first, &mut start.clone(), &second, start);
-                if diff_idx + ignored_trailling_bytes > first.len() {
-                    assert_le!(same_bytes, diff_idx - start);
-                } else {
-                    assert_eq!(same_bytes, diff_idx - start);
-                }
+                assert_eq!(same_bytes, diff_idx - start);
             }
         }
     }

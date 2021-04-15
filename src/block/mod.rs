@@ -56,7 +56,11 @@ pub(crate) const WINDOW_SIZE: usize = 64 * 1024;
 const MFLIMIT: usize = 12;
 
 /// The last 5 bytes of input are always literals. Therefore, the last sequence contains at least 5 bytes.
-const END_OFFSET: usize = 5;
+const LAST_LITERALS: usize = 5;
+
+/// Due the way the compression loop is arrange we may read up to (register_size - 2) bytes from the current position.
+/// So we must end the matches 6 bytes before the end, 1 more than required by the spec.
+const END_OFFSET: usize = LAST_LITERALS + 1;
 
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
 /// Minimum length of a block
