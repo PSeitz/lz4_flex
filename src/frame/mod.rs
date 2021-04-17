@@ -1,8 +1,8 @@
 use std::{fmt, io};
 
-pub mod compress;
-pub mod decompress;
-pub mod header;
+pub(crate) mod compress;
+pub(crate) mod decompress;
+pub(crate) mod header;
 
 pub use compress::FrameEncoder;
 pub use decompress::FrameDecoder;
@@ -10,7 +10,7 @@ pub use decompress::FrameDecoder;
 #[derive(Debug)]
 pub enum Error {
     SkippableFrame(u32),
-    CompressionError(/* TBD */),
+    CompressionError(crate::block::CompressError),
     DecompressionError(crate::block::DecompressError),
     UnimplementedBlocksize(u8),
     UnsupportedVersion(u8),

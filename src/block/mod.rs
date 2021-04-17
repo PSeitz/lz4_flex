@@ -20,24 +20,20 @@ match [10][4][6][100]  .....      in [10][4][6][40]
 */
 
 #[cfg_attr(feature = "safe-encode", forbid(unsafe_code))]
-pub mod compress;
-pub mod hashtable;
+pub(crate) mod compress;
+pub(crate) mod hashtable;
 
+#[cfg(feature = "safe-decode")]
 #[cfg_attr(feature = "safe-decode", forbid(unsafe_code))]
-pub mod decompress_safe;
+pub(crate) mod decompress_safe;
 #[cfg(feature = "safe-decode")]
-pub use decompress_safe as decompress;
+pub(crate) use decompress_safe as decompress;
 
 #[cfg(not(feature = "safe-decode"))]
-pub mod decompress;
+pub(crate) mod decompress;
 
-pub use compress::compress_prepend_size;
-
-#[cfg(feature = "safe-decode")]
-pub use decompress_safe::decompress_size_prepended;
-
-#[cfg(not(feature = "safe-decode"))]
-pub use decompress::decompress_size_prepended;
+pub use compress::*;
+pub use decompress::*;
 
 use alloc::vec::Vec;
 use core::convert::TryInto;
@@ -112,8 +108,8 @@ fn wild_copy_from_src_8(mut source: *const u8, mut dst_ptr: *mut u8, num_items: 
 
 /// An error representing invalid compressed data.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum DecompressError {
-    /// Literal is out of bounds of the input
     OutputTooSmall {
         expected_size: usize,
         actual_size: usize,
@@ -130,6 +126,12 @@ pub enum DecompressError {
     ExpectedAnotherByte,
     /// Deduplication offset out of bounds (not in buffer).
     OffsetOutOfBounds,
+}
+
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum CompressError {
+    OutputTooSmall,
 }
 
 impl fmt::Display for DecompressError {
@@ -174,8 +176,21 @@ impl fmt::Display for DecompressError {
     }
 }
 
+impl fmt::Display for CompressError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            CompressError::OutputTooSmall => {
+                f.write_str("output is too small for the decompressed data")
+            }
+        }
+    }
+}
+
 #[cfg(feature = "std")]
 impl std::error::Error for DecompressError {}
+
+#[cfg(feature = "std")]
+impl std::error::Error for CompressError {}
 
 #[inline]
 fn uncompressed_size(input: &[u8]) -> Result<(usize, &[u8]), DecompressError> {
