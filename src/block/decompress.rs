@@ -176,6 +176,8 @@ pub fn decompress_into_with_dict(
 }
 
 /// Decompress all bytes of `input` into `output`.
+///
+/// Returns the number of bytes written (decompressed) into `output`.
 #[inline]
 fn decompress_internal<const USE_DICT: bool>(
     input: &[u8],

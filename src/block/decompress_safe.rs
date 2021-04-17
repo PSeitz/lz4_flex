@@ -85,11 +85,16 @@ fn does_token_fit(token: u8) -> bool {
 }
 
 /// Decompress all bytes of `input` into `output`.
+///
+/// Returns the number of bytes written (decompressed) into `output`.
 #[inline]
 pub fn decompress_into(input: &[u8], output: &mut Sink) -> Result<usize, DecompressError> {
     decompress_internal::<false>(input, output, b"")
 }
 
+/// Decompress all bytes of `input` into `output`.
+///
+/// Returns the number of bytes written (decompressed) into `output`.
 #[inline]
 pub fn decompress_into_with_dict(
     input: &[u8],
@@ -99,6 +104,9 @@ pub fn decompress_into_with_dict(
     decompress_internal::<true>(input, output, ext_dict)
 }
 
+/// Decompress all bytes of `input` into `output`.
+///
+/// Returns the number of bytes written (decompressed) into `output`.
 #[inline]
 fn decompress_internal<const USE_DICT: bool>(
     input: &[u8],

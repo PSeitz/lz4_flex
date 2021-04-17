@@ -183,46 +183,42 @@ impl<W: io::Write> FrameEncoder<W> {
         }
 
         let max_block_size = self.frame_info.block_size.get_size();
-        let (src, compressed_result) = if self.srcs != self.srce {
-            if self.frame_info.block_mode == BlockMode::Linked {
-                // Reposition the compression table if we're anywhere near an overflowing hazard
-                if self.src_stream_offset + self.src.len() >= u32::MAX as usize / 2 {
-                    self.compression_table
-                        .reposition((self.src_stream_offset - self.ext_dict_len) as _);
-                    self.src_stream_offset = self.ext_dict_len;
-                }
-                let src = &self.src[..self.srce.min(self.srcs + max_block_size)];
-                let res = compress_internal::<_, true>(
-                    src,
-                    self.srcs,
-                    &mut (&mut self.dst[..]).into(),
-                    &mut self.compression_table,
-                    &self.src[self.ext_dict_offset..self.ext_dict_offset + self.ext_dict_len],
-                    self.src_stream_offset,
-                );
-                (&src[self.srcs..], res)
-            } else {
-                debug_assert_eq!(self.srcs, 0);
-                debug_assert_eq!(self.src.len(), max_block_size);
-                let src = &self.src[..self.srce];
-                if self.content_len != 0 {
-                    self.compression_table.clear();
-                }
-                let res = compress_internal::<_, false>(
-                    src,
-                    0,
-                    &mut (&mut self.dst[..]).into(),
-                    &mut self.compression_table,
-                    b"",
-                    0,
-                );
-                (src, res)
+        let (src, compressed_result) = if self.frame_info.block_mode == BlockMode::Linked {
+            // Reposition the compression table if we're anywhere near an overflowing hazard
+            if self.src_stream_offset + self.src.len() >= u32::MAX as usize / 2 {
+                self.compression_table
+                    .reposition((self.src_stream_offset - self.ext_dict_len) as _);
+                self.src_stream_offset = self.ext_dict_len;
             }
+            let src = &self.src[..self.srce.min(self.srcs + max_block_size)];
+            let res = compress_internal::<_, true>(
+                src,
+                self.srcs,
+                &mut (&mut self.dst[..]).into(),
+                &mut self.compression_table,
+                &self.src[self.ext_dict_offset..self.ext_dict_offset + self.ext_dict_len],
+                self.src_stream_offset,
+            );
+            (&src[self.srcs..], res)
         } else {
-            (&b""[..], 0)
+            debug_assert_eq!(self.srcs, 0);
+            debug_assert_eq!(self.src.len(), max_block_size);
+            let src = &self.src[..self.srce];
+            if self.content_len != 0 {
+                self.compression_table.clear();
+            }
+            let res = compress_internal::<_, false>(
+                src,
+                0,
+                &mut (&mut self.dst[..]).into(),
+                &mut self.compression_table,
+                b"",
+                0,
+            );
+            (src, res)
         };
 
-        let (block_info, buf_to_write) = match compressed_result {
+        let (block_info, buf_to_write) = match compressed_result.map_err(Error::CompressionError)? {
             comp_len if comp_len < src.len() => {
                 (BlockInfo::Compressed(comp_len as _), &self.dst[..comp_len])
             }

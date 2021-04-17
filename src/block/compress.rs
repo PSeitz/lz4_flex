@@ -18,6 +18,8 @@ use alloc::vec::Vec;
 #[cfg(feature = "safe-encode")]
 use core::convert::TryInto;
 
+use super::{CompressError, WINDOW_SIZE};
+
 /// Increase step size after 1<<INCREASE_STEPSIZE_BITSHIFT non matches
 const INCREASE_STEPSIZE_BITSHIFT: usize = 5;
 
@@ -291,7 +293,7 @@ fn write_integer(output: &mut Sink, mut n: usize) {
 
 /// Handle the last bytes from the input as literals
 #[cold]
-fn handle_last_literals(output: &mut Sink, input: &[u8], start: usize) -> usize {
+fn handle_last_literals(output: &mut Sink, input: &[u8], start: usize) {
     let lit_len = input.len() - start;
 
     let token = token_from_literal(lit_len);
@@ -301,7 +303,6 @@ fn handle_last_literals(output: &mut Sink, input: &[u8], start: usize) -> usize 
     }
     // Now, write the actual literals.
     output.extend_from_slice(&input[start..]);
-    output.pos()
 }
 
 /// Moves the cursors back as long as the bytes match, to find additional bytes in a duplicate
@@ -358,7 +359,7 @@ pub fn backtrack_match(
 /// Every four bytes are hashed, and in the resulting slot their position in the input buffer
 /// is placed in the dict. This way we can easily look up a candidate to back references.
 ///
-/// returns the new end position of the Sink (=added elements, if start pos in the sink was 0)
+/// Returns the number of bytes written (compressed) into `output`.
 #[inline]
 pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
     input: &[u8],
@@ -367,7 +368,7 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
     dict: &mut T,
     ext_dict: &[u8],
     input_stream_offset: usize,
-) -> usize {
+) -> Result<usize, CompressError> {
     assert!(LZ4_MIN_LENGTH > END_OFFSET);
     assert!(input_pos <= input.len());
     assert!(ext_dict.len() <= super::WINDOW_SIZE);
@@ -381,15 +382,14 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
         assert!(input_stream_offset == 0);
         assert!(ext_dict.is_empty());
     }
-    // TODO: Return an error instead?
-    // Necessary for safety of the unsafe compressor
-    assert!(
-        output.capacity() - output.pos() >= get_maximum_output_size(input.len() - input_pos),
-        "Output too small"
-    );
+    if output.capacity() - output.pos() < get_maximum_output_size(input.len() - input_pos) {
+        return Err(CompressError::OutputTooSmall);
+    }
 
+    let output_start_pos = output.pos();
     if input_pos + LZ4_MIN_LENGTH > input.len() {
-        return handle_last_literals(output, input, 0);
+        handle_last_literals(output, input, 0);
+        return Ok(output.pos() - output_start_pos);
     }
 
     let ext_dict_stream_offset = input_stream_offset - ext_dict.len();
@@ -425,7 +425,8 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
 
             // Same as cur + MFLIMIT > input.len()
             if cur > end_pos_check {
-                return handle_last_literals(output, input, literal_start);
+                handle_last_literals(output, input, literal_start);
+                return Ok(output.pos() - output_start_pos);
             }
             // Find a candidate in the dictionary with the hash of the current four bytes.
             // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
@@ -587,9 +588,9 @@ pub fn get_maximum_output_size(input_len: usize) -> usize {
 /// The method chooses an appropriate hashtable to lookup duplicates and calls `compress_into_with_table`.
 /// Sink should be preallocated with a size of `get_maximum_output_size`.
 ///
-/// returns the new end position of the Sink (=added elements, if start pos in the sink was 0)
+/// Returns the number of bytes written (compressed) into `output`.
 #[inline]
-pub fn compress_into(input: &[u8], compressed: &mut Sink) -> usize {
+pub fn compress_into(input: &[u8], compressed: &mut Sink) -> Result<usize, CompressError> {
     let (dict_size, dict_bitshift) = get_table_size(input.len());
     if input.len() < u16::MAX as usize {
         let mut dict = HashTableU16::new(dict_size, dict_bitshift);
@@ -603,26 +604,38 @@ pub fn compress_into(input: &[u8], compressed: &mut Sink) -> usize {
     }
 }
 
+/// Compress all bytes of `input` into `output`.
+/// The method chooses an appropriate hashtable to lookup duplicates and calls `compress_into_with_table`.
+/// Sink should be preallocated with a size of `get_maximum_output_size`.
+///
+/// Returns the number of bytes written (compressed) into `output`.
 #[inline]
-pub fn compress_into_with_dict(input: &[u8], compressed: &mut Sink, dict_data: &[u8]) -> usize {
+pub fn compress_into_with_dict(
+    input: &[u8],
+    compressed: &mut Sink,
+    mut dict_data: &[u8],
+) -> Result<usize, CompressError> {
     let (dict_size, dict_bitshift) = get_table_size(input.len());
     if dict_data.len() + input.len() < u16::MAX as usize {
         let mut dict = HashTableU16::new(dict_size, dict_bitshift);
-        init_dict(&mut dict, dict_data);
+        init_dict(&mut dict, &mut dict_data);
         compress_internal::<_, true>(input, 0, compressed, &mut dict, dict_data, dict_data.len())
     } else if dict_data.len() + input.len() < u32::MAX as usize {
         let mut dict = HashTableU32::new(dict_size, dict_bitshift);
-        init_dict(&mut dict, dict_data);
+        init_dict(&mut dict, &mut dict_data);
         compress_internal::<_, true>(input, 0, compressed, &mut dict, dict_data, dict_data.len())
     } else {
         let mut dict = HashTableUsize::new(dict_size, dict_bitshift);
-        init_dict(&mut dict, dict_data);
+        init_dict(&mut dict, &mut dict_data);
         compress_internal::<_, true>(input, 0, compressed, &mut dict, dict_data, dict_data.len())
     }
 }
 
 #[inline]
-fn init_dict<T: HashTable>(dict: &mut T, dict_data: &[u8]) {
+fn init_dict<T: HashTable>(dict: &mut T, dict_data: &mut &[u8]) {
+    if dict_data.len() > WINDOW_SIZE {
+        *dict_data = &dict_data[dict_data.len() - WINDOW_SIZE..];
+    }
     let mut i = 0usize;
     while i + core::mem::size_of::<usize>() <= dict_data.len() {
         let hash = get_hash_at(dict_data, i);
@@ -648,15 +661,15 @@ pub(crate) fn get_output_vec(input_len: usize) -> Vec<u8> {
 }
 
 /// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as a little endian u32.
-/// Can be used in conjuction with `decompress_size_prepended`
+/// Can be used in conjunction with `decompress_size_prepended`
 #[inline]
 pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
     let mut compressed = get_output_vec(4 + input.len());
     let mut sink: Sink = (&mut compressed).into();
     push_u32(&mut sink, input.len() as u32);
-    let new_pos = compress_into(input, &mut sink);
-    compressed.truncate(new_pos);
+    let compressed_len = compress_into(input, &mut sink).unwrap();
+    compressed.truncate(4 + compressed_len);
     compressed
 }
 
@@ -667,8 +680,8 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
     let mut compressed = get_output_vec(input.len());
     let mut sink = (&mut compressed).into();
-    let new_pos = compress_into(input, &mut sink);
-    compressed.truncate(new_pos);
+    let compressed_len = compress_into(input, &mut sink).unwrap();
+    compressed.truncate(compressed_len);
     compressed
 }
 
@@ -678,21 +691,21 @@ pub fn compress_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
     let mut compressed = get_output_vec(input.len());
     let mut sink = (&mut compressed).into();
-    let new_pos = compress_into_with_dict(input, &mut sink, ext_dict);
-    compressed.truncate(new_pos);
+    let compressed_len = compress_into_with_dict(input, &mut sink, ext_dict).unwrap();
+    compressed.truncate(compressed_len);
     compressed
 }
 
 /// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as a little endian u32.
-/// Can be used in conjuction with `decompress_size_prepended_with_dict`
+/// Can be used in conjunction with `decompress_size_prepended_with_dict`
 #[inline]
 pub fn compress_prepend_size_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
     let mut compressed = get_output_vec(4 + input.len());
     let mut sink: Sink = (&mut compressed).into();
     push_u32(&mut sink, input.len() as u32);
-    let new_pos = compress_into_with_dict(input, &mut sink, ext_dict);
-    compressed.truncate(new_pos);
+    let compressed_len = compress_into_with_dict(input, &mut sink, ext_dict).unwrap();
+    compressed.truncate(4 + compressed_len);
     compressed
 }
 
@@ -906,5 +919,15 @@ mod tests {
         assert_le!(out.len(), 14);
         let out = compress_with_dict(&aaas[..15], &aaas);
         assert_le!(out.len(), 15);
+    }
+
+    #[test]
+    fn test_dict_size() {
+        let dict = vec![b'a'; 1024 * 1024];
+        let input = &b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaa"[..];
+        let compressed = compress_prepend_size_with_dict(&input, &dict);
+        let decompressed =
+            crate::block::decompress_size_prepended_with_dict(&compressed, &dict).unwrap();
+        assert_eq!(decompressed, input);
     }
 }
