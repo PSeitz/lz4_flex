@@ -16,9 +16,7 @@ unsafe fn duplicate(
     // self-referential copies: http://ticki.github.io/img/lz4_runs_encoding_diagram.svg
     // Defer to `duplicate_overlapping` in case of an overlapping match
     // OR the if the wild copy would copy beyond the end of the output.
-    if start.add(match_length + 16 - 1) > *output_ptr
-        || output_ptr.add(match_length + 16 - 1) > output_end
-    {
+    if start.add(match_length) > *output_ptr || output_ptr.add(match_length + 16 - 1) > output_end {
         duplicate_overlapping(output_ptr, start, match_length);
     } else {
         // `wild_copy_match_16` can copy up to `16 - 1` extra bytes.
@@ -34,6 +32,7 @@ unsafe fn duplicate_overlapping(
     mut start: *const u8,
     match_length: usize,
 ) {
+    // Note: this looks like a harmless loop but is unrolled/auto-vectorized by the compiler
     for _ in 0..match_length {
         let curr = start.read();
         output_ptr.write(curr);
