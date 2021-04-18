@@ -202,7 +202,7 @@ fn decompress_internal<const USE_DICT: bool>(
         .len()
         .saturating_sub(16 /* literal copy */ +  2 /* u16 match offset */);
     let safe_output_ptr = unsafe {
-        output_end.sub(16 /* literal copy */ + 20 /* match copy */)
+        output_end.sub(16 /* literal copy */ + 18 /* match copy */)
     };
 
     // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer is empty.
@@ -250,6 +250,8 @@ fn decompress_internal<const USE_DICT: bool>(
                 output_ptr = output_ptr.add(literal_length);
             }
 
+            // input_pos <= safe_input_pos should guarantee we have enough space in input
+            debug_assert!(input_pos + 2 <= input.len());
             let offset = read_u16(input, &mut input_pos) as usize;
             let mut start_ptr = unsafe { output_ptr.sub(offset) };
             #[cfg(feature = "checked-decode")]
@@ -276,15 +278,15 @@ fn decompress_internal<const USE_DICT: bool>(
             debug_assert!(unsafe { start_ptr.add(match_length) } <= output_end);
 
             // In this branch we know that match_length is at most 18 (14 + MINMATCH).
-            // But the blocks can overlap, so make sure they are at least 20 bytes apart
-            // to enable an optimized non-overlaping copy of 20 bytes.
-            if offset < 20 {
+            // But the blocks can overlap, so make sure they are at least 18 bytes apart
+            // to enable an optimized non-overlaping copy of 18 bytes.
+            if offset < 18 {
                 unsafe {
                     duplicate_overlapping(&mut output_ptr, start_ptr, match_length);
                 }
             } else {
                 unsafe {
-                    core::ptr::copy_nonoverlapping(start_ptr, output_ptr, 20);
+                    core::ptr::copy_nonoverlapping(start_ptr, output_ptr, 18);
                     output_ptr = output_ptr.add(match_length);
                 }
             }

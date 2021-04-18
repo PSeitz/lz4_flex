@@ -122,7 +122,7 @@ fn decompress_internal<const USE_DICT: bool>(
         .saturating_sub(16 /* literal copy */ +  2 /* u16 match offset */);
     let safe_output_pos = output
         .capacity()
-        .saturating_sub(16 /* literal copy */ + 20 /* match copy */);
+        .saturating_sub(16 /* literal copy */ + 18 /* match copy */);
 
     // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer is empty.
     loop {
@@ -174,15 +174,15 @@ fn decompress_internal<const USE_DICT: bool>(
 
             // In this branch we know that match_length is at most 18 (14 + MINMATCH).
             // But the blocks can overlap, so make sure they are at least 20 bytes apart
-            // to enable an optimized non-overlaping copy of 20 bytes.
-            if offset < 20 {
+            // to enable an optimized non-overlaping copy of 18 bytes.
+            if offset < 18 {
                 duplicate_overlapping_slice(output, offset, match_length)?;
             } else {
                 let (start, did_overflow) = output.pos().overflowing_sub(offset);
                 if did_overflow {
                     return Err(DecompressError::OffsetOutOfBounds);
                 }
-                output.output.copy_within(start..start + 20, output.pos());
+                output.output.copy_within(start..start + 18, output.pos());
                 output.pos += match_length;
             }
 
