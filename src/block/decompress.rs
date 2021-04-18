@@ -14,14 +14,14 @@ unsafe fn duplicate(
 ) {
     // We cannot simply use memcpy or `extend_from_slice`, because these do not allow
     // self-referential copies: http://ticki.github.io/img/lz4_runs_encoding_diagram.svg
-    // `wild_copy_match_16` can copy up to `16 - 1` extra bytes.
-    // Calculate the end pointer for the wild copy, the rest will be handled by duplicate_overlapping.
-    // We can't wild copy the part that overlaps with the output OR write beyond the end of the output.
+    // Defer to `duplicate_overlapping` in case of an overlapping match
+    // OR the if the wild copy would copy beyond the end of the output.
     if start.add(match_length + 16 - 1) > *output_ptr
         || output_ptr.add(match_length + 16 - 1) > output_end
     {
         duplicate_overlapping(output_ptr, start, match_length);
     } else {
+        // `wild_copy_match_16` can copy up to `16 - 1` extra bytes.
         crate::block::wild_copy_from_src_16(start, *output_ptr, match_length);
         *output_ptr = output_ptr.add(match_length);
     }

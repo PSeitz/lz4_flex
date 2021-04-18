@@ -285,15 +285,16 @@ fn duplicate_slice(
     offset: usize,
     match_length: usize,
 ) -> Result<(), DecompressError> {
-    if match_length + 16 >= offset {
+    // This function assumes output will fit match_length, it might panic otherwise.
+    if match_length > offset {
         duplicate_overlapping_slice(output, offset, match_length)?;
     } else {
         let (start, did_overflow_1) = output.pos().overflowing_sub(offset);
-        let (output_end, did_overflow_2) = output.pos().overflowing_add(match_length);
-        if did_overflow_1 || did_overflow_2 || output_end > output.capacity() {
+        if did_overflow_1 {
             return Err(DecompressError::OffsetOutOfBounds);
         }
-        if output_end + 16 < output.capacity() {
+        let output_end = output.pos() + match_length;
+        if output_end + (16 - 1) <= output.capacity() {
             for i in (start..start + match_length).step_by(16) {
                 output.output.copy_within(i..i + 16, output.pos());
                 output.pos += 16;
@@ -315,22 +316,17 @@ fn duplicate_overlapping_slice(
     offset: usize,
     match_length: usize,
 ) -> Result<(), DecompressError> {
+    // This function assumes output will fit match_length, it might panic otherwise.
+    let (start, did_overflow) = sink.pos().overflowing_sub(offset);
+    if did_overflow {
+        return Err(DecompressError::OffsetOutOfBounds);
+    }
     if offset == 1 {
-        let val = sink.as_slice()[sink.pos() - 1];
-        let start = sink.pos();
-        sink.output[start..start + match_length].fill(val);
+        let val = sink.as_slice()[start];
+        let dest = sink.pos();
+        sink.output[dest..dest + match_length].fill(val);
         sink.pos += match_length;
     } else {
-        let (start, did_overflow) = sink.pos().overflowing_sub(offset);
-        if did_overflow {
-            return Err(DecompressError::OffsetOutOfBounds);
-        }
-        #[cfg(feature = "checked-decode")]
-        {
-            if sink.output.len() == 0 {
-                return Err(DecompressError::UnexpectedOutputEmpty);
-            }
-        }
         for i in start..start + match_length {
             let b = sink.as_slice()[i];
             sink.push(b);
