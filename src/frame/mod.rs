@@ -1,4 +1,7 @@
-use std::{fmt, io};
+use std::{
+    fmt,
+    io::{self, Read, Write},
+};
 
 pub(crate) mod compress;
 pub(crate) mod decompress;
@@ -44,3 +47,23 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+pub fn compress(input: &[u8]) -> Vec<u8> {
+    let buffer = Vec::with_capacity(
+        header::MAX_FRAME_INFO_SIZE
+            + header::BLOCK_INFO_SIZE
+            + crate::block::compress::get_maximum_output_size(input.len()),
+    );
+    let mut enc = FrameEncoder::new(buffer);
+    enc.write_all(input).unwrap();
+    enc.finish().unwrap()
+}
+
+pub fn decompress(input: &[u8]) -> Result<Vec<u8>, Error> {
+    let mut de = FrameDecoder::new(input);
+    // Preallocate the Vec with 1.5x the size of input, it may resize but it amortizes enough.
+    // The upside is that we don't have to worry about DOS attacks, etc..
+    let mut out = Vec::with_capacity(input.len() * 3 / 2);
+    de.read_to_end(&mut out)?;
+    Ok(out)
+}

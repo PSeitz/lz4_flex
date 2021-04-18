@@ -27,6 +27,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "fuzz_roundtrip_frame"
+path = "fuzz_targets/fuzz_roundtrip_frame.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "fuzz_roundtrip_cpp_compress"
 path = "fuzz_targets/fuzz_roundtrip_cpp_compress.rs"
 test = false
