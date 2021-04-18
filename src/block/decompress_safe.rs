@@ -139,7 +139,10 @@ fn decompress_internal<const USE_DICT: bool>(
         // Checking for hot-loop.
         // In most cases the metadata does fit in a single 1byte token (statistically) and we are in a safe-distance to the end.
         // This enables some optimized handling.
-        if does_token_fit(token) && input_pos <= safe_input_pos && output.pos() <= safe_output_pos {
+        //
+        // Ideally we want to check for safe output pos like: output.pos() <= safe_output_pos; But that doesn't work when the
+        // safe_output_pos is 0 due to saturated_sub. so we use `<` instead of `<=`, which will cover that case.
+        if does_token_fit(token) && input_pos <= safe_input_pos && output.pos() < safe_output_pos {
             let literal_length = (token >> 4) as usize;
 
             if input_pos + literal_length > input.len() {
@@ -200,6 +203,13 @@ fn decompress_internal<const USE_DICT: bool>(
             if input_pos + literal_length > input.len() {
                 return Err(DecompressError::LiteralOutOfBounds);
             }
+            #[cfg(feature = "checked-decode")]
+            if output.pos + literal_length > output.capacity() {
+                return Err(DecompressError::OutputTooSmall {
+                    expected_size: output.pos + literal_length,
+                    actual_size: output.capacity(),
+                });
+            }
             output.extend_from_slice(&input[input_pos..input_pos + literal_length]);
             input_pos += literal_length;
         }
@@ -226,6 +236,13 @@ fn decompress_internal<const USE_DICT: bool>(
             match_length += read_integer(input, &mut input_pos)? as usize;
         }
 
+        #[cfg(feature = "checked-decode")]
+        if output.pos + match_length > output.capacity() {
+            return Err(DecompressError::OutputTooSmall {
+                expected_size: output.pos + match_length,
+                actual_size: output.capacity(),
+            });
+        }
         if USE_DICT && offset > output.pos() {
             let copied = copy_from_dict(output, ext_dict, offset, match_length)?;
             if copied == match_length {
