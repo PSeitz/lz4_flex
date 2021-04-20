@@ -31,10 +31,11 @@ git = "https://github.com/PSeitz/lz4_flex"
 package = "lz4_flex"
 
 [features]
-default = ["std", "safe-encode", "safe-decode"]
+default = ["std", "safe-encode", "safe-decode", "frame"]
 safe-decode = []
 safe-encode = []
 checked-decode = []
+frame = ["std"]
 std = []
 
 [dependencies]
