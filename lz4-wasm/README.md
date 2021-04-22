@@ -43,7 +43,7 @@ Build. This will optimize usage for inside a bundler like webpack.
 RUST_LOG=info wasm-pack build --release
 ```
 
-Due to a long standing bug in wasm-pack 0.9.1, _manually_ add these files to package.json.
+Due to a long standing bug in wasm-pack 0.9.1, _manually_ add these files to pkg/package.json.
 
 ```
     "lz4_wasm_bg.wasm.d.ts",

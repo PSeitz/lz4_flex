@@ -3,13 +3,13 @@ authors = ["Pascal Seitz <pascal.seitz@gmail.com>"]
 description = "High Performance lz4 wasm implementation"
 edition = "2018"
 name = "lz4-wasm"
-version = "0.7.4"
+version = "0.7.5"
 license = "MIT"
 keywords = ["compression", "lz4", "compress", "decompression", "decompress", "wasm"]
 
 [dependencies]
-wasm-bindgen = "0.2.7"
-lz4_flex = { path = "../", default-features = false, features = ["checked-decode"] }
+wasm-bindgen = "0.2.73"
+lz4_flex = { version = "0.7.5", default-features = false, features = ["checked-decode"] }
 
 [dependencies.console_error_panic_hook]
 optional = true
@@ -20,7 +20,7 @@ optional = true
 version = "0.4.5"
 
 [dev-dependencies]
-wasm-bindgen-test = "0.3.13"
+wasm-bindgen-test = "0.3.23"
 
 [features]
 default = ["console_error_panic_hook"]
