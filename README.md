@@ -90,10 +90,10 @@ Executed on Core i7-6700 Linux Mint.
 
 ## Fuzzer
 This fuzz target generates corrupted data for the decompressor. Make sure to switch to the checked_decode version in `fuzz/Cargo.toml` before testing this.
-`cargo fuzz run fuzz_decomp_corrupted_data`
+`cargo fuzz run fuzz_decomp_corrupt_block` and `cargo fuzz run fuzz_decomp_corrupt_frame`
 
 This fuzz target asserts that a compression and decompression rountrip returns the original input.
-`cargo fuzz run fuzz_roundtrip`
+`cargo fuzz run fuzz_roundtrip` and `cargo fuzz run fuzz_roundtrip_frame`
 
 This fuzz target asserts compression with cpp and decompression with lz4_flex returns the original input.
 `cargo fuzz run fuzz_roundtrip_cpp_compress`

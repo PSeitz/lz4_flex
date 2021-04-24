@@ -45,7 +45,13 @@ test = false
 doc = false
 
 [[bin]]
-name = "fuzz_decomp_corrupted_data"
-path = "fuzz_targets/fuzz_decomp_corrupted_data.rs"
+name = "fuzz_decomp_corrupt_block"
+path = "fuzz_targets/fuzz_decomp_corrupt_block.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_decomp_corrupt_frame"
+path = "fuzz_targets/fuzz_decomp_corrupt_frame.rs"
 test = false
 doc = false
