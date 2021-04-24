@@ -306,7 +306,6 @@ fn handle_last_literals(output: &mut Sink, input: &[u8], start: usize) {
 }
 
 /// Moves the cursors back as long as the bytes match, to find additional bytes in a duplicate
-///
 #[inline]
 #[cfg(feature = "safe-encode")]
 fn backtrack_match(
@@ -329,7 +328,7 @@ fn backtrack_match(
 ///
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-pub fn backtrack_match(
+fn backtrack_match(
     input: &[u8],
     cur: &mut usize,
     literal_start: usize,
@@ -580,6 +579,7 @@ fn copy_literals_wild(output: &mut Sink, input: &[u8], input_start: usize, len: 
 
 /// Returns the maximum output size of the compressed data.
 /// Can be used to preallocate capacity on the output vector
+#[inline]
 pub fn get_maximum_output_size(input_len: usize) -> usize {
     16 + 4 + (input_len as f64 * 1.1) as usize
 }
@@ -645,6 +645,7 @@ fn init_dict<T: HashTable>(dict: &mut T, dict_data: &mut &[u8]) {
     }
 }
 
+#[inline]
 pub(crate) fn get_output_vec(input_len: usize) -> Vec<u8> {
     let max_size = get_maximum_output_size(input_len);
 

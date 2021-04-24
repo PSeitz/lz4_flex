@@ -69,6 +69,7 @@ unsafe fn copy_from_dict(
 
 /// The algorithm can copy over the original size, because of blocked copies, so the capacity of the sink needs
 /// to be slightly larger.
+#[inline]
 fn decompress_sink_size(uncompressed_size: usize) -> usize {
     uncompressed_size + 4 + BLOCK_COPY_SIZE
 }

@@ -218,6 +218,7 @@ pub struct Sink<'a> {
 }
 
 impl<'a> From<&'a mut Vec<u8>> for Sink<'a> {
+    #[inline]
     fn from(vec: &'a mut Vec<u8>) -> Self {
         Sink {
             output: vec,
@@ -227,6 +228,7 @@ impl<'a> From<&'a mut Vec<u8>> for Sink<'a> {
 }
 
 impl<'a> From<&'a mut [u8]> for Sink<'a> {
+    #[inline]
     fn from(vec: &'a mut [u8]) -> Self {
         Sink {
             output: vec,
@@ -253,18 +255,22 @@ impl<'a> Sink<'a> {
     pub(crate) fn as_mut_ptr(&mut self) -> *mut u8 {
         unsafe { self.output.as_mut_ptr().add(self.pos) }
     }
+
     #[inline]
     pub fn get_data(&self) -> &[u8] {
         &self.output[0..self.pos]
     }
+
     #[inline]
     pub fn pos(&self) -> usize {
         self.pos
     }
+
     #[inline]
     pub fn capacity(&self) -> usize {
         self.output.len()
     }
+
     #[inline]
     pub(crate) fn set_pos(&mut self, len: usize) {
         self.pos = len;
