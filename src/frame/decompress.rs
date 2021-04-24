@@ -108,6 +108,10 @@ impl<R: io::Read> FrameDecoder<R> {
         self.frame_info = Some(frame_info);
         self.content_hasher = XxHash32::with_seed(0);
         self.content_len = 0;
+        // FIXME: Add test for this
+        self.ext_dict_len = 0;
+        self.dst_start = 0;
+        self.dst_end = 0;
         Ok(required)
     }
 
