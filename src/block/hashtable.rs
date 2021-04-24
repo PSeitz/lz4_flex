@@ -81,6 +81,7 @@ impl HashTableU32 {
         }
     }
 
+    #[cfg(feature="frame")]
     #[cold]
     pub fn reposition(&mut self, offset: u32) {
         for i in &mut self.dict {

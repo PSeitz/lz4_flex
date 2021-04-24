@@ -238,6 +238,7 @@ impl<'a> From<&'a mut [u8]> for Sink<'a> {
 }
 
 impl<'a> Sink<'a> {
+    #[cfg(any(feature = "safe-encode", feature = "safe-decode"))]
     #[inline]
     pub(crate) fn push(&mut self, byte: u8) {
         self.output[self.pos] = byte;
@@ -250,8 +251,8 @@ impl<'a> Sink<'a> {
         self.pos += data.len();
     }
 
-    #[inline]
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
+    #[inline]
     pub(crate) fn as_mut_ptr(&mut self) -> *mut u8 {
         unsafe { self.output.as_mut_ptr().add(self.pos) }
     }
@@ -276,6 +277,7 @@ impl<'a> Sink<'a> {
         self.pos = len;
     }
 
+    #[cfg(any(feature = "safe-encode", feature = "safe-decode"))]
     #[inline]
     pub(crate) fn as_slice(&self) -> &[u8] {
         &self.output

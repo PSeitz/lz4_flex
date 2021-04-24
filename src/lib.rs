@@ -26,7 +26,7 @@ For maximum performance use `no-default-features`.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-#[macro_use]
+#[cfg_attr(test, macro_use)]
 extern crate alloc;
 
 #[cfg(test)]
