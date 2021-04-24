@@ -28,6 +28,7 @@ const BLOCK_UNCOMPRESSED_SIZE_BIT: u32 = 0x80000000;
 const LZ4F_MAGIC_NUMBER: u32 = 0x184D2204;
 const LZ4F_SKIPPABLE_MAGIC_RANGE: std::ops::RangeInclusive<u32> = 0x184D2A50..=0x184D2A5F;
 
+pub(crate) const MIN_FRAME_INFO_SIZE: usize = 7;
 pub(crate) const MAX_FRAME_INFO_SIZE: usize = 19;
 pub(crate) const BLOCK_INFO_SIZE: usize = 4;
 

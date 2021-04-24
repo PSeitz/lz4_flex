@@ -1,8 +1,9 @@
 use std::{fmt, hash::Hasher, io, mem::size_of};
 use twox_hash::XxHash32;
 
-use super::header::{self, BlockInfo, BlockMode, FrameInfo};
+use super::header::{BlockInfo, BlockMode, FrameInfo, MAX_FRAME_INFO_SIZE, MIN_FRAME_INFO_SIZE};
 use super::Error;
+use crate::block::WINDOW_SIZE;
 
 /// A reader for decompressing the LZ4 framed format, as defined in:
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md
@@ -70,22 +71,23 @@ impl<R: io::Read> FrameDecoder<R> {
     }
 
     fn read_frame_info(&mut self) -> Result<usize, io::Error> {
-        let mut buffer = [0u8; header::MAX_FRAME_INFO_SIZE];
-        match self.r.read(&mut buffer[..7])? {
+        let mut buffer = [0u8; MAX_FRAME_INFO_SIZE];
+        match self.r.read(&mut buffer[..MIN_FRAME_INFO_SIZE])? {
             0 => return Ok(0),
-            7 => (),
-            read => self.r.read_exact(&mut buffer[read..7])?,
+            MIN_FRAME_INFO_SIZE => (),
+            read => self.r.read_exact(&mut buffer[read..MIN_FRAME_INFO_SIZE])?,
         }
-        let required = FrameInfo::read_size(&buffer[..7])?;
-        if required != 7 {
-            self.r.read_exact(&mut buffer[7..required])?;
+        let required = FrameInfo::read_size(&buffer[..MIN_FRAME_INFO_SIZE])?;
+        if required != MIN_FRAME_INFO_SIZE {
+            self.r
+                .read_exact(&mut buffer[MIN_FRAME_INFO_SIZE..required])?;
         }
         let frame_info = FrameInfo::read(&buffer[..required])?;
         let max_block_size = frame_info.block_size.get_size();
         self.src.resize(max_block_size, 0);
         self.dst.resize(
             if frame_info.block_mode == BlockMode::Linked {
-                max_block_size * 2 + crate::block::WINDOW_SIZE
+                max_block_size * 2 + WINDOW_SIZE
             } else {
                 max_block_size
             },
@@ -97,6 +99,7 @@ impl<R: io::Read> FrameDecoder<R> {
         Ok(required)
     }
 
+    #[inline]
     fn read_checksum(r: &mut R) -> Result<u32, io::Error> {
         let mut checksum_buffer = [0u8; size_of::<u32>()];
         r.read_exact(&mut checksum_buffer[..])?;
@@ -137,12 +140,12 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                 if self.dst_start + max_block_size > self.dst.len() {
                     // Output might not fit in the buffer.
                     // The ext_dict will become the last WINDOW_SIZE bytes
-                    debug_assert!(self.dst_start >= max_block_size + crate::block::WINDOW_SIZE);
-                    self.ext_dict_offset = self.dst_start - crate::block::WINDOW_SIZE;
-                    self.ext_dict_len = crate::block::WINDOW_SIZE;
+                    debug_assert!(self.dst_start >= max_block_size + WINDOW_SIZE);
+                    self.ext_dict_offset = self.dst_start - WINDOW_SIZE;
+                    self.ext_dict_len = WINDOW_SIZE;
                     // Output goes in the beginning of the buffer again.
                     self.dst_start = 0;
-                } else if self.dst_start + self.ext_dict_len > crate::block::WINDOW_SIZE {
+                } else if self.dst_start + self.ext_dict_len > WINDOW_SIZE {
                     // Shrink ext_dict in favor of output prefix.
                     let delta = self.ext_dict_len.min(self.dst_start);
                     self.ext_dict_offset += delta;

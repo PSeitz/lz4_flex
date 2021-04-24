@@ -12,6 +12,7 @@ use crate::block::{
 
 use super::header::{BlockInfo, BlockMode, FrameInfo, BLOCK_INFO_SIZE, MAX_FRAME_INFO_SIZE};
 use super::Error;
+use crate::block::WINDOW_SIZE;
 
 /// A writer for compressing a Snappy stream.
 ///
@@ -61,7 +62,7 @@ impl<W: io::Write> FrameEncoder<W> {
     pub fn with_frame_info(frame_info: FrameInfo, wtr: W) -> Self {
         let max_block_size = frame_info.block_size.get_size();
         let src_size = if frame_info.block_mode == BlockMode::Linked {
-            max_block_size * 2 + crate::block::WINDOW_SIZE
+            max_block_size * 2 + WINDOW_SIZE
         } else {
             max_block_size
         };
@@ -248,14 +249,14 @@ impl<W: io::Write> FrameEncoder<W> {
             if self.frame_info.block_mode == BlockMode::Linked {
                 if self.src_end + max_block_size > self.src.len() {
                     // The ext_dict will become the last WINDOW_SIZE bytes
-                    debug_assert!(self.src_end >= max_block_size + crate::block::WINDOW_SIZE);
-                    self.ext_dict_offset = self.src_end - crate::block::WINDOW_SIZE;
-                    self.ext_dict_len = crate::block::WINDOW_SIZE;
+                    debug_assert!(self.src_end >= max_block_size + WINDOW_SIZE);
+                    self.ext_dict_offset = self.src_end - WINDOW_SIZE;
+                    self.ext_dict_len = WINDOW_SIZE;
                     self.src_stream_offset += self.src_end;
                     // Input goes in the beginning of the buffer again.
                     self.src_start = 0;
                     self.src_end = 0;
-                } else if self.src_start + self.ext_dict_len > crate::block::WINDOW_SIZE {
+                } else if self.src_start + self.ext_dict_len > WINDOW_SIZE {
                     // Shrink ext_dict in favor of input prefix.
                     let delta = self.ext_dict_len.min(self.src_start);
                     self.ext_dict_offset += delta;
