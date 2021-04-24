@@ -198,7 +198,7 @@ impl FrameInfo {
         if LZ4F_SKIPPABLE_MAGIC_RANGE.contains(&magic_num) {
             let mut buffer = [0u8; 4];
             input.read_exact(&mut buffer)?;
-            let user_data_len = u32::from_le_bytes(buffer.try_into().unwrap());
+            let user_data_len = u32::from_le_bytes(buffer);
             return Err(Error::SkippableFrame(user_data_len));
         }
         if magic_num != LZ4F_MAGIC_NUMBER {
@@ -243,14 +243,14 @@ impl FrameInfo {
         if flg_byte & FLG_CONTENT_SIZE != 0 {
             let mut buffer = [0u8; 8];
             input.read_exact(&mut buffer).unwrap();
-            content_size = Some(u64::from_le_bytes(buffer.try_into().unwrap()));
+            content_size = Some(u64::from_le_bytes(buffer));
         }
 
         let mut dict_id = None;
         if flg_byte & FLG_DICTIONARY_ID != 0 {
             let mut buffer = [0u8; 4];
             input.read_exact(&mut buffer)?;
-            dict_id = Some(u32::from_le_bytes(buffer.try_into().unwrap()));
+            dict_id = Some(u32::from_le_bytes(buffer));
         }
 
         // 1 byte header checksum
@@ -267,10 +267,10 @@ impl FrameInfo {
         }
 
         Ok(FrameInfo {
-            block_mode,
-            block_size,
             content_size,
             dict_id,
+            block_size,
+            block_mode,
             block_checksums,
             content_checksum,
         })
@@ -288,7 +288,7 @@ impl BlockInfo {
     pub(crate) fn read(mut input: &[u8]) -> Result<Self, Error> {
         let mut size_buffer = [0u8; 4];
         input.read_exact(&mut size_buffer)?;
-        let size = u32::from_le_bytes(size_buffer.try_into().unwrap());
+        let size = u32::from_le_bytes(size_buffer);
         if size == 0 {
             Ok(BlockInfo::EndMark)
         } else if size & BLOCK_UNCOMPRESSED_SIZE_BIT != 0 {

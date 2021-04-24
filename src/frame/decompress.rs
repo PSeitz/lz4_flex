@@ -1,4 +1,4 @@
-use std::{convert::TryInto, fmt, hash::Hasher, io, mem::size_of};
+use std::{fmt, hash::Hasher, io, mem::size_of};
 use twox_hash::XxHash32;
 
 use super::header::{self, BlockInfo, BlockMode, FrameInfo};
@@ -100,7 +100,7 @@ impl<R: io::Read> FrameDecoder<R> {
     fn read_checksum(r: &mut R) -> Result<u32, io::Error> {
         let mut checksum_buffer = [0u8; size_of::<u32>()];
         r.read_exact(&mut checksum_buffer[..])?;
-        let checksum = u32::from_le_bytes(checksum_buffer.try_into().unwrap());
+        let checksum = u32::from_le_bytes(checksum_buffer);
         Ok(checksum)
     }
 
@@ -108,9 +108,10 @@ impl<R: io::Read> FrameDecoder<R> {
         let mut block_hasher = XxHash32::with_seed(0);
         block_hasher.write(data);
         let calc_checksum = block_hasher.finish() as u32;
-        Ok(if calc_checksum != expected_checksum {
+        if calc_checksum != expected_checksum {
             return Err(Error::BlockChecksumError.into());
-        })
+        }
+        Ok(())
     }
 }
 
@@ -154,7 +155,7 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
             let block_info = {
                 let mut buffer = [0u8; 4];
                 self.r.read_exact(&mut buffer)?;
-                BlockInfo::read(&mut buffer)?
+                BlockInfo::read(&buffer)?
             };
             match block_info {
                 BlockInfo::Uncompressed(len) => {

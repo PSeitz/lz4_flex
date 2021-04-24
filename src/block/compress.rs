@@ -368,7 +368,6 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
     ext_dict: &[u8],
     input_stream_offset: usize,
 ) -> Result<usize, CompressError> {
-    assert!(LZ4_MIN_LENGTH > END_OFFSET);
     assert!(input_pos <= input.len());
     assert!(ext_dict.len() <= super::WINDOW_SIZE);
     assert!(ext_dict.len() <= input_stream_offset);
