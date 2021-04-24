@@ -278,8 +278,8 @@ fn copy_from_dict(
     Ok(dict_match_length)
 }
 
-/// extends output by self-referential copies
-#[inline]
+/// Extends output by self-referential copies
+#[inline(always)] // (always) necessary otherwise compiler fails to inline it
 fn duplicate_slice(
     output: &mut Sink,
     offset: usize,
