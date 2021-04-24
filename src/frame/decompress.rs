@@ -84,15 +84,27 @@ impl<R: io::Read> FrameDecoder<R> {
         }
         let frame_info = FrameInfo::read(&buffer[..required])?;
         let max_block_size = frame_info.block_size.get_size();
-        self.src.resize(max_block_size, 0);
-        self.dst.resize(
-            if frame_info.block_mode == BlockMode::Linked {
-                max_block_size * 2 + WINDOW_SIZE
-            } else {
-                max_block_size
-            },
-            0,
-        );
+        let dst_size = if frame_info.block_mode == BlockMode::Linked {
+            max_block_size * 2 + WINDOW_SIZE
+        } else {
+            max_block_size
+        };
+        #[cfg(feature="safe-encode")]
+        {
+            self.src.resize(max_block_size, 0);
+            self.dst.resize(dst_size, 0);
+        }
+        #[cfg(not(feature="safe-encode"))]
+        {
+            self.src.clear();
+            self.dst.clear();
+            self.src.reserve_exact(max_block_size);
+            self.dst.reserve_exact(dst_size);
+            unsafe {
+                self.src.set_len(max_block_size);
+                self.dst.set_len(dst_size);
+            }
+        }
         self.frame_info = Some(frame_info);
         self.content_hasher = XxHash32::with_seed(0);
         self.content_len = 0;

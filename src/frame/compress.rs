@@ -66,9 +66,16 @@ impl<W: io::Write> FrameEncoder<W> {
         } else {
             max_block_size
         };
+        let mut src = Vec::with_capacity(src_size);
+        #[cfg(feature = "safe-encode")]
+        src.resize(src_size, 0);
+        #[cfg(not(feature = "safe-encode"))]
+        unsafe {
+            src.set_len(src_size);
+        }
         let (dict_size, dict_bitshift) = crate::block::hashtable::get_table_size(u32::MAX as _);
         FrameEncoder {
-            src: vec![0; src_size],
+            src,
             w: wtr,
             compression_table: HashTableU32::new(dict_size, dict_bitshift),
             content_hasher: XxHash32::with_seed(0),
