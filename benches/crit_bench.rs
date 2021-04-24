@@ -1,4 +1,7 @@
+#![allow(dead_code)]
 extern crate criterion;
+
+use std::io::{Read, Write};
 
 use self::criterion::*;
 use lz_fear::raw::compress2;
@@ -16,17 +19,11 @@ const COMPRESSION95K_VERY_GOOD_LOGO: &'static [u8] = include_bytes!("../logo.jpg
 const ALL: &[&[u8]] = &[
     COMPRESSION1K as &[u8],
     COMPRESSION34K as &[u8],
-    COMPRESSION65K as &[u8],
+    // COMPRESSION65K as &[u8],
     COMPRESSION66K as &[u8],
     // COMPRESSION10MB as &[u8],
     // COMPRESSION95K_VERY_GOOD_LOGO as &[u8],
 ];
-
-fn lz4_linked_block_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
-    let mut out = Vec::new();
-    lzzzz::lz4::compress_to_vec(input, &mut out, lzzzz::lz4::ACC_LEVEL_DEFAULT).unwrap();
-    Ok(out)
-}
 
 fn compress_lz4_fear(input: &[u8]) -> Vec<u8> {
     let mut buf = Vec::new();
@@ -38,14 +35,65 @@ fn compress_lz4_fear(input: &[u8]) -> Vec<u8> {
     buf
 }
 
+fn decompress_lz4_fear(input: &[u8]) -> Vec<u8> {
+    let mut vec = Vec::new();
+    decompress_raw(input, &[], &mut vec, std::usize::MAX).unwrap();
+    vec
+}
+
 fn compress_snap(input: &[u8]) -> Vec<u8> {
     snap::raw::Encoder::new().compress_vec(input).unwrap()
 }
 
-fn bench_compression_throughput(c: &mut Criterion) {
+fn decompress_snap(input: &[u8]) -> Vec<u8> {
+    snap::raw::Decoder::new().decompress_vec(input).unwrap()
+}
+
+fn compress_snap_frame(input: &[u8]) -> Vec<u8> {
+    let mut fe = snap::write::FrameEncoder::new(Vec::new());
+    fe.write_all(input).unwrap();
+    fe.into_inner().unwrap()
+}
+
+fn decompress_snap_frame(input: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut fe = snap::read::FrameDecoder::new(input);
+    fe.read_to_end(&mut out).unwrap();
+    out
+}
+
+fn lz4_cpp_block_decompress(input: &[u8], decomp_len: usize) -> Result<Vec<u8>, lzzzz::Error> {
+    let mut out = vec![0u8; decomp_len];
+    lzzzz::lz4::decompress(input, &mut out)?;
+    Ok(out)
+}
+
+fn lz4_cpp_block_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
+    let mut out = Vec::new();
+    lzzzz::lz4::compress_to_vec(input, &mut out, lzzzz::lz4::ACC_LEVEL_DEFAULT).unwrap();
+    Ok(out)
+}
+
+fn lz4_cpp_frame_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
+    let pref = lzzzz::lz4f::PreferencesBuilder::new()
+        .block_mode(lzzzz::lz4f::BlockMode::Linked)
+        .block_size(lzzzz::lz4f::BlockSize::Max64KB)
+        .build();
+    let mut out = Vec::new();
+    lzzzz::lz4f::compress_to_vec(input, &mut out, &pref).unwrap();
+    Ok(out)
+}
+
+fn lz4_cpp_frame_decompress(input: &[u8]) -> Result<Vec<u8>, lzzzz::lz4f::Error> {
+    let mut out = Vec::new();
+    lzzzz::lz4f::decompress_to_vec(input, &mut out)?;
+    Ok(out)
+}
+
+fn bench_block_compression_throughput(c: &mut Criterion) {
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Linear);
 
-    let mut group = c.benchmark_group("Compress");
+    let mut group = c.benchmark_group("BlockCompress");
     group.plot_config(plot_config);
 
     for input in ALL.iter() {
@@ -53,26 +101,26 @@ fn bench_compression_throughput(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(input_bytes));
 
         group.bench_with_input(
-            BenchmarkId::new("lz4_flexx_rust", input_bytes),
+            BenchmarkId::new("lz4_flex_rust", input_bytes),
             &input,
             |b, i| b.iter(|| lz4_flex::compress(&i)),
         );
         // an empty slice that the compiler can't infer the size
-        // let empty_vec = std::env::args()
-        //     .skip(1000000)
-        //     .next()
-        //     .unwrap_or_default()
-        //     .into_bytes();
-        // group.bench_with_input(
-        //     BenchmarkId::new("lz4_flexx_rust_with_dict", input_bytes),
-        //     &input,
-        //     |b, i| b.iter(|| lz4_flex::block::compress_with_dict(&i, &empty_vec)),
-        // );
-        // group.bench_with_input(
-        //     BenchmarkId::new("lz4_flexx_rust_master", input_bytes),
-        //     &input,
-        //     |b, i| b.iter(|| lz4_flex_master::compress(&i)),
-        // );
+        let empty_vec = std::env::args()
+            .skip(1000000)
+            .next()
+            .unwrap_or_default()
+            .into_bytes();
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flex_rust_with_dict", input_bytes),
+            &input,
+            |b, i| b.iter(|| lz4_flex::block::compress_with_dict(&i, &empty_vec)),
+        );
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flex_rust_master", input_bytes),
+            &input,
+            |b, i| b.iter(|| lz4_flex_master::compress(&i)),
+        );
         // group.bench_with_input(
         //     BenchmarkId::new("lz4_redox_rust", input_bytes),
         //     &input,
@@ -85,7 +133,7 @@ fn bench_compression_throughput(c: &mut Criterion) {
         // );
 
         // group.bench_with_input(BenchmarkId::new("lz4_cpp", input_bytes), &input, |b, i| {
-        //     b.iter(|| lz4_linked_block_compress(&i))
+        //     b.iter(|| lz4_cpp_block_compress(&i))
         // });
 
         // group.bench_with_input(BenchmarkId::new("snap", input_bytes), &input, |b, i| {
@@ -96,26 +144,10 @@ fn bench_compression_throughput(c: &mut Criterion) {
     group.finish();
 }
 
-pub fn decompress_fear(input: &[u8]) -> Vec<u8> {
-    let mut vec = Vec::new();
-    decompress_raw(input, &[], &mut vec, std::usize::MAX).unwrap();
-    vec
-}
-
-pub fn decompress_snap(input: &[u8]) -> Vec<u8> {
-    snap::raw::Decoder::new().decompress_vec(input).unwrap()
-}
-
-fn lz4_cpp_block_decompress(input: &[u8], decomp_len: usize) -> Result<Vec<u8>, lzzzz::Error> {
-    let mut out = vec![0u8; decomp_len];
-    lzzzz::lz4::decompress(input, &mut out)?;
-    Ok(out)
-}
-
-fn bench_decompression_throughput(c: &mut Criterion) {
+fn bench_block_decompression_throughput(c: &mut Criterion) {
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Linear);
 
-    let mut group = c.benchmark_group("Decompress");
+    let mut group = c.benchmark_group("BlockDecompress");
     group.plot_config(plot_config);
 
     for input in ALL.iter() {
@@ -125,11 +157,11 @@ fn bench_decompression_throughput(c: &mut Criterion) {
         // let comp_fear_rust = compress_lz4_fear(&input);
         // let comp_rust = lz4_compress::compress(&input);
 
-        let comp_lz4 = lz4_linked_block_compress(&input).unwrap();
+        let comp_lz4 = lz4_cpp_block_compress(&input).unwrap();
         group.throughput(Throughput::Bytes(input.len() as _));
 
         group.bench_with_input(
-            BenchmarkId::new("lz4_flexx_rust", input_bytes),
+            BenchmarkId::new("lz4_flex_rust", input_bytes),
             &comp_lz4,
             |b, i| b.iter(|| lz4_flex::decompress(&i, input.len())),
         );
@@ -140,15 +172,15 @@ fn bench_decompression_throughput(c: &mut Criterion) {
         //     .unwrap_or_default()
         //     .into_bytes();
         // group.bench_with_input(
-        //     BenchmarkId::new("lz4_flexx_rust_with_dict", input_bytes),
+        //     BenchmarkId::new("lz4_flex_rust_with_dict", input_bytes),
         //     &comp_lz4,
         //     |b, i| b.iter(|| lz4_flex::block::decompress_with_dict(&i, input.len(), &empty_vec)),
         // );
-        // group.bench_with_input(
-        //     BenchmarkId::new("lz4_flexx_rust_master", input_bytes),
-        //     &comp_lz4,
-        //     |b, i| b.iter(|| lz4_flex_master::decompress(&i, input.len())),
-        // );
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flex_rust_master", input_bytes),
+            &comp_lz4,
+            |b, i| b.iter(|| lz4_flex_master::decompress(&i, input.len())),
+        );
         // group.bench_with_input(
         //     BenchmarkId::new("lz4_redox_rust", input_bytes),
         //     &comp_lz4,
@@ -157,7 +189,7 @@ fn bench_decompression_throughput(c: &mut Criterion) {
         // group.bench_with_input(
         //     BenchmarkId::new("lz4_fear_rust", input_bytes),
         //     &comp_lz4,
-        //     |b, i| b.iter(|| decompress_fear(&i)),
+        //     |b, i| b.iter(|| decompress_lz4_fear(&i)),
         // );
 
         // group.bench_with_input(
@@ -167,7 +199,6 @@ fn bench_decompression_throughput(c: &mut Criterion) {
         // );
 
         // let comp_snap = compress_snap(&input);
-        // group.throughput(Throughput::Bytes(comp_snap.len() as _));
         // group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
         //     b.iter(|| decompress_snap(&i))
         // });
@@ -176,9 +207,68 @@ fn bench_decompression_throughput(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_frame_decompression_throughput(c: &mut Criterion) {
+    let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Linear);
+
+    let mut group = c.benchmark_group("FrameDecompress");
+    group.plot_config(plot_config);
+
+    for input in ALL.iter() {
+        let input_bytes = input.len() as u64;
+
+        let comp_lz4 = lz4_cpp_frame_compress(&input).unwrap();
+        group.throughput(Throughput::Bytes(input.len() as _));
+
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flex_rust", input_bytes),
+            &comp_lz4,
+            |b, i| b.iter(|| lz4_flex::frame::decompress(&i)),
+        );
+        group.bench_with_input(
+            BenchmarkId::new("lz4_cpp", input_bytes),
+            &comp_lz4,
+            |b, i| b.iter(|| lz4_cpp_frame_decompress(&i)),
+        );
+        let comp_snap = compress_snap_frame(&input);
+        group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
+            b.iter(|| decompress_snap_frame(&i))
+        });
+    }
+
+    group.finish();
+}
+
+fn bench_frame_compression_throughput(c: &mut Criterion) {
+    let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Linear);
+
+    let mut group = c.benchmark_group("FrameCompress");
+    group.plot_config(plot_config);
+
+    for input in ALL.iter() {
+        let input_bytes = input.len() as u64;
+        group.throughput(Throughput::Bytes(input_bytes));
+
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flex_rust", input_bytes),
+            &input,
+            |b, i| b.iter(|| lz4_flex::frame::compress(&i)),
+        );
+        group.bench_with_input(BenchmarkId::new("lz4_cpp", input_bytes), &input, |b, i| {
+            b.iter(|| lz4_cpp_frame_compress(i))
+        });
+        group.bench_with_input(BenchmarkId::new("snap", input_bytes), &input, |b, i| {
+            b.iter(|| compress_snap_frame(i))
+        });
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
-    bench_decompression_throughput,
-    bench_compression_throughput
+    bench_block_decompression_throughput,
+    bench_block_compression_throughput,
+    bench_frame_decompression_throughput,
+    bench_frame_compression_throughput,
 );
 criterion_main!(benches);
