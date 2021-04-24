@@ -30,9 +30,9 @@ pub struct FrameDecoder<R: io::Read> {
     ext_dict_offset: usize,
     ext_dict_len: usize,
     /// Index into dst: starting point of bytes not yet given back to caller.
-    dsts: usize,
+    dst_start: usize,
     /// Index into dst: ending point of bytes not yet given back to caller.
-    dste: usize,
+    dst_end: usize,
 }
 
 impl<R: io::Read> FrameDecoder<R> {
@@ -44,8 +44,8 @@ impl<R: io::Read> FrameDecoder<R> {
             dst: Default::default(),
             ext_dict_offset: 0,
             ext_dict_len: 0,
-            dsts: 0,
-            dste: 0,
+            dst_start: 0,
+            dst_end: 0,
             frame_info: None,
             content_hasher: XxHash32::with_seed(0),
             content_len: 0,
@@ -123,33 +123,33 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
         let frame_info = self.frame_info.as_ref().unwrap();
         loop {
             // Fill read buffer if there's uncompressed data left
-            if self.dsts < self.dste {
-                let len = std::cmp::min(self.dste - self.dsts, buf.len());
-                let dste = self.dsts.checked_add(len).unwrap();
-                buf[..len].copy_from_slice(&self.dst[self.dsts..dste]);
-                self.dsts = dste;
+            if self.dst_start < self.dst_end {
+                let len = std::cmp::min(self.dst_end - self.dst_start, buf.len());
+                let dste = self.dst_start.checked_add(len).unwrap();
+                buf[..len].copy_from_slice(&self.dst[self.dst_start..dste]);
+                self.dst_start = dste;
                 return Ok(len);
             }
 
-            // Adjust dst buffer offsets to uncompress the next block
+            // Adjust dst buffer offsets to decompress the next block
             let max_block_size = frame_info.block_size.get_size();
             if frame_info.block_mode == BlockMode::Linked {
-                if self.dsts + max_block_size > self.dst.len() {
+                if self.dst_start + max_block_size > self.dst.len() {
                     // Output might not fit in the buffer.
                     // The ext_dict will become the last WINDOW_SIZE bytes
-                    debug_assert!(self.dsts >= max_block_size + crate::block::WINDOW_SIZE);
-                    self.ext_dict_offset = self.dsts - crate::block::WINDOW_SIZE;
+                    debug_assert!(self.dst_start >= max_block_size + crate::block::WINDOW_SIZE);
+                    self.ext_dict_offset = self.dst_start - crate::block::WINDOW_SIZE;
                     self.ext_dict_len = crate::block::WINDOW_SIZE;
                     // Output goes in the beginning of the buffer again.
-                    self.dsts = 0;
-                } else if self.dsts + self.ext_dict_len > crate::block::WINDOW_SIZE {
+                    self.dst_start = 0;
+                } else if self.dst_start + self.ext_dict_len > crate::block::WINDOW_SIZE {
                     // Shrink ext_dict in favor of output prefix.
-                    let delta = self.ext_dict_len.min(self.dsts);
+                    let delta = self.ext_dict_len.min(self.dst_start);
                     self.ext_dict_offset += delta;
                     self.ext_dict_len -= delta;
                 }
             } else {
-                self.dsts = 0;
+                self.dst_start = 0;
             }
 
             let block_info = {
@@ -164,16 +164,16 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                         return Err(Error::BlockTooBig.into());
                     }
                     self.r
-                        .read_exact(&mut self.dst[self.dsts..self.dsts + len])?;
+                        .read_exact(&mut self.dst[self.dst_start..self.dst_start + len])?;
                     if frame_info.block_checksums {
                         let expected_checksum = Self::read_checksum(&mut self.r)?;
                         Self::check_block_checksum(
-                            &self.dst[self.dsts..self.dsts + len],
+                            &self.dst[self.dst_start..self.dst_start + len],
                             expected_checksum,
                         )?;
                     }
 
-                    self.dste = self.dsts + len;
+                    self.dst_end = self.dst_start + len;
                     self.content_len += len as u64;
                 }
                 BlockInfo::Compressed(len) => {
@@ -190,12 +190,12 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                     let with_dict_mode =
                         frame_info.block_mode == BlockMode::Linked && self.ext_dict_len != 0;
                     let decomp_size = if with_dict_mode {
-                        debug_assert!(self.dsts + max_block_size <= self.ext_dict_offset);
+                        debug_assert!(self.dst_start + max_block_size <= self.ext_dict_offset);
                         let (head, tail) = self.dst.split_at_mut(self.ext_dict_offset);
                         let ext_dict = &tail[..self.ext_dict_len];
 
                         let mut sink: crate::block::Sink = head.into();
-                        sink.set_pos(self.dsts);
+                        sink.set_pos(self.dst_start);
                         crate::block::decompress::decompress_into_with_dict(
                             &self.src[..len],
                             &mut sink,
@@ -204,12 +204,12 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                     } else {
                         // Independent blocks OR linked blocks with only prefix data
                         let mut sink: crate::block::Sink = (&mut self.dst).into();
-                        sink.set_pos(self.dsts);
+                        sink.set_pos(self.dst_start);
                         crate::block::decompress::decompress_into(&self.src[..len], &mut sink)
                     }
                     .map_err(Error::DecompressionError)?;
 
-                    self.dste = self.dsts + decomp_size;
+                    self.dst_end = self.dst_start + decomp_size;
                     self.content_len += decomp_size as u64;
                 }
 
@@ -236,7 +236,8 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
             };
 
             if frame_info.content_checksum {
-                self.content_hasher.write(&self.dst[self.dsts..self.dste]);
+                self.content_hasher
+                    .write(&self.dst[self.dst_start..self.dst_end]);
             }
         }
     }
@@ -250,8 +251,8 @@ impl<R: fmt::Debug + io::Read> fmt::Debug for FrameDecoder<R> {
             .field("content_len", &self.content_len)
             .field("src", &"[...]")
             .field("dst", &"[...]")
-            .field("dsts", &self.dsts)
-            .field("dste", &self.dste)
+            .field("dst_start", &self.dst_start)
+            .field("dst_end", &self.dst_end)
             .field("ext_dict_offset", &self.ext_dict_offset)
             .field("ext_dict_len", &self.ext_dict_len)
             .field("frame_info", &self.frame_info)

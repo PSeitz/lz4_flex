@@ -28,10 +28,16 @@ use super::Error;
 pub struct FrameEncoder<W: io::Write> {
     /// Our buffer of uncompressed bytes.
     src: Vec<u8>,
-    srcs: usize,
-    srce: usize,
+    /// Index into src: starting point of bytes not yet compressed
+    src_start: usize,
+    /// Index into src: end point of bytes not not yet compressed
+    src_end: usize,
+    /// Index into src: starting point of external dictionary (applicable in Linked block mode)
     ext_dict_offset: usize,
+    /// Length of external dictionary
     ext_dict_len: usize,
+    /// Counter of bytes already compressed to the compression_table (applicable in Linked block mode)
+    /// _Not_ the same as `content_len` as this is reset every to 2GB.
     src_stream_offset: usize,
     /// Encoder table
     compression_table: HashTableU32,
@@ -69,8 +75,8 @@ impl<W: io::Write> FrameEncoder<W> {
             dst: crate::block::compress::get_output_vec(max_block_size),
             wrote_frame_info: false,
             frame_info,
-            srcs: 0,
-            srce: 0,
+            src_start: 0,
+            src_end: 0,
             ext_dict_offset: 0,
             ext_dict_len: 0,
             src_stream_offset: 0,
@@ -138,9 +144,9 @@ impl<W: io::Write> io::Write for FrameEncoder<W> {
         let mut total = 0;
         while !buf.is_empty() {
             let free = if self.ext_dict_len == 0 {
-                self.src.len() - self.srce
+                self.src.len() - self.src_end
             } else {
-                self.ext_dict_offset - self.srce
+                self.ext_dict_offset - self.src_end
             };
             if free == 0 {
                 self.write_block()?;
@@ -149,16 +155,16 @@ impl<W: io::Write> io::Write for FrameEncoder<W> {
 
             // number of bytes to be extracted from buf.
             let n = free.min(buf.len());
-            self.src[self.srce..self.srce + n].copy_from_slice(&buf[..n]);
+            self.src[self.src_end..self.src_end + n].copy_from_slice(&buf[..n]);
             buf = &buf[n..];
-            self.srce += n;
+            self.src_end += n;
             total += n;
         }
         Ok(total)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        while self.srcs != self.srce {
+        while self.src_start != self.src_end {
             self.write_block()?;
         }
         Ok(())
@@ -190,20 +196,20 @@ impl<W: io::Write> FrameEncoder<W> {
                     .reposition((self.src_stream_offset - self.ext_dict_len) as _);
                 self.src_stream_offset = self.ext_dict_len;
             }
-            let src = &self.src[..self.srce.min(self.srcs + max_block_size)];
+            let src = &self.src[..self.src_end.min(self.src_start + max_block_size)];
             let res = compress_internal::<_, true>(
                 src,
-                self.srcs,
+                self.src_start,
                 &mut (&mut self.dst[..]).into(),
                 &mut self.compression_table,
                 &self.src[self.ext_dict_offset..self.ext_dict_offset + self.ext_dict_len],
                 self.src_stream_offset,
             );
-            (&src[self.srcs..], res)
+            (&src[self.src_start..], res)
         } else {
-            debug_assert_eq!(self.srcs, 0);
+            debug_assert_eq!(self.src_start, 0);
             debug_assert_eq!(self.src.len(), max_block_size);
-            let src = &self.src[..self.srce];
+            let src = &self.src[..self.src_end];
             if self.content_len != 0 {
                 self.compression_table.clear();
             }
@@ -237,27 +243,27 @@ impl<W: io::Write> FrameEncoder<W> {
         }
         self.content_len += src.len() as u64;
 
-        self.srcs += src.len();
-        if self.srcs == self.srce {
+        self.src_start += src.len();
+        if self.src_start == self.src_end {
             if self.frame_info.block_mode == BlockMode::Linked {
-                if self.srce + max_block_size > self.src.len() {
+                if self.src_end + max_block_size > self.src.len() {
                     // The ext_dict will become the last WINDOW_SIZE bytes
-                    debug_assert!(self.srce >= max_block_size + crate::block::WINDOW_SIZE);
-                    self.ext_dict_offset = self.srce - crate::block::WINDOW_SIZE;
+                    debug_assert!(self.src_end >= max_block_size + crate::block::WINDOW_SIZE);
+                    self.ext_dict_offset = self.src_end - crate::block::WINDOW_SIZE;
                     self.ext_dict_len = crate::block::WINDOW_SIZE;
-                    self.src_stream_offset += self.srce;
+                    self.src_stream_offset += self.src_end;
                     // Input goes in the beginning of the buffer again.
-                    self.srcs = 0;
-                    self.srce = 0;
-                } else if self.srcs + self.ext_dict_len > crate::block::WINDOW_SIZE {
+                    self.src_start = 0;
+                    self.src_end = 0;
+                } else if self.src_start + self.ext_dict_len > crate::block::WINDOW_SIZE {
                     // Shrink ext_dict in favor of input prefix.
-                    let delta = self.ext_dict_len.min(self.srcs);
+                    let delta = self.ext_dict_len.min(self.src_start);
                     self.ext_dict_offset += delta;
                     self.ext_dict_len -= delta;
                 }
             } else {
-                self.srcs = 0;
-                self.srce = 0;
+                self.src_start = 0;
+                self.src_end = 0;
             }
         }
         Ok(src.len())
@@ -268,15 +274,14 @@ impl<W: fmt::Debug + io::Write> fmt::Debug for FrameEncoder<W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("FrameEncoder")
             .field("w", &self.w)
-            // .field("enc", &self.enc)
             .field("content_hasher", &self.content_hasher)
             .field("content_len", &self.content_len)
             .field("dst", &"[...]")
             .field("wrote_frame_info", &self.wrote_frame_info)
             .field("frame_info", &self.frame_info)
             .field("src", &"[...]")
-            .field("srcs", &self.srcs)
-            .field("srce", &self.srce)
+            .field("src_start", &self.src_start)
+            .field("src_end", &self.src_end)
             .field("ext_dict_offset", &self.ext_dict_offset)
             .field("ext_dict_len", &self.ext_dict_len)
             .field("src_stream_offset", &self.src_stream_offset)
