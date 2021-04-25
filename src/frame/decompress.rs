@@ -92,12 +92,12 @@ impl<R: io::Read> FrameDecoder<R> {
         } else {
             max_block_size
         };
-        #[cfg(feature="safe-encode")]
+        #[cfg(feature = "safe-encode")]
         {
             self.src.resize(max_block_size, 0);
             self.dst.resize(dst_size, 0);
         }
-        #[cfg(not(feature="safe-encode"))]
+        #[cfg(not(feature = "safe-encode"))]
         {
             self.src.clear();
             self.dst.clear();

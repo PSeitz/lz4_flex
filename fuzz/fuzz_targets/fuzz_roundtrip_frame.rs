@@ -28,32 +28,35 @@ fuzz_target!(|input: Input| {
     }
     data.truncate(data_size);
 
-    // io::Write
-    let mut enc = lz4_flex::frame::FrameEncoder::new(Vec::with_capacity(data_size));
-    for chunk in data.chunks(chunk_size) {
-        enc.write(chunk).unwrap();
-    }
-    let compressed = enc.finish().unwrap();
-    // io::Read
-    let mut decompressed = Vec::new();
-    decompressed.resize(data.len() + chunk_size, 0);
-    let mut pos = 0;
-    let mut dec = lz4_flex::frame::FrameDecoder::new(&*compressed);
-    loop {
-        match dec.read(&mut decompressed[pos..pos + chunk_size]).unwrap() {
-            0 => {
-                decompressed.truncate(pos);
-                break;
-            }
-            i => {
-                pos += i;
+    for bm in &[
+        lz4_flex::frame::BlockMode::Independent,
+        lz4_flex::frame::BlockMode::Linked,
+    ] {
+        // io::Write
+        let mut fi = lz4_flex::frame::FrameInfo::default();
+        fi.block_mode = *bm;
+        let mut enc =
+            lz4_flex::frame::FrameEncoder::with_frame_info(fi, Vec::with_capacity(data_size));
+        for chunk in data.chunks(chunk_size) {
+            enc.write(chunk).unwrap();
+        }
+        let compressed = enc.finish().unwrap();
+        // io::Read
+        let mut decompressed = Vec::new();
+        decompressed.resize(data.len() + chunk_size, 0);
+        let mut pos = 0;
+        let mut dec = lz4_flex::frame::FrameDecoder::new(&*compressed);
+        loop {
+            match dec.read(&mut decompressed[pos..pos + chunk_size]).unwrap() {
+                0 => {
+                    decompressed.truncate(pos);
+                    break;
+                }
+                i => {
+                    pos += i;
+                }
             }
         }
+        assert_eq!(data, decompressed);
     }
-    assert_eq!(data, decompressed);
-
-    // At once
-    let compressed = lz4_flex::frame::compress(&data);
-    let decompressed = lz4_flex::frame::decompress(&compressed).unwrap();
-    assert_eq!(data, decompressed);
 });

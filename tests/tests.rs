@@ -4,6 +4,8 @@
 extern crate more_asserts;
 
 use lz4_compress::compress as lz4_rust_compress;
+#[cfg(feature = "frame")]
+use lz4_flex::frame::BlockMode;
 use lz4_flex::{
     block::{compress_prepend_size, decompress_size_prepended},
     compress, decompress,
@@ -22,10 +24,13 @@ fn lz4_cpp_block_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
 }
 
 #[cfg(feature = "frame")]
-fn lz4_cpp_frame_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
+fn lz4_cpp_frame_compress(input: &[u8], independent: bool) -> Result<Vec<u8>, lzzzz::Error> {
     let pref = lzzzz::lz4f::PreferencesBuilder::new()
-        .block_mode(lzzzz::lz4f::BlockMode::Linked)
-        .block_size(lzzzz::lz4f::BlockSize::Max64KB)
+        .block_mode(if independent {
+            lzzzz::lz4f::BlockMode::Independent
+        } else {
+            lzzzz::lz4f::BlockMode::Linked
+        })
         .build();
     let mut out = Vec::new();
     lzzzz::lz4f::compress_to_vec(input, &mut out, &pref).unwrap();
@@ -61,8 +66,14 @@ fn inverse(bytes: impl AsRef<[u8]>) {
     // Frame format
     // compress with rust, decompress with rust
     #[cfg(feature = "frame")]
-    {
-        let compressed_flex = lz4_flex::frame::compress(bytes);
+    for bm in &[BlockMode::Independent, BlockMode::Linked] {
+        let compressed_flex = lz4_flex::frame::compress_with(
+            lz4_flex::frame::FrameInfo {
+                block_mode: *bm,
+                ..Default::default()
+            },
+            bytes,
+        );
         let decompressed = lz4_flex::frame::decompress(&compressed_flex).unwrap();
         assert_eq!(decompressed, bytes);
     }
@@ -94,7 +105,10 @@ fn lz4_cpp_compatibility(bytes: &[u8]) {
     #[cfg(feature = "frame")]
     {
         // compress with lz4 cpp, decompress with rust
-        let compressed = lz4_cpp_frame_compress(bytes).unwrap();
+        let compressed = lz4_cpp_frame_compress(bytes, true).unwrap();
+        let decompressed = lz4_flex::frame::decompress(&compressed).unwrap();
+        assert_eq!(decompressed, bytes);
+        let compressed = lz4_cpp_frame_compress(bytes, false).unwrap();
         let decompressed = lz4_flex::frame::decompress(&compressed).unwrap();
         assert_eq!(decompressed, bytes);
 
@@ -102,9 +116,17 @@ fn lz4_cpp_compatibility(bytes: &[u8]) {
         if !bytes.is_empty() {
             // compress_frame won't write a header if nothing is written to it
             // which is more in line with io::Write interface?
-            let compressed_flex = lz4_flex::frame::compress(bytes);
-            let decompressed = lz4_cpp_frame_decompress(&compressed_flex).unwrap();
-            assert_eq!(decompressed, bytes);
+            for bm in &[BlockMode::Independent, BlockMode::Linked] {
+                let compressed_flex = lz4_flex::frame::compress_with(
+                    lz4_flex::frame::FrameInfo {
+                        block_mode: *bm,
+                        ..Default::default()
+                    },
+                    bytes,
+                );
+                let decompressed = lz4_cpp_frame_decompress(&compressed_flex).unwrap();
+                assert_eq!(decompressed, bytes);
+            }
         }
     }
 }

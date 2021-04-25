@@ -13,6 +13,7 @@ pub(crate) mod header;
 
 pub use compress::FrameEncoder;
 pub use decompress::FrameDecoder;
+pub use header::{BlockMode, BlockSize, FrameInfo};
 
 #[derive(Debug)]
 pub enum Error {
@@ -54,12 +55,17 @@ impl std::error::Error for Error {}
 
 /// Compress all bytes of `input`.
 pub fn compress(input: &[u8]) -> Vec<u8> {
+    compress_with(FrameInfo::default(), input)
+}
+
+/// Compress all bytes of `input`.
+pub fn compress_with(frame_info: FrameInfo, input: &[u8]) -> Vec<u8> {
     let buffer = Vec::with_capacity(
         header::MAX_FRAME_INFO_SIZE
             + header::BLOCK_INFO_SIZE
             + crate::block::compress::get_maximum_output_size(input.len()),
     );
-    let mut enc = FrameEncoder::new(buffer);
+    let mut enc = FrameEncoder::with_frame_info(frame_info, buffer);
     enc.write_all(input).unwrap();
     enc.finish().unwrap()
 }
