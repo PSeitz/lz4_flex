@@ -179,20 +179,24 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
 /// Counts the number of same bytes in two byte streams.
 /// `input` is the complete input
 /// `cur` is the current position in the input. it will be incremented by the number of matched bytes
-/// `source` either the same as input or an external slice
+/// `source` either the same as input OR an external slice
 /// `candidate` is the candidate position in `source`
 ///
 /// The function ignores the last END_OFFSET bytes in input as those should be literals.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
 fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
-    let start = *cur;
+    let max_input_match = input.len().saturating_sub(*cur + END_OFFSET);
+    let max_candidate_match = source.len() - candidate;
+    // Considering both limits calc how far we may match in input.
+    let input_end = *cur + max_input_match.min(max_candidate_match);
 
+    let start = *cur;
     let mut source_ptr = unsafe { source.as_ptr().add(candidate) };
 
     // compare 4/8 bytes blocks depending on the arch
     const STEP_SIZE: usize = core::mem::size_of::<usize>();
-    while *cur + STEP_SIZE + END_OFFSET <= input.len() {
+    while *cur + STEP_SIZE <= input_end {
         let diff = read_usize_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_usize_ptr(source_ptr);
 
         if diff == 0 {
@@ -209,7 +213,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
     // compare 4 bytes block
     #[cfg(target_pointer_width = "64")]
     {
-        if *cur + 4 + END_OFFSET <= input.len() {
+        if *cur + 4 <= input_end {
             let diff = read_u32_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u32_ptr(source_ptr);
 
             if diff == 0 {
@@ -225,21 +229,16 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
     }
 
     // compare 2 bytes block
-    if *cur + 2 + END_OFFSET <= input.len() {
-        let diff = read_u16_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u16_ptr(source_ptr);
-
-        if diff == 0 {
-            *cur += 2;
-            unsafe {
-                source_ptr = source_ptr.add(2);
-            }
-        } else {
-            *cur += (diff.to_le().trailing_zeros() / 8) as usize;
-            return *cur - start;
+    if *cur + 2 <= input_end
+        && unsafe { read_u16_ptr(input.as_ptr().add(*cur)) == read_u16_ptr(source_ptr) }
+    {
+        *cur += 2;
+        unsafe {
+            source_ptr = source_ptr.add(2);
         }
     }
 
-    if *cur + 1 + END_OFFSET <= input.len()
+    if *cur + 1 <= input_end
         && unsafe { input.as_ptr().add(*cur).read() } == unsafe { source_ptr.read() }
     {
         *cur += 1;
