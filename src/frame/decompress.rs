@@ -5,8 +5,11 @@ use super::header::{BlockInfo, BlockMode, FrameInfo, MAX_FRAME_INFO_SIZE, MIN_FR
 use super::Error;
 use crate::block::WINDOW_SIZE;
 
-/// A reader for decompressing the LZ4 framed format, as defined in:
-/// https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md
+/// A reader for decompressing the LZ4 frame format
+///
+/// This Decoder wraps any other reader that implements `io::Read`.
+/// Bytes read will be decompressed according to the [LZ4 frame format](
+/// https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md).
 ///
 /// This reader can potentially make many small reads from the underlying
 /// stream depending on its format, therefore, passing in a buffered reader
@@ -37,7 +40,7 @@ pub struct FrameDecoder<R: io::Read> {
 }
 
 impl<R: io::Read> FrameDecoder<R> {
-    /// Create a new reader for streaming Snappy decompression.
+    /// Creates a new Decoder for the specified reader.
     pub fn new(rdr: R) -> FrameDecoder<R> {
         FrameDecoder {
             r: rdr,

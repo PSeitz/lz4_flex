@@ -1,3 +1,7 @@
+//! LZ4 Frame Format
+//!
+//! As defined in <https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md>
+
 use std::{
     fmt,
     io::{self, Read, Write},
@@ -48,6 +52,7 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+/// Compress all bytes of `input`.
 pub fn compress(input: &[u8]) -> Vec<u8> {
     let buffer = Vec::with_capacity(
         header::MAX_FRAME_INFO_SIZE
@@ -59,6 +64,7 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
     enc.finish().unwrap()
 }
 
+/// Decompress all bytes of `input` into a new vec.
 pub fn decompress(input: &[u8]) -> Result<Vec<u8>, Error> {
     let mut de = FrameDecoder::new(input);
     // Preallocate the Vec with 1.5x the size of input, it may resize but it amortizes enough.

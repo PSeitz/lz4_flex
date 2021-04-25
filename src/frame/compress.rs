@@ -14,18 +14,17 @@ use super::header::{BlockInfo, BlockMode, FrameInfo, BLOCK_INFO_SIZE, MAX_FRAME_
 use super::Error;
 use crate::block::WINDOW_SIZE;
 
-/// A writer for compressing a Snappy stream.
+/// A writer for compressing a LZ4 stream.
 ///
 /// This `FrameEncoder` wraps any other writer that implements `io::Write`.
-/// Bytes written to this writer are compressed using the [Snappy frame
-/// format](https://github.com/google/snappy/blob/master/framing_format.txt)
-/// (file extension `sz`, MIME type `application/x-snappy-framed`).
+/// Bytes written to this writer are compressed using the [LZ4 frame
+/// format](https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md).
 ///
 /// Writes are buffered automatically, so there's no need to wrap the given
 /// writer in a `std::io::BufWriter`.
 ///
-/// The writer will be flushed automatically when it is dropped. If an error
-/// occurs, it is ignored.
+/// To ensure a well formed stream the encoder must be finalized by calling
+/// either `finish` or `try_finish()` methods.
 pub struct FrameEncoder<W: io::Write> {
     /// Our buffer of uncompressed bytes.
     src: Vec<u8>,
@@ -58,7 +57,7 @@ pub struct FrameEncoder<W: io::Write> {
 }
 
 impl<W: io::Write> FrameEncoder<W> {
-    /// Create a new writer for streaming Snappy compression.
+    /// Creates a new Encoder with the specified FrameInfo.
     pub fn with_frame_info(frame_info: FrameInfo, wtr: W) -> Self {
         let max_block_size = frame_info.block_size.get_size();
         let src_size = if frame_info.block_mode == BlockMode::Linked {

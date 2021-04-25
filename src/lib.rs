@@ -17,7 +17,8 @@ assert_eq!(input, uncompressed);
 
 - `safe-encode` uses only safe rust for encode. _enabled by default_
 - `safe-decode` uses only safe rust for encode. _enabled by default_
-- `checked-decode` will add aditional checks if `safe-decode` is not enabled, to avoid out of bounds access. This should be enabled for untrusted input.
+- `checked-decode` will add additional checks if `safe-decode` is not enabled, to avoid out of bounds access. This should be enabled for untrusted input.
+- `frame` support for LZ4 frame format. _implies `std`, enabled by default_
 - `std` enables dependency on the standard library. _enabled by default_
 
 For maximum performance use `no-default-features`.
