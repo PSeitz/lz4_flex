@@ -4,6 +4,7 @@ extern crate criterion;
 use std::io::{Read, Write};
 
 use self::criterion::*;
+use lz4_flex::frame::{BlockMode, FrameInfo};
 use lz_fear::raw::compress2;
 use lz_fear::raw::decompress_raw;
 use lz_fear::raw::U16Table;
@@ -74,9 +75,13 @@ fn lz4_cpp_block_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
     Ok(out)
 }
 
-fn lz4_cpp_frame_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
+fn lz4_cpp_frame_compress(input: &[u8], independent: bool) -> Result<Vec<u8>, lzzzz::Error> {
     let pref = lzzzz::lz4f::PreferencesBuilder::new()
-        .block_mode(lzzzz::lz4f::BlockMode::Linked)
+        .block_mode(if independent {
+            lzzzz::lz4f::BlockMode::Independent
+        } else {
+            lzzzz::lz4f::BlockMode::Linked
+        })
         .block_size(lzzzz::lz4f::BlockSize::Max64KB)
         .build();
     let mut out = Vec::new();
@@ -116,11 +121,11 @@ fn bench_block_compression_throughput(c: &mut Criterion) {
             &input,
             |b, i| b.iter(|| lz4_flex::block::compress_with_dict(&i, &empty_vec)),
         );
-        group.bench_with_input(
-            BenchmarkId::new("lz4_flex_rust_master", input_bytes),
-            &input,
-            |b, i| b.iter(|| lz4_flex_master::compress(&i)),
-        );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_flex_rust_master", input_bytes),
+        //     &input,
+        //     |b, i| b.iter(|| lz4_flex_master::compress(&i)),
+        // );
         // group.bench_with_input(
         //     BenchmarkId::new("lz4_redox_rust", input_bytes),
         //     &input,
@@ -132,13 +137,13 @@ fn bench_block_compression_throughput(c: &mut Criterion) {
         //     |b, i| b.iter(|| compress_lz4_fear(&i)),
         // );
 
-        // group.bench_with_input(BenchmarkId::new("lz4_cpp", input_bytes), &input, |b, i| {
-        //     b.iter(|| lz4_cpp_block_compress(&i))
-        // });
+        group.bench_with_input(BenchmarkId::new("lz4_cpp", input_bytes), &input, |b, i| {
+            b.iter(|| lz4_cpp_block_compress(&i))
+        });
 
-        // group.bench_with_input(BenchmarkId::new("snap", input_bytes), &input, |b, i| {
-        //     b.iter(|| compress_snap(&i))
-        // });
+        group.bench_with_input(BenchmarkId::new("snap", input_bytes), &input, |b, i| {
+            b.iter(|| compress_snap(&i))
+        });
     }
 
     group.finish();
@@ -153,10 +158,6 @@ fn bench_block_decompression_throughput(c: &mut Criterion) {
     for input in ALL.iter() {
         let input_bytes = input.len() as u64;
 
-        // let comp_flex = lz4_flex::compress(&input);
-        // let comp_fear_rust = compress_lz4_fear(&input);
-        // let comp_rust = lz4_compress::compress(&input);
-
         let comp_lz4 = lz4_cpp_block_compress(&input).unwrap();
         group.throughput(Throughput::Bytes(input.len() as _));
 
@@ -166,16 +167,16 @@ fn bench_block_decompression_throughput(c: &mut Criterion) {
             |b, i| b.iter(|| lz4_flex::decompress(&i, input.len())),
         );
         // an empty slice that the compiler can't infer the size
-        // let empty_vec = std::env::args()
-        //     .skip(1000000)
-        //     .next()
-        //     .unwrap_or_default()
-        //     .into_bytes();
-        // group.bench_with_input(
-        //     BenchmarkId::new("lz4_flex_rust_with_dict", input_bytes),
-        //     &comp_lz4,
-        //     |b, i| b.iter(|| lz4_flex::block::decompress_with_dict(&i, input.len(), &empty_vec)),
-        // );
+        let empty_vec = std::env::args()
+            .skip(1000000)
+            .next()
+            .unwrap_or_default()
+            .into_bytes();
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flex_rust_with_dict", input_bytes),
+            &comp_lz4,
+            |b, i| b.iter(|| lz4_flex::block::decompress_with_dict(&i, input.len(), &empty_vec)),
+        );
         group.bench_with_input(
             BenchmarkId::new("lz4_flex_rust_master", input_bytes),
             &comp_lz4,
@@ -192,16 +193,16 @@ fn bench_block_decompression_throughput(c: &mut Criterion) {
         //     |b, i| b.iter(|| decompress_lz4_fear(&i)),
         // );
 
-        // group.bench_with_input(
-        //     BenchmarkId::new("lz4_cpp", input_bytes),
-        //     &comp_lz4,
-        //     |b, i| b.iter(|| lz4_cpp_block_decompress(&i, input.len())),
-        // );
+        group.bench_with_input(
+            BenchmarkId::new("lz4_cpp", input_bytes),
+            &comp_lz4,
+            |b, i| b.iter(|| lz4_cpp_block_decompress(&i, input.len())),
+        );
 
-        // let comp_snap = compress_snap(&input);
-        // group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
-        //     b.iter(|| decompress_snap(&i))
-        // });
+        let comp_snap = compress_snap(&input);
+        group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
+            b.iter(|| decompress_snap(&i))
+        });
     }
 
     group.finish();
@@ -216,19 +217,31 @@ fn bench_frame_decompression_throughput(c: &mut Criterion) {
     for input in ALL.iter() {
         let input_bytes = input.len() as u64;
 
-        let comp_lz4 = lz4_cpp_frame_compress(&input).unwrap();
+        let comp_lz4_indep = lz4_cpp_frame_compress(&input, true).unwrap();
+        let comp_lz4_linked = lz4_cpp_frame_compress(&input, false).unwrap();
         group.throughput(Throughput::Bytes(input.len() as _));
 
         group.bench_with_input(
-            BenchmarkId::new("lz4_flex_rust", input_bytes),
-            &comp_lz4,
+            BenchmarkId::new("lz4_flex_rust_indep", input_bytes),
+            &comp_lz4_indep,
             |b, i| b.iter(|| lz4_flex::frame::decompress(&i)),
         );
         group.bench_with_input(
-            BenchmarkId::new("lz4_cpp", input_bytes),
-            &comp_lz4,
+            BenchmarkId::new("lz4_cpp_indep", input_bytes),
+            &comp_lz4_indep,
             |b, i| b.iter(|| lz4_cpp_frame_decompress(&i)),
         );
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flex_rust_linked", input_bytes),
+            &comp_lz4_linked,
+            |b, i| b.iter(|| lz4_flex::frame::decompress(&i)),
+        );
+        group.bench_with_input(
+            BenchmarkId::new("lz4_cpp_linked", input_bytes),
+            &comp_lz4_linked,
+            |b, i| b.iter(|| lz4_cpp_frame_decompress(&i)),
+        );
+
         let comp_snap = compress_snap_frame(&input);
         group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
             b.iter(|| decompress_snap_frame(&i))
@@ -249,13 +262,46 @@ fn bench_frame_compression_throughput(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(input_bytes));
 
         group.bench_with_input(
-            BenchmarkId::new("lz4_flex_rust", input_bytes),
+            BenchmarkId::new("lz4_flex_rust_indep", input_bytes),
             &input,
-            |b, i| b.iter(|| lz4_flex::frame::compress(&i)),
+            |b, i| {
+                b.iter(|| {
+                    lz4_flex::frame::compress_with(
+                        FrameInfo {
+                            block_mode: BlockMode::Independent,
+                            ..Default::default()
+                        },
+                        i,
+                    )
+                })
+            },
         );
-        group.bench_with_input(BenchmarkId::new("lz4_cpp", input_bytes), &input, |b, i| {
-            b.iter(|| lz4_cpp_frame_compress(i))
-        });
+        group.bench_with_input(
+            BenchmarkId::new("lz4_cpp_indep", input_bytes),
+            &input,
+            |b, i| b.iter(|| lz4_cpp_frame_compress(i, true)),
+        );
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flex_rust_linked", input_bytes),
+            &input,
+            |b, i| {
+                b.iter(|| {
+                    lz4_flex::frame::compress_with(
+                        FrameInfo {
+                            block_mode: BlockMode::Linked,
+                            ..Default::default()
+                        },
+                        i,
+                    )
+                })
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("lz4_cpp_linked", input_bytes),
+            &input,
+            |b, i| b.iter(|| lz4_cpp_frame_compress(i, false)),
+        );
+
         group.bench_with_input(BenchmarkId::new("snap", input_bytes), &input, |b, i| {
             b.iter(|| compress_snap_frame(i))
         });
