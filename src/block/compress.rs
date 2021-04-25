@@ -347,7 +347,7 @@ fn backtrack_match(
 /// Compress all bytes of `input[input_pos..]` into `output`.
 /// Bytes in `input[..input_pos]` are treated as a preamble and can be used for lookback.
 /// Bytes in `ext_dict` logically precede `pre[..input_pos]` and can also be used for lookback.
-/// `input_stream_offset` is the logical position of the byte in `input[0]` in the complete
+/// `input_stream_offset` is the logical position of the first byte of `input` in the complete
 /// compression stream.
 ///
 /// `dict` is the dictionary of previously encoded sequences.
@@ -358,6 +358,14 @@ fn backtrack_match(
 /// is placed in the dict. This way we can easily look up a candidate to back references.
 ///
 /// Returns the number of bytes written (compressed) into `output`.
+///
+/// # Const parameters
+/// `USE_DICT`: Disables usage of ext_dict (it'll panic if a non-empty slice is used).
+/// In other words, this generates more optimized code when an external dictionary isn't used.
+///
+/// A similar const argument could be used to disable the Prefix mode (eg. USE_PREFIX),
+/// which would impose `input_pos == 0 && input_stream_offset == 0`. Experiments didn't
+/// show significant improvement though.
 #[inline]
 pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
     input: &[u8],
@@ -375,9 +383,6 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
             .checked_add(input.len())
             .and_then(|i| i.checked_add(ext_dict.len()))
             .map_or(false, |i| i <= usize::MAX / 2));
-    } else {
-        assert!(input_stream_offset == 0);
-        assert!(ext_dict.is_empty());
     }
     if output.capacity() - output.pos() < get_maximum_output_size(input.len() - input_pos) {
         return Err(CompressError::OutputTooSmall);
@@ -441,17 +446,27 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
                 continue;
             }
 
-            if !USE_DICT || candidate >= input_stream_offset {
+            if candidate >= input_stream_offset {
                 // match within input
                 offset = (input_stream_offset + cur - candidate) as u16;
                 candidate -= input_stream_offset;
                 candidate_source = input;
-            } else if candidate >= ext_dict_stream_offset {
+            } else if USE_DICT {
+                // Sanity check, which may fail if we lost history beyond MAX_DISTANCE
+                debug_assert!(
+                    candidate >= ext_dict_stream_offset,
+                    "Lost history in ext dict mode"
+                );
                 // match within ext dict
                 offset = (input_stream_offset + cur - candidate) as u16;
                 candidate -= ext_dict_stream_offset;
                 candidate_source = ext_dict;
             } else {
+                // Match is not reachable anymore
+                // eg. compressing an independent block frame w/o clearing
+                // the matches tables, only increasing input_stream_offset.
+                // Sanity check
+                debug_assert!(input_pos == 0, "Lost history in prefix mode");
                 continue;
             }
 
@@ -569,6 +584,8 @@ fn copy_literals_wild(output: &mut Sink, input: &[u8], input_start: usize, len: 
 #[cfg(not(feature = "safe-encode"))]
 fn copy_literals_wild(output: &mut Sink, input: &[u8], input_start: usize, len: usize) {
     use crate::block::wild_copy_from_src_8;
+    debug_assert!(input_start + len / 8 * 8 + ((len % 8) != 0) as usize * 8 <= input.len());
+    debug_assert!(output.pos() + len / 8 * 8 + ((len % 8) != 0) as usize * 8 <= output.capacity());
     unsafe {
         wild_copy_from_src_8(input.as_ptr().add(input_start), output.as_mut_ptr(), len);
         output.pos += len;
@@ -673,7 +690,6 @@ pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
 }
 
 /// Compress all bytes of `input`.
-///
 #[inline]
 pub fn compress(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
