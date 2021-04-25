@@ -16,6 +16,7 @@ pub use decompress::FrameDecoder;
 pub use header::{BlockMode, BlockSize, FrameInfo};
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
     SkippableFrame(u32),
     CompressionError(crate::block::CompressError),

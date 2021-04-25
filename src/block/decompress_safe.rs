@@ -209,8 +209,8 @@ fn decompress_internal<const USE_DICT: bool>(
             #[cfg(feature = "checked-decode")]
             if output.pos + literal_length > output.capacity() {
                 return Err(DecompressError::OutputTooSmall {
-                    expected_size: output.pos + literal_length,
-                    actual_size: output.capacity(),
+                    expected: output.pos + literal_length,
+                    actual: output.capacity(),
                 });
             }
             output.extend_from_slice(&input[input_pos..input_pos + literal_length]);
@@ -242,8 +242,8 @@ fn decompress_internal<const USE_DICT: bool>(
         #[cfg(feature = "checked-decode")]
         if output.pos + match_length > output.capacity() {
             return Err(DecompressError::OutputTooSmall {
-                expected_size: output.pos + match_length,
-                actual_size: output.capacity(),
+                expected: output.pos + match_length,
+                actual: output.capacity(),
             });
         }
         if USE_DICT && offset > output.pos() {

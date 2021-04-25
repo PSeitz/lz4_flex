@@ -317,9 +317,9 @@ fn decompress_internal<const USE_DICT: bool>(
                 }
                 if unsafe { output_ptr.add(literal_length) } > output_end {
                     return Err(DecompressError::OutputTooSmall {
-                        expected_size: unsafe { output_ptr.offset_from(output_base) as usize }
+                        expected: unsafe { output_ptr.offset_from(output_base) as usize }
                             + literal_length,
-                        actual_size: output.capacity(),
+                        actual: output.capacity(),
                     });
                 }
             }
@@ -377,9 +377,9 @@ fn decompress_internal<const USE_DICT: bool>(
             }
             if unsafe { output_ptr.add(match_length) } > output_end {
                 return Err(DecompressError::OutputTooSmall {
-                    expected_size: unsafe { output_ptr.offset_from(output_base) as usize }
+                    expected: unsafe { output_ptr.offset_from(output_base) as usize }
                         + match_length,
-                    actual_size: output.capacity(),
+                    actual: output.capacity(),
                 });
             }
         }
@@ -423,7 +423,13 @@ pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, Dec
         vec.set_len(decompress_sink_size(uncompressed_size));
     }
     let mut sink: Sink = (&mut vec).into();
-    decompress_into(input, &mut sink)?;
+    let decomp_len = decompress_into(input, &mut sink)?;
+    if decomp_len != uncompressed_size {
+        return Err(DecompressError::UncompressedSizeDiffers {
+            expected: uncompressed_size,
+            actual: decomp_len,
+        });
+    }
     unsafe {
         vec.set_len(uncompressed_size);
     }
@@ -456,7 +462,13 @@ pub fn decompress_with_dict(
         vec.set_len(decompress_sink_size(uncompressed_size));
     }
     let mut sink: Sink = (&mut vec).into();
-    decompress_into_with_dict(input, &mut sink, ext_dict)?;
+    let decomp_len = decompress_into_with_dict(input, &mut sink, ext_dict)?;
+    if decomp_len != uncompressed_size {
+        return Err(DecompressError::UncompressedSizeDiffers {
+            expected: uncompressed_size,
+            actual: decomp_len,
+        });
+    }
     unsafe {
         vec.set_len(uncompressed_size);
     }
