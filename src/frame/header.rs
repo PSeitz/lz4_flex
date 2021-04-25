@@ -34,19 +34,19 @@ pub(crate) const BLOCK_INFO_SIZE: usize = 4;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum BlockSize {
+    /// The default block size.
     Max64KB = 4,
     Max256KB = 5,
     Max1MB = 6,
     Max4MB = 7,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum BlockMode {
-    Independent,
-    Linked,
+impl Default for BlockSize {
+    fn default() -> Self {
+        BlockSize::Max64KB
+    }
 }
 
-#[allow(dead_code)]
 impl BlockSize {
     pub fn get_size(&self) -> usize {
         match self {
@@ -55,6 +55,22 @@ impl BlockSize {
             BlockSize::Max1MB => 1024 * 1024,
             BlockSize::Max4MB => 4 * 1024 * 1024,
         }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum BlockMode {
+    /// Every block is compressed independently. The default.
+    Independent,
+    /// Blocks can reference data from previous blocks.
+    ///
+    /// Effective when the stream contains small blocks.
+    Linked,
+}
+
+impl Default for BlockMode {
+    fn default() -> Self {
+        BlockMode::Independent
     }
 }
 
@@ -110,8 +126,8 @@ impl Default for FrameInfo {
         Self {
             content_size: None,
             dict_id: None,
-            block_size: BlockSize::Max64KB,
-            block_mode: BlockMode::Linked,
+            block_size: BlockSize::default(),
+            block_mode: BlockMode::default(),
             block_checksums: false,
             content_checksum: false,
         }
