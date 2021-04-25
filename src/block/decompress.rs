@@ -282,15 +282,16 @@ fn decompress_internal<const USE_DICT: bool>(
 
             // In this branch we know that match_length is at most 18 (14 + MINMATCH).
             // But the blocks can overlap, so make sure they are at least 18 bytes apart
-            // to enable an optimized non-overlaping copy of 18 bytes.
-            if offset < 18 {
+            // to enable an optimized copy of 18 bytes.
+            if offset >= match_length {
                 unsafe {
-                    duplicate_overlapping(&mut output_ptr, start_ptr, match_length);
+                    // _copy_, not copy_non_overlaping, as it may overlap. That's ok.
+                    core::ptr::copy(start_ptr, output_ptr, 18);
+                    output_ptr = output_ptr.add(match_length);
                 }
             } else {
                 unsafe {
-                    core::ptr::copy_nonoverlapping(start_ptr, output_ptr, 18);
-                    output_ptr = output_ptr.add(match_length);
+                    duplicate_overlapping(&mut output_ptr, start_ptr, match_length);
                 }
             }
 
