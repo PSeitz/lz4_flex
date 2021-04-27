@@ -177,11 +177,11 @@ fn bench_block_decompression_throughput(c: &mut Criterion) {
             &comp_lz4,
             |b, i| b.iter(|| lz4_flex::block::decompress_with_dict(&i, input.len(), &empty_vec)),
         );
-        group.bench_with_input(
-            BenchmarkId::new("lz4_flex_rust_master", input_bytes),
-            &comp_lz4,
-            |b, i| b.iter(|| lz4_flex_master::decompress(&i, input.len())),
-        );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_flex_rust_master", input_bytes),
+        //     &comp_lz4,
+        //     |b, i| b.iter(|| lz4_flex_master::decompress(&i, input.len())),
+        // );
         // group.bench_with_input(
         //     BenchmarkId::new("lz4_redox_rust", input_bytes),
         //     &comp_lz4,
