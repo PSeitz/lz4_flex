@@ -184,10 +184,7 @@ impl<W: io::Write> FrameEncoder<W> {
     /// Consumes the src contents between src_start and src_end,
     /// which shouldn't exceed the max block size.
     fn write_block(&mut self) -> io::Result<()> {
-        if !self.is_frame_open {
-            self.begin_frame()?;
-        }
-
+        debug_assert!(self.is_frame_open);
         let max_block_size = self.frame_info.block_size.get_size();
         debug_assert!(self.src_end - self.src_start <= max_block_size);
 
@@ -290,6 +287,9 @@ impl<W: io::Write> FrameEncoder<W> {
 
 impl<W: io::Write> io::Write for FrameEncoder<W> {
     fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
+        if !self.is_frame_open && !buf.is_empty() {
+            self.begin_frame()?;
+        }
         let buf_len = buf.len();
         let max_block_size = self.frame_info.block_size.get_size();
         while !buf.is_empty() {

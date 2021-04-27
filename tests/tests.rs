@@ -442,6 +442,29 @@ fn test_text_1k() {
     inverse(COMPRESSION1K);
 }
 
+#[cfg(feature = "frame")]
+mod frame {
+    use super::*;
+    use std::io::{Read, Write};
+
+    #[test]
+    fn concatenated() {
+        let mut enc = lz4_flex::frame::FrameEncoder::new(Vec::new());
+        enc.write_all(COMPRESSION1K).unwrap();
+        enc.try_finish().unwrap();
+        enc.write_all(COMPRESSION34K).unwrap();
+        let compressed = enc.finish().unwrap();
+
+        let mut dec = lz4_flex::frame::FrameDecoder::new(&*compressed);
+        let mut uncompressed = Vec::new();
+        dec.read_to_end(&mut uncompressed).unwrap();
+        assert_eq!(&*uncompressed, COMPRESSION1K);
+        uncompressed.clear();
+        dec.read_to_end(&mut uncompressed).unwrap();
+        assert_eq!(&*uncompressed, COMPRESSION34K);
+    }
+}
+
 #[cfg(test)]
 mod test_compression {
     use super::*;

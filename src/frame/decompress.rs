@@ -111,7 +111,6 @@ impl<R: io::Read> FrameDecoder<R> {
         self.frame_info = Some(frame_info);
         self.content_hasher = XxHash32::with_seed(0);
         self.content_len = 0;
-        // FIXME: Add test for this
         self.ext_dict_len = 0;
         self.dst_start = 0;
         self.dst_end = 0;
@@ -126,6 +125,7 @@ impl<R: io::Read> FrameDecoder<R> {
         Ok(checksum)
     }
 
+    #[inline]
     fn check_block_checksum(data: &[u8], expected_checksum: u32) -> Result<(), io::Error> {
         let mut block_hasher = XxHash32::with_seed(0);
         block_hasher.write(data);
@@ -135,14 +135,135 @@ impl<R: io::Read> FrameDecoder<R> {
         }
         Ok(())
     }
+
+    fn read_block(&mut self) -> io::Result<usize> {
+        debug_assert_eq!(self.dst_start, self.dst_end);
+        let frame_info = self.frame_info.as_ref().unwrap();
+
+        // Adjust dst buffer offsets to decompress the next block
+        let max_block_size = frame_info.block_size.get_size();
+        if frame_info.block_mode == BlockMode::Linked {
+            if self.dst_start + max_block_size > self.dst.len() {
+                // Output might not fit in the buffer.
+                // The ext_dict will become the last WINDOW_SIZE bytes
+                debug_assert!(self.dst_start >= max_block_size + WINDOW_SIZE);
+                self.ext_dict_offset = self.dst_start - WINDOW_SIZE;
+                self.ext_dict_len = WINDOW_SIZE;
+                // Output goes in the beginning of the buffer again.
+                self.dst_start = 0;
+                self.dst_end = 0;
+            } else if self.dst_start + self.ext_dict_len > WINDOW_SIZE {
+                // Shrink ext_dict in favor of output prefix.
+                let delta = self.ext_dict_len.min(self.dst_start);
+                self.ext_dict_offset += delta;
+                self.ext_dict_len -= delta;
+            }
+        } else {
+            self.dst_start = 0;
+            self.dst_end = 0;
+        }
+
+        let block_info = {
+            let mut buffer = [0u8; 4];
+            self.r.read_exact(&mut buffer)?;
+            BlockInfo::read(&buffer)?
+        };
+        match block_info {
+            BlockInfo::Uncompressed(len) => {
+                let len = len as usize;
+                if len > max_block_size {
+                    return Err(Error::BlockTooBig.into());
+                }
+                self.r
+                    .read_exact(&mut self.dst[self.dst_start..self.dst_start + len])?;
+                if frame_info.block_checksums {
+                    let expected_checksum = Self::read_checksum(&mut self.r)?;
+                    Self::check_block_checksum(
+                        &self.dst[self.dst_start..self.dst_start + len],
+                        expected_checksum,
+                    )?;
+                }
+
+                self.dst_end += len;
+                self.content_len += len as u64;
+            }
+            BlockInfo::Compressed(len) => {
+                let len = len as usize;
+                if len > max_block_size {
+                    return Err(Error::BlockTooBig.into());
+                }
+                self.r.read_exact(&mut self.src[..len])?;
+                if frame_info.block_checksums {
+                    let expected_checksum = Self::read_checksum(&mut self.r)?;
+                    Self::check_block_checksum(&self.src[..len], expected_checksum)?;
+                }
+
+                let with_dict_mode =
+                    frame_info.block_mode == BlockMode::Linked && self.ext_dict_len != 0;
+                let decomp_size = if with_dict_mode {
+                    debug_assert!(self.dst_start + max_block_size <= self.ext_dict_offset);
+                    let (head, tail) = self.dst.split_at_mut(self.ext_dict_offset);
+                    let ext_dict = &tail[..self.ext_dict_len];
+
+                    let mut sink: crate::block::Sink = head.into();
+                    sink.set_pos(self.dst_start);
+                    crate::block::decompress::decompress_into_with_dict(
+                        &self.src[..len],
+                        &mut sink,
+                        ext_dict,
+                    )
+                } else {
+                    // Independent blocks OR linked blocks with only prefix data
+                    let mut sink: crate::block::Sink = (&mut self.dst).into();
+                    sink.set_pos(self.dst_start);
+                    crate::block::decompress::decompress_into(&self.src[..len], &mut sink)
+                }
+                .map_err(Error::DecompressionError)?;
+
+                self.dst_end += decomp_size;
+                self.content_len += decomp_size as u64;
+            }
+
+            BlockInfo::EndMark => {
+                if let Some(expected) = frame_info.content_size {
+                    if self.content_len != expected {
+                        return Err(Error::ContentLengthError {
+                            expected,
+                            actual: self.content_len,
+                        }
+                        .into());
+                    }
+                }
+                if frame_info.content_checksum {
+                    let expected_checksum = Self::read_checksum(&mut self.r)?;
+                    let calc_checksum = self.content_hasher.finish() as u32;
+                    if calc_checksum != expected_checksum {
+                        return Err(Error::ContentChecksumError.into());
+                    }
+                }
+                self.frame_info = None;
+                return Ok(0);
+            }
+        }
+
+        if frame_info.content_checksum {
+            self.content_hasher
+                .write(&self.dst[self.dst_start..self.dst_end]);
+        }
+
+        Ok(self.dst_end - self.dst_start)
+    }
+
+    fn read_more(&mut self) -> io::Result<usize> {
+        if self.frame_info.is_none() && self.read_frame_info()? == 0 {
+            return Ok(0);
+        }
+        self.read_block()
+    }
 }
 
 impl<R: io::Read> io::Read for FrameDecoder<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if self.frame_info.is_none() && self.read_frame_info()? == 0 {
-            return Ok(0);
-        }
-        let frame_info = self.frame_info.as_ref().unwrap();
         loop {
             // Fill read buffer if there's uncompressed data left
             if self.dst_start < self.dst_end {
@@ -152,116 +273,24 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
                 self.dst_start = dste;
                 return Ok(len);
             }
-
-            // Adjust dst buffer offsets to decompress the next block
-            let max_block_size = frame_info.block_size.get_size();
-            if frame_info.block_mode == BlockMode::Linked {
-                if self.dst_start + max_block_size > self.dst.len() {
-                    // Output might not fit in the buffer.
-                    // The ext_dict will become the last WINDOW_SIZE bytes
-                    debug_assert!(self.dst_start >= max_block_size + WINDOW_SIZE);
-                    self.ext_dict_offset = self.dst_start - WINDOW_SIZE;
-                    self.ext_dict_len = WINDOW_SIZE;
-                    // Output goes in the beginning of the buffer again.
-                    self.dst_start = 0;
-                } else if self.dst_start + self.ext_dict_len > WINDOW_SIZE {
-                    // Shrink ext_dict in favor of output prefix.
-                    let delta = self.ext_dict_len.min(self.dst_start);
-                    self.ext_dict_offset += delta;
-                    self.ext_dict_len -= delta;
-                }
-            } else {
-                self.dst_start = 0;
-            }
-
-            let block_info = {
-                let mut buffer = [0u8; 4];
-                self.r.read_exact(&mut buffer)?;
-                BlockInfo::read(&buffer)?
-            };
-            match block_info {
-                BlockInfo::Uncompressed(len) => {
-                    let len = len as usize;
-                    if len > max_block_size {
-                        return Err(Error::BlockTooBig.into());
-                    }
-                    self.r
-                        .read_exact(&mut self.dst[self.dst_start..self.dst_start + len])?;
-                    if frame_info.block_checksums {
-                        let expected_checksum = Self::read_checksum(&mut self.r)?;
-                        Self::check_block_checksum(
-                            &self.dst[self.dst_start..self.dst_start + len],
-                            expected_checksum,
-                        )?;
-                    }
-
-                    self.dst_end = self.dst_start + len;
-                    self.content_len += len as u64;
-                }
-                BlockInfo::Compressed(len) => {
-                    let len = len as usize;
-                    if len > max_block_size {
-                        return Err(Error::BlockTooBig.into());
-                    }
-                    self.r.read_exact(&mut self.src[..len])?;
-                    if frame_info.block_checksums {
-                        let expected_checksum = Self::read_checksum(&mut self.r)?;
-                        Self::check_block_checksum(&self.src[..len], expected_checksum)?;
-                    }
-
-                    let with_dict_mode =
-                        frame_info.block_mode == BlockMode::Linked && self.ext_dict_len != 0;
-                    let decomp_size = if with_dict_mode {
-                        debug_assert!(self.dst_start + max_block_size <= self.ext_dict_offset);
-                        let (head, tail) = self.dst.split_at_mut(self.ext_dict_offset);
-                        let ext_dict = &tail[..self.ext_dict_len];
-
-                        let mut sink: crate::block::Sink = head.into();
-                        sink.set_pos(self.dst_start);
-                        crate::block::decompress::decompress_into_with_dict(
-                            &self.src[..len],
-                            &mut sink,
-                            ext_dict,
-                        )
-                    } else {
-                        // Independent blocks OR linked blocks with only prefix data
-                        let mut sink: crate::block::Sink = (&mut self.dst).into();
-                        sink.set_pos(self.dst_start);
-                        crate::block::decompress::decompress_into(&self.src[..len], &mut sink)
-                    }
-                    .map_err(Error::DecompressionError)?;
-
-                    self.dst_end = self.dst_start + decomp_size;
-                    self.content_len += decomp_size as u64;
-                }
-
-                BlockInfo::EndMark => {
-                    if let Some(expected) = frame_info.content_size {
-                        if self.content_len != expected {
-                            return Err(Error::ContentLengthError {
-                                expected,
-                                actual: self.content_len,
-                            }
-                            .into());
-                        }
-                    }
-                    if frame_info.content_checksum {
-                        let expected_checksum = Self::read_checksum(&mut self.r)?;
-                        let calc_checksum = self.content_hasher.finish() as u32;
-                        if calc_checksum != expected_checksum {
-                            return Err(Error::ContentChecksumError.into());
-                        }
-                    }
-                    self.frame_info = None;
-                    return Ok(0);
-                }
-            };
-
-            if frame_info.content_checksum {
-                self.content_hasher
-                    .write(&self.dst[self.dst_start..self.dst_end]);
+            if self.read_more()? == 0 {
+                return Ok(0);
             }
         }
+    }
+}
+
+impl<R: io::Read> io::BufRead for FrameDecoder<R> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        if self.dst_start == self.dst_end {
+            self.read_more()?;
+        }
+        Ok(&self.dst[self.dst_start..self.dst_end])
+    }
+
+    fn consume(&mut self, amt: usize) {
+        assert!(amt <= self.dst_end - self.dst_start);
+        self.dst_start += amt;
     }
 }
 
