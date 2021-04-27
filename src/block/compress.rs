@@ -574,10 +574,20 @@ fn push_u32(output: &mut Sink, el: u32) {
     output.pos += 4;
 }
 
-#[inline]
+#[inline(always)] // (always) necessary otherwise compiler fails to inline it
 #[cfg(feature = "safe-encode")]
 fn copy_literals_wild(output: &mut Sink, input: &[u8], input_start: usize, len: usize) {
-    output.extend_from_slice(&input[input_start..input_start + len]);
+    match len {
+        0..=8 => output.output[output.pos..output.pos + 8]
+            .copy_from_slice(&input[input_start..input_start + 8]),
+        9..=16 => output.output[output.pos..output.pos + 16]
+            .copy_from_slice(&input[input_start..input_start + 16]),
+        17..=24 => output.output[output.pos..output.pos + 24]
+            .copy_from_slice(&input[input_start..input_start + 24]),
+        _ => output.output[output.pos..output.pos + len]
+            .copy_from_slice(&input[input_start..input_start + len]),
+    }
+    output.pos += len;
 }
 
 #[inline]
