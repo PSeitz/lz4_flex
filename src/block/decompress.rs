@@ -88,13 +88,6 @@ unsafe fn copy_from_dict(
     dict_match_length
 }
 
-/// The algorithm can copy over the original size, because of blocked copies, so the capacity of the sink needs
-/// to be slightly larger.
-#[inline]
-fn decompress_sink_size(uncompressed_size: usize) -> usize {
-    uncompressed_size + 4 + BLOCK_COPY_SIZE
-}
-
 /// Read an integer LSIC (linear small integer code) encoded.
 ///
 /// In LZ4, we encode small integers in a way that we can have an arbitrary number of bytes. In
@@ -177,11 +170,8 @@ fn does_token_fit(token: u8) -> bool {
         || (token & FIT_TOKEN_MASK_MATCH) == FIT_TOKEN_MASK_MATCH)
 }
 
-/// We copy in 16 byte blocks
-const BLOCK_COPY_SIZE: usize = 16;
-
 /// Decompress all bytes of `input` into `output`.
-/// `Sink` should be preallocated with a size of `decompress_sink_size`
+/// `Sink` should be preallocated with a size of of the uncompressed data.
 #[inline]
 pub fn decompress_into(input: &[u8], output: &mut Sink) -> Result<usize, DecompressError> {
     decompress_internal::<false>(input, output, b"")
@@ -436,9 +426,9 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
 pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
     // Allocate a vector to contain the decompressed stream.
     // We may wildcopy out of bounds, so the vector needs to have additional capacity
-    let mut vec: Vec<u8> = Vec::with_capacity(decompress_sink_size(uncompressed_size));
+    let mut vec: Vec<u8> = Vec::with_capacity(uncompressed_size);
     unsafe {
-        vec.set_len(decompress_sink_size(uncompressed_size));
+        vec.set_len(uncompressed_size);
     }
     let mut sink: Sink = (&mut vec).into();
     let decomp_len = decompress_into(input, &mut sink)?;
@@ -475,9 +465,9 @@ pub fn decompress_with_dict(
 ) -> Result<Vec<u8>, DecompressError> {
     // Allocate a vector to contain the decompressed stream.
     // We may wildcopy out of bounds, so the vector needs to have additional capacity
-    let mut vec: Vec<u8> = Vec::with_capacity(decompress_sink_size(uncompressed_size));
+    let mut vec: Vec<u8> = Vec::with_capacity(uncompressed_size);
     unsafe {
-        vec.set_len(decompress_sink_size(uncompressed_size));
+        vec.set_len(uncompressed_size);
     }
     let mut sink: Sink = (&mut vec).into();
     let decomp_len = decompress_into_with_dict(input, &mut sink, ext_dict)?;
