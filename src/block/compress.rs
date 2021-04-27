@@ -593,13 +593,33 @@ fn copy_literals_wild(output: &mut Sink, input: &[u8], input_start: usize, len: 
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
 fn copy_literals_wild(output: &mut Sink, input: &[u8], input_start: usize, len: usize) {
-    use crate::block::wild_copy_from_src_8;
     debug_assert!(input_start + len / 8 * 8 + ((len % 8) != 0) as usize * 8 <= input.len());
     debug_assert!(output.pos() + len / 8 * 8 + ((len % 8) != 0) as usize * 8 <= output.capacity());
     unsafe {
-        wild_copy_from_src_8(input.as_ptr().add(input_start), output.as_mut_ptr(), len);
-        output.pos += len;
+        // Note: This used to be a wild copy loop of 8 bytes, but the compiler consistently
+        // transformed it into a call to memcopy, which hurts performance significantly for
+        // small copies, which are common.
+        match len {
+            0..=8 => output
+                .output
+                .get_unchecked_mut(output.pos..output.pos + 8)
+                .copy_from_slice(input.get_unchecked(input_start..input_start + 8)),
+            9..=16 => output
+                .output
+                .get_unchecked_mut(output.pos..output.pos + 16)
+                .copy_from_slice(input.get_unchecked(input_start..input_start + 16)),
+            17..=24 => output
+                .output
+                .get_unchecked_mut(output.pos..output.pos + 24)
+                .copy_from_slice(input.get_unchecked(input_start..input_start + 24)),
+            _ => core::ptr::copy_nonoverlapping(
+                input.as_ptr().add(input_start),
+                output.as_mut_ptr(),
+                len,
+            ),
+        }
     }
+    output.pos += len;
 }
 
 /// Returns the maximum output size of the compressed data.

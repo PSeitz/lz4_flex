@@ -23,8 +23,26 @@ unsafe fn duplicate(
     {
         duplicate_overlapping(output_ptr, start, match_length);
     } else {
-        crate::block::wild_copy_from_src_16(start, *output_ptr, match_length);
+        debug_assert!(
+            output_ptr.add(match_length / 16 * 16 + ((match_length % 16) != 0) as usize * 16)
+                <= output_end
+        );
+        wild_copy_from_src_16(start, *output_ptr, match_length);
         *output_ptr = output_ptr.add(match_length);
+    }
+}
+
+#[inline]
+fn wild_copy_from_src_16(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
+    // Note: if the compiler transforms this into a call to memcpy it'll hurt performance!
+    // It doesn't seem to be the case though, probably due to the 16 byte stride length.
+    unsafe {
+        let dst_ptr_end = dst_ptr.add(num_items);
+        while (dst_ptr as usize) < dst_ptr_end as usize {
+            core::ptr::copy_nonoverlapping(source, dst_ptr, 16);
+            source = source.add(16);
+            dst_ptr = dst_ptr.add(16);
+        }
     }
 }
 

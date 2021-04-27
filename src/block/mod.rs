@@ -63,32 +63,6 @@ const FASTLOOP_SAFE_DISTANCE: usize = 64;
 #[allow(dead_code)]
 static LZ4_64KLIMIT: usize = (64 * 1024) + (MFLIMIT - 1);
 
-#[cfg(not(feature = "safe-decode"))]
-#[inline]
-fn wild_copy_from_src_16(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
-    unsafe {
-        let dst_ptr_end = dst_ptr.add(num_items);
-        while (dst_ptr as usize) < dst_ptr_end as usize {
-            core::ptr::copy_nonoverlapping(source, dst_ptr, 16);
-            source = source.add(16);
-            dst_ptr = dst_ptr.add(16);
-        }
-    }
-}
-
-#[cfg(not(feature = "safe-encode"))]
-#[inline]
-fn wild_copy_from_src_8(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
-    unsafe {
-        let dst_ptr_end = dst_ptr.add(num_items);
-        while (dst_ptr as usize) < dst_ptr_end as usize {
-            core::ptr::copy_nonoverlapping(source, dst_ptr, 8);
-            source = source.add(8);
-            dst_ptr = dst_ptr.add(8);
-        }
-    }
-}
-
 /// An error representing invalid compressed data.
 #[derive(Debug)]
 #[non_exhaustive]
