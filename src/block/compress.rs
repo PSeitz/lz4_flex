@@ -345,10 +345,14 @@ fn backtrack_match(
 }
 
 /// Compress all bytes of `input[input_pos..]` into `output`.
+///
 /// Bytes in `input[..input_pos]` are treated as a preamble and can be used for lookback.
+/// This part is known as the compressor "prefix".
 /// Bytes in `ext_dict` logically precede `pre[..input_pos]` and can also be used for lookback.
-/// `input_stream_offset` is the logical position of the first byte of `input` in the complete
-/// compression stream.
+///
+/// `input_stream_offset` is the logical position of the first byte of `input`. This allows same `dict`
+/// to be used for many calls to `compress_internal` as we can "readdress" the first byte of `input`
+/// to be something other than 0.
 ///
 /// `dict` is the dictionary of previously encoded sequences.
 ///
@@ -379,10 +383,11 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
     assert!(ext_dict.len() <= super::WINDOW_SIZE);
     assert!(ext_dict.len() <= input_stream_offset);
     if USE_DICT {
+        // Check for overflow hazard when using ext_dict
         assert!(input_stream_offset
             .checked_add(input.len())
             .and_then(|i| i.checked_add(ext_dict.len()))
-            .map_or(false, |i| i <= usize::MAX / 2));
+            .map_or(false, |i| i <= usize::MAX));
     }
     if output.capacity() - output.pos() < get_maximum_output_size(input.len() - input_pos) {
         return Err(CompressError::OutputTooSmall);

@@ -113,11 +113,20 @@ Data Blocks
 */
 #[derive(Debug, Clone)]
 pub struct FrameInfo {
+    /// If set, includes the total uncompressed size of data in the frame.
     pub content_size: Option<u64>,
+    /// The identifier for the dictionary that must be used to correctly decode data.
+    /// The compressor and the decompressor must use exactly the same dictionary.
+    ///
+    /// Note that this is currently unsupported and if set will cause de (De)Compressor to error.
     pub dict_id: Option<u32>,
+    /// The maximum uncompressed size of each data block.
     pub block_size: BlockSize,
+    /// The block mode.
     pub block_mode: BlockMode,
+    /// If set, includes a checksum for each data block in the frame.
     pub block_checksums: bool,
+    /// If set, includes a content checksum to verify that the full frame contents have been decoded correctly.
     pub content_checksum: bool,
 }
 

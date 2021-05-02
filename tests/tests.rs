@@ -73,7 +73,8 @@ fn inverse(bytes: impl AsRef<[u8]>) {
                 ..Default::default()
             },
             bytes,
-        );
+        )
+        .unwrap();
         let decompressed = lz4_flex::frame::decompress(&compressed_flex).unwrap();
         assert_eq!(decompressed, bytes);
     }
@@ -123,7 +124,8 @@ fn lz4_cpp_compatibility(bytes: &[u8]) {
                         ..Default::default()
                     },
                     bytes,
-                );
+                )
+                .unwrap();
                 let decompressed = lz4_cpp_frame_decompress(&compressed_flex).unwrap();
                 assert_eq!(decompressed, bytes);
             }
@@ -449,7 +451,7 @@ mod frame {
 
     #[test]
     fn concatenated() {
-        let mut enc = lz4_flex::frame::FrameEncoder::new(Vec::new());
+        let mut enc = lz4_flex::frame::FrameEncoder::new(Vec::new()).unwrap();
         enc.write_all(COMPRESSION1K).unwrap();
         enc.try_finish().unwrap();
         enc.write_all(COMPRESSION34K).unwrap();

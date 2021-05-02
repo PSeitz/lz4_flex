@@ -86,6 +86,15 @@ impl<R: io::Read> FrameDecoder<R> {
                 .read_exact(&mut buffer[MIN_FRAME_INFO_SIZE..required])?;
         }
         let frame_info = FrameInfo::read(&buffer[..required])?;
+        if frame_info.dict_id.is_some() {
+            // Unsupported right now so it must be None
+            return Err(Error::WrongDictionary {
+                actual: frame_info.dict_id,
+                expected: None,
+            }
+            .into());
+        }
+
         let max_block_size = frame_info.block_size.get_size();
         let dst_size = if frame_info.block_mode == BlockMode::Linked {
             max_block_size * 2 + WINDOW_SIZE
