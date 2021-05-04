@@ -1,4 +1,9 @@
-use std::{fmt, hash::Hasher, io, mem::size_of};
+use std::{
+    fmt,
+    hash::Hasher,
+    io::{self, BufRead},
+    mem::size_of,
+};
 use twox_hash::XxHash32;
 
 use super::header::{BlockInfo, BlockMode, FrameInfo, MAX_FRAME_INFO_SIZE, MIN_FRAME_INFO_SIZE};
@@ -284,6 +289,46 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
             }
             if self.read_more()? == 0 {
                 return Ok(0);
+            }
+        }
+    }
+
+    fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
+        let mut written = 0;
+        loop {
+            match self.fill_buf() {
+                Ok(b) if b.is_empty() => return Ok(written),
+                Ok(b) => {
+                    let s = std::str::from_utf8(b).map_err(|_| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "stream did not contain valid UTF-8",
+                        )
+                    })?;
+                    buf.push_str(s);
+                    let len = s.len();
+                    self.consume(len);
+                    written += len;
+                }
+                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        let mut written = 0;
+        loop {
+            match self.fill_buf() {
+                Ok(b) if b.is_empty() => return Ok(written),
+                Ok(b) => {
+                    buf.extend_from_slice(b);
+                    let len = b.len();
+                    self.consume(len);
+                    written += len;
+                }
+                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e),
             }
         }
     }
