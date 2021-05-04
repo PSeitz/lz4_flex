@@ -87,7 +87,7 @@ pub fn compress_with(frame_info: FrameInfo, input: &[u8]) -> Result<Vec<u8>, Err
             + header::BLOCK_INFO_SIZE
             + crate::block::compress::get_maximum_output_size(input.len()),
     );
-    let mut enc = FrameEncoder::with_frame_info(frame_info, buffer)?;
+    let mut enc = FrameEncoder::with_frame_info(frame_info, buffer);
     enc.write_all(input)?;
     Ok(enc.finish()?)
 }
@@ -113,7 +113,7 @@ pub fn compress_into_with(
     input: &mut impl Read,
     output: &mut impl Write,
 ) -> Result<(), Error> {
-    let mut enc = FrameEncoder::with_frame_info(frame_info, output)?;
+    let mut enc = FrameEncoder::with_frame_info(frame_info, output);
     io::copy(input, &mut enc)?;
     enc.finish()?;
     Ok(())

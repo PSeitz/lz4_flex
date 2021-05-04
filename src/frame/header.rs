@@ -118,8 +118,8 @@ pub struct FrameInfo {
     /// The identifier for the dictionary that must be used to correctly decode data.
     /// The compressor and the decompressor must use exactly the same dictionary.
     ///
-    /// Note that this is currently unsupported and if set will cause de (De)Compressor to error.
-    pub dict_id: Option<u32>,
+    /// Note that this is currently unsupported and for this reason it's not pub.
+    pub(crate) dict_id: Option<u32>,
     /// The maximum uncompressed size of each data block.
     pub block_size: BlockSize,
     /// The block mode.
@@ -132,6 +132,12 @@ pub struct FrameInfo {
 
 impl Default for FrameInfo {
     fn default() -> Self {
+        FrameInfo::new()
+    }
+}
+
+impl FrameInfo {
+    pub fn new() -> Self {
         Self {
             content_size: None,
             dict_id: None,
@@ -141,12 +147,9 @@ impl Default for FrameInfo {
             content_checksum: false,
         }
     }
-}
-
-impl FrameInfo {
     pub(crate) fn read_size(input: &[u8]) -> Result<usize, Error> {
-        let mut required = 7;
-        if input.len() < 7 {
+        let mut required = MIN_FRAME_INFO_SIZE;
+        if input.len() < required {
             return Ok(required);
         }
 
@@ -169,7 +172,7 @@ impl FrameInfo {
     }
 
     pub(crate) fn write_size(&self) -> usize {
-        let mut required = 7;
+        let mut required = MIN_FRAME_INFO_SIZE;
         if self.content_size.is_some() {
             required += 8;
         }

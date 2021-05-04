@@ -67,14 +67,9 @@ fn inverse(bytes: impl AsRef<[u8]>) {
     // compress with rust, decompress with rust
     #[cfg(feature = "frame")]
     for bm in &[BlockMode::Independent, BlockMode::Linked] {
-        let compressed_flex = lz4_flex::frame::compress_with(
-            lz4_flex::frame::FrameInfo {
-                block_mode: *bm,
-                ..Default::default()
-            },
-            bytes,
-        )
-        .unwrap();
+        let mut frame_info = lz4_flex::frame::FrameInfo::new();
+        frame_info.block_mode = *bm;
+        let compressed_flex = lz4_flex::frame::compress_with(frame_info, bytes).unwrap();
         let decompressed = lz4_flex::frame::decompress(&compressed_flex).unwrap();
         assert_eq!(decompressed, bytes);
     }
@@ -118,14 +113,9 @@ fn lz4_cpp_compatibility(bytes: &[u8]) {
             // compress_frame won't write a header if nothing is written to it
             // which is more in line with io::Write interface?
             for bm in &[BlockMode::Independent, BlockMode::Linked] {
-                let compressed_flex = lz4_flex::frame::compress_with(
-                    lz4_flex::frame::FrameInfo {
-                        block_mode: *bm,
-                        ..Default::default()
-                    },
-                    bytes,
-                )
-                .unwrap();
+                let mut frame_info = lz4_flex::frame::FrameInfo::new();
+                frame_info.block_mode = *bm;
+                let compressed_flex = lz4_flex::frame::compress_with(frame_info, bytes).unwrap();
                 let decompressed = lz4_cpp_frame_decompress(&compressed_flex).unwrap();
                 assert_eq!(decompressed, bytes);
             }
@@ -451,7 +441,7 @@ mod frame {
 
     #[test]
     fn concatenated() {
-        let mut enc = lz4_flex::frame::FrameEncoder::new(Vec::new()).unwrap();
+        let mut enc = lz4_flex::frame::FrameEncoder::new(Vec::new());
         enc.write_all(COMPRESSION1K).unwrap();
         enc.try_finish().unwrap();
         enc.write_all(COMPRESSION34K).unwrap();

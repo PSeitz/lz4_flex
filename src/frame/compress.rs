@@ -58,13 +58,7 @@ pub struct FrameEncoder<W: io::Write> {
 
 impl<W: io::Write> FrameEncoder<W> {
     /// Creates a new Encoder with the specified FrameInfo.
-    pub fn with_frame_info(frame_info: FrameInfo, wtr: W) -> Result<Self, Error> {
-        // Unsupported right now
-        // Once this goes away consider making the constructor infallible.
-        if frame_info.dict_id.is_some() {
-            return Err(Error::DictionaryNotSupported.into());
-        }
-
+    pub fn with_frame_info(frame_info: FrameInfo, wtr: W) -> Self {
         let max_block_size = frame_info.block_size.get_size();
         let src_size = if frame_info.block_mode == BlockMode::Linked {
             // In linked mode we consume the input (bumping src_start) but leave the
@@ -86,7 +80,7 @@ impl<W: io::Write> FrameEncoder<W> {
             src.set_len(src_size);
         }
         let (dict_size, dict_bitshift) = crate::block::hashtable::get_table_size(u32::MAX as _);
-        Ok(FrameEncoder {
+        FrameEncoder {
             src,
             w: wtr,
             compression_table: HashTableU32::new(dict_size, dict_bitshift),
@@ -100,11 +94,11 @@ impl<W: io::Write> FrameEncoder<W> {
             ext_dict_offset: 0,
             ext_dict_len: 0,
             src_stream_offset: 0,
-        })
+        }
     }
 
     /// Creates a new Encoder with the default settings.
-    pub fn new(wtr: W) -> Result<Self, Error> {
+    pub fn new(wtr: W) -> Self {
         Self::with_frame_info(Default::default(), wtr)
     }
 

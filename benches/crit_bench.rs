@@ -266,13 +266,9 @@ fn bench_frame_compression_throughput(c: &mut Criterion) {
             &input,
             |b, i| {
                 b.iter(|| {
-                    lz4_flex::frame::compress_with(
-                        FrameInfo {
-                            block_mode: BlockMode::Independent,
-                            ..Default::default()
-                        },
-                        i,
-                    )
+                    let mut frame_info = FrameInfo::new();
+                    frame_info.block_mode = BlockMode::Independent;
+                    lz4_flex::frame::compress_with(frame_info, i)
                 })
             },
         );
@@ -286,13 +282,9 @@ fn bench_frame_compression_throughput(c: &mut Criterion) {
             &input,
             |b, i| {
                 b.iter(|| {
-                    lz4_flex::frame::compress_with(
-                        FrameInfo {
-                            block_mode: BlockMode::Linked,
-                            ..Default::default()
-                        },
-                        i,
-                    )
+                    let mut frame_info = FrameInfo::new();
+                    frame_info.block_mode = BlockMode::Linked;
+                    lz4_flex::frame::compress_with(frame_info, i)
                 })
             },
         );
