@@ -82,11 +82,9 @@ pub fn compress(input: &[u8]) -> Result<Vec<u8>, Error> {
 
 /// Compress all bytes of `input` into a `Vec` with the specified Frame configuration.
 pub fn compress_with(frame_info: FrameInfo, input: &[u8]) -> Result<Vec<u8>, Error> {
-    let buffer = Vec::with_capacity(
-        header::MAX_FRAME_INFO_SIZE
-            + header::BLOCK_INFO_SIZE
-            + crate::block::compress::get_maximum_output_size(input.len()),
-    );
+    // Preallocate estimating a ~50% compression ratio.
+    let buffer =
+        Vec::with_capacity(crate::block::compress::get_maximum_output_size(input.len()) / 2);
     let mut enc = FrameEncoder::with_frame_info(frame_info, buffer);
     enc.write_all(input)?;
     Ok(enc.finish()?)
@@ -95,8 +93,8 @@ pub fn compress_with(frame_info: FrameInfo, input: &[u8]) -> Result<Vec<u8>, Err
 /// Decompress all bytes of `input` into a new vec.
 pub fn decompress(input: &[u8]) -> Result<Vec<u8>, Error> {
     let mut de = FrameDecoder::new(input);
-    // Preallocate the output with 2x the input size, it may resize but it amortizes enough.
-    // The upside is that we don't have to worry about DOS attacks, etc..
+    // Preallocate the output with 2x the input size (equivalent to ~50% compression ratio).
+    // It may resize but it amortizes enough. The upside is that we don't have to worry about DOS attacks, etc..
     let mut out = Vec::with_capacity(input.len() * 2);
     de.read_to_end(&mut out)?;
     Ok(out)
