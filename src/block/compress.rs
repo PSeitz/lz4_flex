@@ -23,73 +23,37 @@ use super::{CompressError, WINDOW_SIZE};
 /// Increase step size after 1<<INCREASE_STEPSIZE_BITSHIFT non matches
 const INCREASE_STEPSIZE_BITSHIFT: usize = 5;
 
-/// hashes and right shifts to a maximum value of 16bit, 65535
-/// The right shift is done in order to not exceed, the hashtables capacity
-#[inline]
-fn hash(sequence: u32) -> u32 {
-    (sequence.wrapping_mul(2654435761_u32)) >> 16
-}
-
-/// hashes and right shifts to a maximum value of 16bit, 65535
-/// The right shift is done in order to not exceed, the hashtables capacity
-#[cfg(target_pointer_width = "64")]
-#[inline]
-fn hash5(sequence: usize) -> u32 {
-    let primebytes = if cfg!(target_endian = "little") {
-        889523592379_usize
-    } else {
-        11400714785074694791_usize
-    };
-    (((sequence << 24).wrapping_mul(primebytes)) >> 48) as u32
-}
-
 /// Read a 4-byte "batch" from some position.
 ///
 /// This will read a native-endian 4-byte integer from some position.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn get_batch(input: &[u8], n: usize) -> u32 {
+pub(super) fn get_batch(input: &[u8], n: usize) -> u32 {
     unsafe { read_u32_ptr(input.as_ptr().add(n)) }
 }
 
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn get_batch(input: &[u8], n: usize) -> u32 {
+pub(super) fn get_batch(input: &[u8], n: usize) -> u32 {
     let arr: &[u8; 4] = input[n..n + 4].try_into().unwrap();
     u32::from_ne_bytes(*arr)
 }
 
-/// Read a 4-byte "batch" from some position.
+/// Read an usize sized "batch" from some position.
 ///
-/// This will read a native-endian 4-byte integer from some position.
+/// This will read a native-endian usize from some position.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn get_batch_arch(input: &[u8], n: usize) -> usize {
+pub(super) fn get_batch_arch(input: &[u8], n: usize) -> usize {
     unsafe { read_usize_ptr(input.as_ptr().add(n)) }
 }
 
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn get_batch_arch(input: &[u8], n: usize) -> usize {
+pub(super) fn get_batch_arch(input: &[u8], n: usize) -> usize {
     const USIZE_SIZE: usize = core::mem::size_of::<usize>();
     let arr: &[u8; USIZE_SIZE] = input[n..n + USIZE_SIZE].try_into().unwrap();
     usize::from_ne_bytes(*arr)
-}
-
-#[inline]
-#[cfg(target_pointer_width = "64")]
-fn get_hash_at(input: &[u8], pos: usize) -> usize {
-    if input.len() < u16::MAX as usize {
-        hash(get_batch(input, pos)) as usize
-    } else {
-        hash5(get_batch_arch(input, pos)) as usize
-    }
-}
-
-#[inline]
-#[cfg(target_pointer_width = "32")]
-fn get_hash_at(input: &[u8], pos: usize) -> usize {
-    hash(get_batch(input, pos)) as usize
 }
 
 #[inline]
@@ -407,7 +371,7 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
     if cur == 0 && input_stream_offset == 0 {
         // According to the spec we can't start with a match,
         // except when referencing another block.
-        let hash = get_hash_at(input, 0);
+        let hash = T::get_hash_at(input, 0);
         dict.put_at(hash, 0);
         cur = 1;
     }
@@ -438,7 +402,7 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
             // Find a candidate in the dictionary with the hash of the current four bytes.
             // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
             // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
-            let hash = get_hash_at(input, cur);
+            let hash = T::get_hash_at(input, cur);
             candidate = dict.get_at(hash);
             dict.put_at(hash, cur + input_stream_offset);
 
@@ -498,7 +462,7 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
         let duplicate_length = count_same_bytes(input, &mut cur, candidate_source, candidate);
 
         // Note: The `- 2` offset was copied from the reference implementation, it could be arbitrary.
-        let hash = get_hash_at(input, cur - 2);
+        let hash = T::get_hash_at(input, cur - 2);
         dict.put_at(hash, cur - 2 + input_stream_offset);
 
         let token = token_from_literal_and_match_length(lit_len, duplicate_length);
@@ -688,7 +652,7 @@ fn init_dict<T: HashTable>(dict: &mut T, dict_data: &mut &[u8]) {
     }
     let mut i = 0usize;
     while i + core::mem::size_of::<usize>() <= dict_data.len() {
-        let hash = get_hash_at(dict_data, i);
+        let hash = T::get_hash_at(dict_data, i);
         dict.put_at(hash, i);
         // Note: The 3 byte step was copied from the reference implementation, it could be arbitrary.
         i += 3;

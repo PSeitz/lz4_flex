@@ -11,10 +11,40 @@
 ///
 use alloc::vec::Vec;
 
+/// hashes and right shifts to a maximum value of 16bit, 65535
+/// The right shift is done in order to not exceed, the hashtables capacity
+#[inline]
+fn hash(sequence: u32) -> u32 {
+    (sequence.wrapping_mul(2654435761_u32)) >> 16
+}
+
+/// hashes and right shifts to a maximum value of 16bit, 65535
+/// The right shift is done in order to not exceed, the hashtables capacity
+#[cfg(target_pointer_width = "64")]
+#[inline]
+fn hash5(sequence: usize) -> u32 {
+    let primebytes = if cfg!(target_endian = "little") {
+        889523592379_usize
+    } else {
+        11400714785074694791_usize
+    };
+    (((sequence << 24).wrapping_mul(primebytes)) >> 48) as u32
+}
+
 pub trait HashTable {
     fn get_at(&self, pos: usize) -> usize;
     fn put_at(&mut self, pos: usize, val: usize);
     fn clear(&mut self);
+    #[inline]
+    #[cfg(target_pointer_width = "64")]
+    fn get_hash_at(input: &[u8], pos: usize) -> usize {
+        hash5(super::compress::get_batch_arch(input, pos)) as usize
+    }
+    #[inline]
+    #[cfg(target_pointer_width = "32")]
+    fn get_hash_at(input: &[u8], pos: usize) -> usize {
+        hash(super::compress::get_batch(input, pos)) as usize
+    }
 }
 
 #[derive(Debug)]
@@ -157,6 +187,10 @@ impl HashTable for HashTableU16 {
     #[inline]
     fn clear(&mut self) {
         self.dict.fill(0);
+    }
+    #[inline]
+    fn get_hash_at(input: &[u8], pos: usize) -> usize {
+        hash(super::get_batch(input, pos)) as usize
     }
 }
 
