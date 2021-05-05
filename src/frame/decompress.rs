@@ -16,10 +16,6 @@ use crate::block::WINDOW_SIZE;
 /// Bytes read will be decompressed according to the [LZ4 frame format](
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md).
 ///
-/// This reader can potentially make many small reads from the underlying
-/// stream depending on its format, therefore, passing in a buffered reader
-/// may be beneficial.
-///
 /// # Example 1
 /// Deserializing json values out of a compressed file.
 ///
