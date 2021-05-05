@@ -25,6 +25,28 @@ use crate::block::WINDOW_SIZE;
 ///
 /// To ensure a well formed stream the encoder must be finalized by calling
 /// either `finish` or `try_finish()` methods.
+///
+/// # Example 1
+/// Serializing json values into a compressed file.
+///
+/// ```no_run
+/// let compressed_file = std::fs::File::create("datafile").unwrap();
+/// let mut compressor = lz4_flex::frame::FrameEncoder::new(compressed_file);
+/// serde_json::to_writer(&mut compressor, &serde_json::json!({ "an": "object" })).unwrap();
+/// compressor.finish().unwrap();
+/// ```
+///
+/// # Example 2
+/// Deserializing multiple json values out of a compressed file
+///
+/// ```no_run
+/// let compressed_file = std::fs::File::create("datafile").unwrap();
+/// let mut compressor = lz4_flex::frame::FrameEncoder::new(compressed_file);
+/// for i in 0..10u64 {
+///     serde_json::to_writer(&mut compressor, &serde_json::json!({ "i": i })).unwrap();
+/// }
+/// compressor.finish().unwrap();
+/// ```
 pub struct FrameEncoder<W: io::Write> {
     /// Our buffer of uncompressed bytes.
     src: Vec<u8>,

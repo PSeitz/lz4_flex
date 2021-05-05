@@ -19,6 +19,30 @@ use crate::block::WINDOW_SIZE;
 /// This reader can potentially make many small reads from the underlying
 /// stream depending on its format, therefore, passing in a buffered reader
 /// may be beneficial.
+///
+/// # Example 1
+/// Deserializing json values out of a compressed file.
+///
+/// ```no_run
+/// let compressed_input = std::fs::File::open("datafile").unwrap();
+/// let mut decompressed_input = lz4_flex::frame::FrameDecoder::new(compressed_input);
+/// let json: serde_json::Value = serde_json::from_reader(decompressed_input).unwrap();
+/// ```
+///
+/// # Example
+/// Deserializing multiple json values out of a compressed file
+///
+/// ```no_run
+/// let compressed_input = std::fs::File::open("datafile").unwrap();
+/// let mut decompressed_input = lz4_flex::frame::FrameDecoder::new(compressed_input);
+/// loop {
+///     match serde_json::from_reader::<_, serde_json::Value>(&mut decompressed_input) {
+///         Ok(json) => { println!("json {:?}", json); }
+///         Err(e) if e.is_eof() => break,
+///         Err(e) => panic!("{}", e),
+///     }
+/// }
+/// ```
 pub struct FrameDecoder<R: io::Read> {
     /// The underlying reader.
     r: R,
