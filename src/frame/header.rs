@@ -208,8 +208,8 @@ impl FrameInfo {
         }
         let mut hasher = XxHash32::with_seed(0);
         hasher.write(&buffer[4..offset]);
-        let checksum = (hasher.finish() >> 8) as u8;
-        buffer[offset] = checksum;
+        let header_checksum = (hasher.finish() >> 8) as u8;
+        buffer[offset] = header_checksum;
         offset += 1;
         debug_assert_eq!(offset, write_size);
         output[..write_size].copy_from_slice(&buffer[..write_size]);
