@@ -22,9 +22,10 @@ use crate::block::WINDOW_SIZE;
 pub struct FrameDecoder<R: io::Read> {
     /// The underlying reader.
     r: R,
-    /// Whether we've read the a stream header or not.
-    /// Also cleared once frame end marker is read and Ok(0) is returned.
-    frame_info: Option<FrameInfo>,
+    /// The FrameInfo of the frame currently being decoded.
+    /// It starts as `None` and is filled with the FrameInfo is read from the input.
+    /// It's reset to `None` once the frame EndMarker is read from the input.
+    current_frame_info: Option<FrameInfo>,
     /// Xxhash32 used when content checksum is enabled.
     content_hasher: XxHash32,
     /// Total length of decompressed output for the current frame.
@@ -55,14 +56,14 @@ impl<R: io::Read> FrameDecoder<R> {
             ext_dict_len: 0,
             dst_start: 0,
             dst_end: 0,
-            frame_info: None,
+            current_frame_info: None,
             content_hasher: XxHash32::with_seed(0),
             content_len: 0,
         }
     }
 
     pub fn frame_info(&mut self) -> Option<&FrameInfo> {
-        self.frame_info.as_ref()
+        self.current_frame_info.as_ref()
     }
 
     /// Gets a reference to the underlying reader in this decoder.
@@ -122,7 +123,7 @@ impl<R: io::Read> FrameDecoder<R> {
                 self.dst.set_len(dst_size);
             }
         }
-        self.frame_info = Some(frame_info);
+        self.current_frame_info = Some(frame_info);
         self.content_hasher = XxHash32::with_seed(0);
         self.content_len = 0;
         self.ext_dict_len = 0;
@@ -152,7 +153,7 @@ impl<R: io::Read> FrameDecoder<R> {
 
     fn read_block(&mut self) -> io::Result<usize> {
         debug_assert_eq!(self.dst_start, self.dst_end);
-        let frame_info = self.frame_info.as_ref().unwrap();
+        let frame_info = self.current_frame_info.as_ref().unwrap();
 
         // Adjust dst buffer offsets to decompress the next block
         let max_block_size = frame_info.block_size.get_size();
@@ -255,7 +256,7 @@ impl<R: io::Read> FrameDecoder<R> {
                         return Err(Error::ContentChecksumError.into());
                     }
                 }
-                self.frame_info = None;
+                self.current_frame_info = None;
                 return Ok(0);
             }
         }
@@ -269,7 +270,7 @@ impl<R: io::Read> FrameDecoder<R> {
     }
 
     fn read_more(&mut self) -> io::Result<usize> {
-        if self.frame_info.is_none() && self.read_frame_info()? == 0 {
+        if self.current_frame_info.is_none() && self.read_frame_info()? == 0 {
             return Ok(0);
         }
         self.read_block()
@@ -360,7 +361,7 @@ impl<R: fmt::Debug + io::Read> fmt::Debug for FrameDecoder<R> {
             .field("dst_end", &self.dst_end)
             .field("ext_dict_offset", &self.ext_dict_offset)
             .field("ext_dict_len", &self.ext_dict_len)
-            .field("frame_info", &self.frame_info)
+            .field("current_frame_info", &self.current_frame_info)
             .finish()
     }
 }
