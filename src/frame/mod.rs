@@ -108,18 +108,18 @@ pub fn compress_into(input: &mut impl Read, output: &mut impl Write) -> Result<(
 /// Compress `input` into `output` with the specified Frame configuration.
 pub fn compress_into_with(
     frame_info: FrameInfo,
-    input: &mut impl Read,
-    output: &mut impl Write,
+    mut input: impl Read,
+    output: impl Write,
 ) -> Result<(), Error> {
     let mut enc = FrameEncoder::with_frame_info(frame_info, output);
-    io::copy(input, &mut enc)?;
+    io::copy(&mut input, &mut enc)?;
     enc.finish()?;
     Ok(())
 }
 
 /// Decompresses `input` into `output`.
-pub fn decompress_into(input: &mut impl Read, output: &mut impl Write) -> Result<(), Error> {
+pub fn decompress_into(input: impl Read, mut output: impl Write) -> Result<(), Error> {
     let mut de = FrameDecoder::new(input);
-    io::copy(&mut de, output)?;
+    io::copy(&mut de, &mut output)?;
     Ok(())
 }

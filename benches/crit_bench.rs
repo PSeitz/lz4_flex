@@ -22,7 +22,7 @@ const ALL: &[&[u8]] = &[
     COMPRESSION34K as &[u8],
     // COMPRESSION65K as &[u8],
     COMPRESSION66K as &[u8],
-    // COMPRESSION10MB as &[u8],
+    COMPRESSION10MB as &[u8],
     // COMPRESSION95K_VERY_GOOD_LOGO as &[u8],
 ];
 
