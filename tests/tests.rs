@@ -23,6 +23,12 @@ fn lz4_cpp_block_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
     Ok(out)
 }
 
+fn lz4_cpp_block_decompress(input: &[u8], decomp_len: usize) -> Result<Vec<u8>, lzzzz::Error> {
+    let mut out = vec![0u8; decomp_len];
+    lzzzz::lz4::decompress(input, &mut out)?;
+    Ok(out)
+}
+
 #[cfg(feature = "frame")]
 fn lz4_cpp_frame_compress(input: &[u8], independent: bool) -> Result<Vec<u8>, lzzzz::Error> {
     let pref = lzzzz::lz4f::PreferencesBuilder::new()
@@ -37,16 +43,29 @@ fn lz4_cpp_frame_compress(input: &[u8], independent: bool) -> Result<Vec<u8>, lz
     Ok(out)
 }
 
-fn lz4_cpp_block_decompress(input: &[u8], decomp_len: usize) -> Result<Vec<u8>, lzzzz::Error> {
-    let mut out = vec![0u8; decomp_len];
-    lzzzz::lz4::decompress(input, &mut out)?;
-    Ok(out)
-}
-
 #[cfg(feature = "frame")]
 fn lz4_cpp_frame_decompress(input: &[u8]) -> Result<Vec<u8>, lzzzz::lz4f::Error> {
     let mut out = Vec::new();
     lzzzz::lz4f::decompress_to_vec(input, &mut out)?;
+    Ok(out)
+}
+
+#[cfg(feature = "frame")]
+pub fn lz4_flex_frame_compress_with(
+    frame_info: lz4_flex::frame::FrameInfo,
+    input: &[u8],
+) -> Result<Vec<u8>, lz4_flex::frame::Error> {
+    let buffer = Vec::new();
+    let mut enc = lz4_flex::frame::FrameEncoder::with_frame_info(frame_info, buffer);
+    std::io::Write::write_all(&mut enc, input)?;
+    Ok(enc.finish()?)
+}
+
+#[cfg(feature = "frame")]
+pub fn lz4_flex_frame_decompress(input: &[u8]) -> Result<Vec<u8>, lz4_flex::frame::Error> {
+    let mut de = lz4_flex::frame::FrameDecoder::new(input);
+    let mut out = Vec::new();
+    std::io::Read::read_to_end(&mut de, &mut out)?;
     Ok(out)
 }
 
@@ -69,8 +88,8 @@ fn inverse(bytes: impl AsRef<[u8]>) {
     for bm in &[BlockMode::Independent, BlockMode::Linked] {
         let mut frame_info = lz4_flex::frame::FrameInfo::new();
         frame_info.block_mode = *bm;
-        let compressed_flex = lz4_flex::frame::compress_with(frame_info, bytes).unwrap();
-        let decompressed = lz4_flex::frame::decompress(&compressed_flex).unwrap();
+        let compressed_flex = lz4_flex_frame_compress_with(frame_info, bytes).unwrap();
+        let decompressed = lz4_flex_frame_decompress(&compressed_flex).unwrap();
         assert_eq!(decompressed, bytes);
     }
 
@@ -102,10 +121,10 @@ fn lz4_cpp_compatibility(bytes: &[u8]) {
     {
         // compress with lz4 cpp, decompress with rust
         let compressed = lz4_cpp_frame_compress(bytes, true).unwrap();
-        let decompressed = lz4_flex::frame::decompress(&compressed).unwrap();
+        let decompressed = lz4_flex_frame_decompress(&compressed).unwrap();
         assert_eq!(decompressed, bytes);
         let compressed = lz4_cpp_frame_compress(bytes, false).unwrap();
-        let decompressed = lz4_flex::frame::decompress(&compressed).unwrap();
+        let decompressed = lz4_flex_frame_decompress(&compressed).unwrap();
         assert_eq!(decompressed, bytes);
 
         // compress with rust, decompress with lz4 cpp
@@ -115,7 +134,7 @@ fn lz4_cpp_compatibility(bytes: &[u8]) {
             for bm in &[BlockMode::Independent, BlockMode::Linked] {
                 let mut frame_info = lz4_flex::frame::FrameInfo::new();
                 frame_info.block_mode = *bm;
-                let compressed_flex = lz4_flex::frame::compress_with(frame_info, bytes).unwrap();
+                let compressed_flex = lz4_flex_frame_compress_with(frame_info, bytes).unwrap();
                 let decompressed = lz4_cpp_frame_decompress(&compressed_flex).unwrap();
                 assert_eq!(decompressed, bytes);
             }

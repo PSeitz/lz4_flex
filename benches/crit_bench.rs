@@ -4,7 +4,6 @@ extern crate criterion;
 use std::io::{Read, Write};
 
 use self::criterion::*;
-use lz4_flex::frame::{BlockMode, FrameInfo};
 use lz_fear::raw::compress2;
 use lz_fear::raw::decompress_raw;
 use lz_fear::raw::U16Table;
@@ -50,12 +49,14 @@ fn decompress_snap(input: &[u8]) -> Vec<u8> {
     snap::raw::Decoder::new().decompress_vec(input).unwrap()
 }
 
+#[cfg(feature = "frame")]
 fn compress_snap_frame(input: &[u8]) -> Vec<u8> {
     let mut fe = snap::write::FrameEncoder::new(Vec::new());
     fe.write_all(input).unwrap();
     fe.into_inner().unwrap()
 }
 
+#[cfg(feature = "frame")]
 fn decompress_snap_frame(input: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     let mut fe = snap::read::FrameDecoder::new(input);
@@ -75,6 +76,7 @@ fn lz4_cpp_block_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
     Ok(out)
 }
 
+#[cfg(feature = "frame")]
 fn lz4_cpp_frame_compress(input: &[u8], independent: bool) -> Result<Vec<u8>, lzzzz::Error> {
     let pref = lzzzz::lz4f::PreferencesBuilder::new()
         .block_mode(if independent {
@@ -89,9 +91,29 @@ fn lz4_cpp_frame_compress(input: &[u8], independent: bool) -> Result<Vec<u8>, lz
     Ok(out)
 }
 
+#[cfg(feature = "frame")]
 fn lz4_cpp_frame_decompress(input: &[u8]) -> Result<Vec<u8>, lzzzz::lz4f::Error> {
     let mut out = Vec::new();
     lzzzz::lz4f::decompress_to_vec(input, &mut out)?;
+    Ok(out)
+}
+
+#[cfg(feature = "frame")]
+pub fn lz4_flex_frame_compress_with(
+    frame_info: lz4_flex::frame::FrameInfo,
+    input: &[u8],
+) -> Result<Vec<u8>, lz4_flex::frame::Error> {
+    let buffer = Vec::new();
+    let mut enc = lz4_flex::frame::FrameEncoder::with_frame_info(frame_info, buffer);
+    enc.write_all(input)?;
+    Ok(enc.finish()?)
+}
+
+#[cfg(feature = "frame")]
+pub fn lz4_flex_frame_decompress(input: &[u8]) -> Result<Vec<u8>, lz4_flex::frame::Error> {
+    let mut de = lz4_flex::frame::FrameDecoder::new(input);
+    let mut out = Vec::new();
+    de.read_to_end(&mut out)?;
     Ok(out)
 }
 
@@ -208,6 +230,7 @@ fn bench_block_decompression_throughput(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(feature = "frame")]
 fn bench_frame_decompression_throughput(c: &mut Criterion) {
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Linear);
 
@@ -222,35 +245,57 @@ fn bench_frame_decompression_throughput(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(input.len() as _));
 
         group.bench_with_input(
-            BenchmarkId::new("lz4_flex_rust_indep", input_bytes),
+            BenchmarkId::new("lz4_flex_rust_buffered", input_bytes),
             &comp_lz4_indep,
-            |b, i| b.iter(|| lz4_flex::frame::decompress(&i)),
+            |b, i| {
+                b.iter(|| {
+                    let mut buf = Vec::new();
+                    lz4_flex::frame::FrameDecoder::new(std::io::BufReader::new(&**i))
+                        .read_to_end(&mut buf)
+                        .unwrap();
+                    buf
+                })
+            },
         );
         group.bench_with_input(
-            BenchmarkId::new("lz4_cpp_indep", input_bytes),
+            BenchmarkId::new("lz4_flex_rust_raw", input_bytes),
             &comp_lz4_indep,
-            |b, i| b.iter(|| lz4_cpp_frame_decompress(&i)),
+            |b, i| {
+                b.iter(|| {
+                    let mut buf = Vec::new();
+                    lz4_flex::frame::FrameDecoder::new(&**i)
+                        .read_to_end(&mut buf)
+                        .unwrap();
+                    buf
+                })
+            },
         );
-        group.bench_with_input(
-            BenchmarkId::new("lz4_flex_rust_linked", input_bytes),
-            &comp_lz4_linked,
-            |b, i| b.iter(|| lz4_flex::frame::decompress(&i)),
-        );
-        group.bench_with_input(
-            BenchmarkId::new("lz4_cpp_linked", input_bytes),
-            &comp_lz4_linked,
-            |b, i| b.iter(|| lz4_cpp_frame_decompress(&i)),
-        );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_cpp_indep", input_bytes),
+        //     &comp_lz4_indep,
+        //     |b, i| b.iter(|| lz4_cpp_frame_decompress(&i)),
+        // );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_flex_rust_linked", input_bytes),
+        //     &comp_lz4_linked,
+        //     |b, i| b.iter(|| lz4_flex_frame_decompress(&i)),
+        // );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_cpp_linked", input_bytes),
+        //     &comp_lz4_linked,
+        //     |b, i| b.iter(|| lz4_cpp_frame_decompress(&i)),
+        // );
 
-        let comp_snap = compress_snap_frame(&input);
-        group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
-            b.iter(|| decompress_snap_frame(&i))
-        });
+        // let comp_snap = compress_snap_frame(&input);
+        // group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
+        //     b.iter(|| decompress_snap_frame(&i))
+        // });
     }
 
     group.finish();
 }
 
+#[cfg(feature = "frame")]
 fn bench_frame_compression_throughput(c: &mut Criterion) {
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Linear);
 
@@ -266,9 +311,9 @@ fn bench_frame_compression_throughput(c: &mut Criterion) {
             &input,
             |b, i| {
                 b.iter(|| {
-                    let mut frame_info = FrameInfo::new();
-                    frame_info.block_mode = BlockMode::Independent;
-                    lz4_flex::frame::compress_with(frame_info, i)
+                    let mut frame_info = lz4_flex::frame::FrameInfo::new();
+                    frame_info.block_mode = lz4_flex::frame::BlockMode::Independent;
+                    lz4_flex_frame_compress_with(frame_info, i)
                 })
             },
         );
@@ -282,9 +327,9 @@ fn bench_frame_compression_throughput(c: &mut Criterion) {
             &input,
             |b, i| {
                 b.iter(|| {
-                    let mut frame_info = FrameInfo::new();
-                    frame_info.block_mode = BlockMode::Linked;
-                    lz4_flex::frame::compress_with(frame_info, i)
+                    let mut frame_info = lz4_flex::frame::FrameInfo::new();
+                    frame_info.block_mode = lz4_flex::frame::BlockMode::Linked;
+                    lz4_flex_frame_compress_with(frame_info, i)
                 })
             },
         );
@@ -303,10 +348,20 @@ fn bench_frame_compression_throughput(c: &mut Criterion) {
 }
 
 criterion_group!(
-    benches,
+    block_benches,
     bench_block_decompression_throughput,
     bench_block_compression_throughput,
+);
+
+#[cfg(feature = "frame")]
+criterion_group!(
+    frame_benches,
     bench_frame_decompression_throughput,
     bench_frame_compression_throughput,
 );
-criterion_main!(benches);
+
+#[cfg(not(feature = "frame"))]
+criterion_main!(block_benches);
+
+#[cfg(feature = "frame")]
+criterion_main!(block_benches, frame_benches);

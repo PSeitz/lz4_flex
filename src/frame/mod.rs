@@ -2,10 +2,7 @@
 //!
 //! As defined in <https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md>
 
-use std::{
-    fmt,
-    io::{self, Read, Write},
-};
+use std::{fmt, io};
 
 pub(crate) mod compress;
 pub(crate) mod decompress;
@@ -74,52 +71,3 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
-
-/// Compress all bytes of `input` into a `Vec`.
-pub fn compress(input: &[u8]) -> Result<Vec<u8>, Error> {
-    compress_with(FrameInfo::default(), input)
-}
-
-/// Compress all bytes of `input` into a `Vec` with the specified Frame configuration.
-pub fn compress_with(frame_info: FrameInfo, input: &[u8]) -> Result<Vec<u8>, Error> {
-    // Preallocate estimating a ~50% compression ratio.
-    let buffer =
-        Vec::with_capacity(crate::block::compress::get_maximum_output_size(input.len()) / 2);
-    let mut enc = FrameEncoder::with_frame_info(frame_info, buffer);
-    enc.write_all(input)?;
-    Ok(enc.finish()?)
-}
-
-/// Decompress all bytes of `input` into a new vec.
-pub fn decompress(input: &[u8]) -> Result<Vec<u8>, Error> {
-    let mut de = FrameDecoder::new(input);
-    // Preallocate the output with 2x the input size (equivalent to ~50% compression ratio).
-    // It may resize but it amortizes enough. The upside is that we don't have to worry about DOS attacks, etc..
-    let mut out = Vec::with_capacity(input.len() * 2);
-    de.read_to_end(&mut out)?;
-    Ok(out)
-}
-
-/// Compress `input` into `output`.
-pub fn compress_into(input: &mut impl Read, output: &mut impl Write) -> Result<(), Error> {
-    compress_into_with(Default::default(), input, output)
-}
-
-/// Compress `input` into `output` with the specified Frame configuration.
-pub fn compress_into_with(
-    frame_info: FrameInfo,
-    mut input: impl Read,
-    output: impl Write,
-) -> Result<(), Error> {
-    let mut enc = FrameEncoder::with_frame_info(frame_info, output);
-    io::copy(&mut input, &mut enc)?;
-    enc.finish()?;
-    Ok(())
-}
-
-/// Decompresses `input` into `output`.
-pub fn decompress_into(input: impl Read, mut output: impl Write) -> Result<(), Error> {
-    let mut de = FrameDecoder::new(input);
-    io::copy(&mut de, &mut output)?;
-    Ok(())
-}
