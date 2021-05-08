@@ -37,11 +37,13 @@ use crate::block::WINDOW_SIZE;
 /// ```
 ///
 /// # Example 2
-/// Deserializing multiple json values out of a compressed file
+/// Serializing multiple json values into a compressed file using linked blocks.
 ///
 /// ```no_run
 /// let compressed_file = std::fs::File::create("datafile").unwrap();
-/// let mut compressor = lz4_flex::frame::FrameEncoder::new(compressed_file);
+/// let mut frame_info = lz4_flex::frame::FrameInfo::new();
+/// frame_info.block_mode = lz4_flex::frame::BlockMode::Linked;
+/// let mut compressor = lz4_flex::frame::FrameEncoder::with_frame_info(frame_info, compressed_file);
 /// for i in 0..10u64 {
 ///     serde_json::to_writer(&mut compressor, &serde_json::json!({ "i": i })).unwrap();
 /// }
