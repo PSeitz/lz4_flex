@@ -59,9 +59,9 @@ pub struct FrameDecoder<R: io::Read> {
     /// that are still part of the decompressor window.
     ext_dict_offset: usize,
     ext_dict_len: usize,
-    /// Index into dst: starting point of bytes not yet given back to caller.
+    /// Index into dst: starting point of bytes not yet read by caller.
     dst_start: usize,
-    /// Index into dst: ending point of bytes not yet given back to caller.
+    /// Index into dst: ending point of bytes not yet read by caller.
     dst_end: usize,
 }
 
@@ -302,11 +302,11 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
         loop {
             // Fill read buffer if there's uncompressed data left
             if self.dst_start < self.dst_end {
-                let len = std::cmp::min(self.dst_end - self.dst_start, buf.len());
-                let dste = self.dst_start.checked_add(len).unwrap();
-                buf[..len].copy_from_slice(&self.dst[self.dst_start..dste]);
-                self.dst_start = dste;
-                return Ok(len);
+                let read_len = std::cmp::min(self.dst_end - self.dst_start, buf.len());
+                let dst_read_end = self.dst_start + read_len;
+                buf[..read_len].copy_from_slice(&self.dst[self.dst_start..dst_read_end]);
+                self.dst_start = dst_read_end;
+                return Ok(read_len);
             }
             if self.read_more()? == 0 {
                 return Ok(0);
