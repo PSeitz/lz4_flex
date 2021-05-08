@@ -134,7 +134,7 @@ fn decompress_internal<const USE_DICT: bool>(
         // This enables some optimized handling.
         //
         // Ideally we want to check for safe output pos like: output.pos() <= safe_output_pos; But that doesn't work when the
-        // safe_output_pos is 0 due to saturated_sub. so we use `<` instead of `<=`, which will cover that case.
+        // safe_output_pos is 0 due to saturated_sub. So we use `<` instead of `<=`, which covers that case.
         if does_token_fit(token) && input_pos <= safe_input_pos && output.pos() < safe_output_pos {
             let literal_length = (token >> 4) as usize;
 

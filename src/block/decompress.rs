@@ -213,7 +213,11 @@ fn decompress_internal<const USE_DICT: bool>(
         .len()
         .saturating_sub(16 /* literal copy */ +  2 /* u16 match offset */);
     let safe_output_ptr = unsafe {
-        output_end.sub(16 /* literal copy */ + 18 /* match copy */)
+        output_base.add(
+            output
+                .capacity()
+                .saturating_sub(16 /* literal copy */ + 18 /* match copy */),
+        )
     };
 
     // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer is empty.
@@ -236,12 +240,19 @@ fn decompress_internal<const USE_DICT: bool>(
         // Checking for hot-loop.
         // In most cases the metadata does fit in a single 1byte token (statistically) and we are in a safe-distance to the end.
         // This enables some optimized handling.
-        if does_token_fit(token) && input_pos <= safe_input_pos && output_ptr <= safe_output_ptr {
+        //
+        // Ideally we want to check for safe output pos like: output.pos() <= safe_output_pos; But that doesn't work when the
+        // safe_output_ptr is == output_ptr due to insufficient capacity. So we use `<` instead of `<=`, which covers that case.
+        if does_token_fit(token) && input_pos <= safe_input_pos && output_ptr < safe_output_ptr {
             let literal_length = (token >> 4) as usize;
             let mut match_length = MINMATCH + (token & 0xF) as usize;
 
             // output_ptr <= safe_output_ptr should guarantee we have enough space in output
-            debug_assert!(unsafe { output_ptr.add(literal_length + match_length) } <= output_end);
+            debug_assert!(
+                unsafe { output_ptr.add(literal_length + match_length) } <= output_end,
+                "{} wont fit ",
+                literal_length + match_length
+            );
             #[cfg(feature = "checked-decode")]
             {
                 // Check if literal is out of bounds for the input
