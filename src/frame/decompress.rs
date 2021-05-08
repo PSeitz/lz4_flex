@@ -123,6 +123,13 @@ impl<R: io::Read> FrameDecoder<R> {
 
         let max_block_size = frame_info.block_size.get_size();
         let dst_size = if frame_info.block_mode == BlockMode::Linked {
+            // In linked mode we consume the output (bumping dst_start) but leave the
+            // beginning of dst to be used as a prefix in subsequent blocks.
+            // That is at least until we have at least `max_block_size + WINDOW_SIZE`
+            // bytes in dst, then we setup an ext_dict with the last WINDOW_SIZE bytes
+            // and the output goes to the beginning of dst again.
+            // Since we always want to be able to write a full block (up to max_block_size)
+            // we need a buffer with at least `max_block_size * 2 + WINDOW_SIZE` bytes.
             max_block_size * 2 + WINDOW_SIZE
         } else {
             max_block_size
@@ -178,6 +185,11 @@ impl<R: io::Read> FrameDecoder<R> {
         // Adjust dst buffer offsets to decompress the next block
         let max_block_size = frame_info.block_size.get_size();
         if frame_info.block_mode == BlockMode::Linked {
+            // In linked mode we consume the output (bumping dst_start) but leave the
+            // beginning of dst to be used as a prefix in subsequent blocks.
+            // That is at least until we have at least `max_block_size + WINDOW_SIZE`
+            // bytes in dst, then we setup an ext_dict with the last WINDOW_SIZE bytes
+            // and the output goes to the beginning of dst again.
             if self.dst_start + max_block_size > self.dst.len() {
                 // Output might not fit in the buffer.
                 // The ext_dict will become the last WINDOW_SIZE bytes
@@ -188,7 +200,9 @@ impl<R: io::Read> FrameDecoder<R> {
                 self.dst_start = 0;
                 self.dst_end = 0;
             } else if self.dst_start + self.ext_dict_len > WINDOW_SIZE {
-                // Shrink ext_dict in favor of output prefix.
+                // There's more than WINDOW_SIZE bytes of lookback adding the prefix and ext_dict.
+                // Since we have a limited buffer we must shrink ext_dict in favor of the prefix,
+                // so that we can fit up to max_block_size bytes between dst_start and ext_dict start.
                 let delta = self.ext_dict_len.min(self.dst_start);
                 self.ext_dict_offset += delta;
                 self.ext_dict_len -= delta;
@@ -242,6 +256,7 @@ impl<R: io::Read> FrameDecoder<R> {
 
                     let mut sink: crate::block::Sink = head.into();
                     sink.set_pos(self.dst_start);
+                    debug_assert!(sink.capacity() - sink.pos() >= max_block_size);
                     crate::block::decompress::decompress_into_with_dict(
                         &self.src[..len],
                         &mut sink,
@@ -251,6 +266,7 @@ impl<R: io::Read> FrameDecoder<R> {
                     // Independent blocks OR linked blocks with only prefix data
                     let mut sink: crate::block::Sink = (&mut self.dst).into();
                     sink.set_pos(self.dst_start);
+                    debug_assert!(sink.capacity() - sink.pos() >= max_block_size);
                     crate::block::decompress::decompress_into(&self.src[..len], &mut sink)
                 }
                 .map_err(Error::DecompressionError)?;
