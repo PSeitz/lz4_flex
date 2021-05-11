@@ -44,11 +44,6 @@ pub enum Error {
     SkippableFrame(u32),
     /// External dictionaries are not supported.
     DictionaryNotSupported,
-    /// Wrong dictionary for decompression.
-    WrongDictionary {
-        expected: Option<u32>,
-        actual: Option<u32>,
-    },
     /// Content length differs.
     ContentLengthError { expected: u64, actual: u64 },
 }

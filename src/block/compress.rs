@@ -312,7 +312,7 @@ fn backtrack_match(
 ///
 /// Bytes in `input[..input_pos]` are treated as a preamble and can be used for lookback.
 /// This part is known as the compressor "prefix".
-/// Bytes in `ext_dict` logically precede `pre[..input_pos]` and can also be used for lookback.
+/// Bytes in `ext_dict` logically precede the bytes in `input` and can also be used for lookback.
 ///
 /// `input_stream_offset` is the logical position of the first byte of `input`. This allows same `dict`
 /// to be used for many calls to `compress_internal` as we can "readdress" the first byte of `input`
@@ -406,8 +406,11 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
             candidate = dict.get_at(hash);
             dict.put_at(hash, cur + input_stream_offset);
 
+            // Sanity check: Matches can't be ahead of `cur`.
+            debug_assert!(candidate <= input_stream_offset + cur);
+
             // Two requirements to the candidate exists:
-            // - We should not return a position which is merely a hash collision, so w that the
+            // - We should not return a position which is merely a hash collision, so that the
             //   candidate actually matches what we search for.
             // - We can address up to 16-bit offset, hence we are only able to address the candidate if
             //   its offset is less than or equals to 0xFFFF.

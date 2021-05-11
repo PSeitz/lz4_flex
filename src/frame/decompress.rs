@@ -114,11 +114,7 @@ impl<R: io::Read> FrameDecoder<R> {
         let frame_info = FrameInfo::read(&buffer[..required])?;
         if frame_info.dict_id.is_some() {
             // Unsupported right now so it must be None
-            return Err(Error::WrongDictionary {
-                actual: frame_info.dict_id,
-                expected: None,
-            }
-            .into());
+            return Err(Error::DictionaryNotSupported.into());
         }
 
         let max_block_size = frame_info.block_size.get_size();
