@@ -245,51 +245,31 @@ fn bench_frame_decompression_throughput(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(input.len() as _));
 
         group.bench_with_input(
-            BenchmarkId::new("lz4_flex_rust_buffered", input_bytes),
-            &comp_lz4_indep,
-            |b, i| {
-                b.iter(|| {
-                    let mut buf = Vec::new();
-                    lz4_flex::frame::FrameDecoder::new(std::io::BufReader::new(&**i))
-                        .read_to_end(&mut buf)
-                        .unwrap();
-                    buf
-                })
-            },
+            BenchmarkId::new("lz4_flex_rust_indep", input_bytes),
+            &comp_lz4_linked,
+            |b, i| b.iter(|| lz4_flex_frame_decompress(&i)),
         );
         group.bench_with_input(
-            BenchmarkId::new("lz4_flex_rust_raw", input_bytes),
-            &comp_lz4_indep,
-            |b, i| {
-                b.iter(|| {
-                    let mut buf = Vec::new();
-                    lz4_flex::frame::FrameDecoder::new(&**i)
-                        .read_to_end(&mut buf)
-                        .unwrap();
-                    buf
-                })
-            },
+            BenchmarkId::new("lz4_flex_rust_linked", input_bytes),
+            &comp_lz4_linked,
+            |b, i| b.iter(|| lz4_flex_frame_decompress(&i)),
         );
-        // group.bench_with_input(
-        //     BenchmarkId::new("lz4_cpp_indep", input_bytes),
-        //     &comp_lz4_indep,
-        //     |b, i| b.iter(|| lz4_cpp_frame_decompress(&i)),
-        // );
-        // group.bench_with_input(
-        //     BenchmarkId::new("lz4_flex_rust_linked", input_bytes),
-        //     &comp_lz4_linked,
-        //     |b, i| b.iter(|| lz4_flex_frame_decompress(&i)),
-        // );
-        // group.bench_with_input(
-        //     BenchmarkId::new("lz4_cpp_linked", input_bytes),
-        //     &comp_lz4_linked,
-        //     |b, i| b.iter(|| lz4_cpp_frame_decompress(&i)),
-        // );
 
-        // let comp_snap = compress_snap_frame(&input);
-        // group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
-        //     b.iter(|| decompress_snap_frame(&i))
-        // });
+        group.bench_with_input(
+            BenchmarkId::new("lz4_cpp_indep", input_bytes),
+            &comp_lz4_indep,
+            |b, i| b.iter(|| lz4_cpp_frame_decompress(&i)),
+        );
+        group.bench_with_input(
+            BenchmarkId::new("lz4_cpp_linked", input_bytes),
+            &comp_lz4_linked,
+            |b, i| b.iter(|| lz4_cpp_frame_decompress(&i)),
+        );
+
+        let comp_snap = compress_snap_frame(&input);
+        group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
+            b.iter(|| decompress_snap_frame(&i))
+        });
     }
 
     group.finish();
@@ -318,11 +298,6 @@ fn bench_frame_compression_throughput(c: &mut Criterion) {
             },
         );
         group.bench_with_input(
-            BenchmarkId::new("lz4_cpp_indep", input_bytes),
-            &input,
-            |b, i| b.iter(|| lz4_cpp_frame_compress(i, true)),
-        );
-        group.bench_with_input(
             BenchmarkId::new("lz4_flex_rust_linked", input_bytes),
             &input,
             |b, i| {
@@ -332,6 +307,12 @@ fn bench_frame_compression_throughput(c: &mut Criterion) {
                     lz4_flex_frame_compress_with(frame_info, i)
                 })
             },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("lz4_cpp_indep", input_bytes),
+            &input,
+            |b, i| b.iter(|| lz4_cpp_frame_compress(i, true)),
         );
         group.bench_with_input(
             BenchmarkId::new("lz4_cpp_linked", input_bytes),
