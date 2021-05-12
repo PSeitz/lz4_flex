@@ -191,10 +191,18 @@ impl FrameInfo {
         assert!(write_size <= buffer.len());
         buffer[0..4].copy_from_slice(&LZ4F_MAGIC_NUMBER.to_le_bytes());
         buffer[4] = FLG_SUPPORTED_VERSION_BITS;
-        buffer[5] = (self.block_size as u8) << BD_BLOCK_SIZE_MASK_RSHIFT;
+        if self.block_checksums {
+            buffer[4] |= FLG_BLOCK_CHECKSUMS;
+        }
+        if self.content_checksum {
+            buffer[4] |= FLG_CONTENT_CHECKSUM;
+        }
         if self.block_mode == BlockMode::Independent {
             buffer[4] |= FLG_INDEPENDENT_BLOCKS;
         }
+        buffer[5] = (self.block_size as u8) << BD_BLOCK_SIZE_MASK_RSHIFT;
+
+        // Optional section
         let mut offset = 6;
         if let Some(size) = self.content_size {
             buffer[4] |= FLG_CONTENT_SIZE;
@@ -206,11 +214,14 @@ impl FrameInfo {
             buffer[offset..offset + 4].copy_from_slice(&dict_id.to_le_bytes());
             offset += 4;
         }
+
+        // Header checksum
         let mut hasher = XxHash32::with_seed(0);
         hasher.write(&buffer[4..offset]);
         let header_checksum = (hasher.finish() >> 8) as u8;
         buffer[offset] = header_checksum;
         offset += 1;
+
         debug_assert_eq!(offset, write_size);
         output[..write_size].copy_from_slice(&buffer[..write_size]);
         Ok(write_size)

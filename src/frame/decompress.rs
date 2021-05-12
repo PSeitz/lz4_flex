@@ -208,6 +208,7 @@ impl<R: io::Read> FrameDecoder<R> {
             self.dst_end = 0;
         }
 
+        // Read and decompress block
         let block_info = {
             let mut buffer = [0u8; 4];
             self.r.read_exact(&mut buffer)?;
@@ -293,6 +294,7 @@ impl<R: io::Read> FrameDecoder<R> {
             }
         }
 
+        // Content checksum, if applicable
         if frame_info.content_checksum {
             self.content_hasher
                 .write(&self.dst[self.dst_start..self.dst_end]);

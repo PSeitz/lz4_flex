@@ -177,9 +177,14 @@ impl<W: io::Write> FrameEncoder<W> {
                 });
             }
         }
+
         let mut block_info_buffer = [0u8; BLOCK_INFO_SIZE];
         BlockInfo::EndMark.write(&mut block_info_buffer[..])?;
         self.w.write_all(&block_info_buffer[..])?;
+        if self.frame_info.content_checksum {
+            let content_checksum = self.content_hasher.finish() as u32;
+            self.w.write_all(&content_checksum.to_le_bytes())?;
+        }
 
         Ok(())
     }
@@ -265,6 +270,12 @@ impl<W: io::Write> FrameEncoder<W> {
             self.w.write_all(&block_checksum.to_le_bytes())?;
         }
 
+        // Content checksum, if applicable
+        if self.frame_info.content_checksum {
+            self.content_hasher.write(src);
+        }
+
+        // Buffer and offsets maintenance
         self.content_len += src.len() as u64;
         self.src_start += src.len();
         debug_assert_eq!(self.src_start, self.src_end);
@@ -350,7 +361,7 @@ impl<W: fmt::Debug + io::Write> fmt::Debug for FrameEncoder<W> {
             .field("w", &self.w)
             .field("frame_info", &self.frame_info)
             .field("is_frame_open", &self.is_frame_open)
-            .field("content_hasher", &self.content_hasher.finish())
+            .field("content_hasher", &self.content_hasher)
             .field("content_len", &self.content_len)
             .field("dst", &"[...]")
             .field("src", &"[...]")

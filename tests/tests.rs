@@ -54,7 +54,7 @@ fn lz4_cpp_frame_decompress(input: &[u8]) -> Result<Vec<u8>, lzzzz::lz4f::Error>
 pub fn lz4_flex_frame_compress_with(
     frame_info: lz4_flex::frame::FrameInfo,
     input: &[u8],
-) -> Result<Vec<u8>, lz4_flex::frame::Error> {
+) -> Result<Vec<u8>, std::io::Error> {
     let buffer = Vec::new();
     let mut enc = lz4_flex::frame::FrameEncoder::with_frame_info(frame_info, buffer);
     std::io::Write::write_all(&mut enc, input)?;
@@ -455,6 +455,8 @@ fn test_text_1k() {
 
 #[cfg(feature = "frame")]
 mod frame {
+    use lz4_flex::frame::BlockSize;
+
     use super::*;
     use std::io::{Read, Write};
 
@@ -473,6 +475,99 @@ mod frame {
         uncompressed.clear();
         dec.read_to_end(&mut uncompressed).unwrap();
         assert_eq!(&*uncompressed, COMPRESSION34K);
+    }
+
+    #[test]
+    fn checksums() {
+        for &input in &[COMPRESSION34K, COMPRESSION66JSON] {
+            // Block checksum
+            let mut frame_info = lz4_flex::frame::FrameInfo::new();
+            frame_info.block_checksums = true;
+            let mut compressed = lz4_flex_frame_compress_with(frame_info, input).unwrap();
+            // roundtrip
+            let uncompressed = lz4_flex_frame_decompress(&compressed).unwrap();
+            assert_eq!(uncompressed, input);
+            // corrupt last block checksum, which is at 8th to 4th last bytes of the compressed output
+            let compressed_len = compressed.len();
+            compressed[compressed_len - 5] ^= 0xFF;
+            assert!(lz4_flex_frame_decompress(&compressed)
+                .unwrap_err()
+                .to_string()
+                .contains(&lz4_flex::frame::Error::BlockChecksumError.to_string()));
+
+            // Content checksum
+            let mut frame_info = lz4_flex::frame::FrameInfo::new();
+            frame_info.content_checksum = true;
+            let mut compressed = lz4_flex_frame_compress_with(frame_info, input).unwrap();
+            // roundtrip
+            let uncompressed = lz4_flex_frame_decompress(&compressed).unwrap();
+            assert_eq!(uncompressed, input);
+
+            // corrupt content checksum, which is the last 4 bytes of the compressed output
+            let compressed_len = compressed.len();
+            compressed[compressed_len - 1] ^= 0xFF;
+            assert!(lz4_flex_frame_decompress(&compressed)
+                .unwrap_err()
+                .to_string()
+                .contains(&lz4_flex::frame::Error::ContentChecksumError.to_string()));
+        }
+    }
+
+    #[test]
+    fn block_size() {
+        let mut last_compressed_len = usize::MAX;
+        for block_size in &[
+            BlockSize::Max64KB,
+            BlockSize::Max256KB,
+            BlockSize::Max1MB,
+            BlockSize::Max4MB,
+        ] {
+            let mut frame_info = lz4_flex::frame::FrameInfo::new();
+            frame_info.block_size = *block_size;
+            let compressed = lz4_flex_frame_compress_with(frame_info, COMPRESSION10MB).unwrap();
+
+            // roundtrip
+            let uncompressed = lz4_flex_frame_decompress(&compressed).unwrap();
+            assert_eq!(uncompressed, COMPRESSION10MB);
+
+            // For a large enough input (eg. the 10MB input) we should get strictly
+            // better compression by increasing the block size.
+            assert!(compressed.len() < last_compressed_len);
+            last_compressed_len = compressed.len();
+        }
+    }
+
+    #[test]
+    fn content_size() {
+        let mut frame_info = lz4_flex::frame::FrameInfo::new();
+        frame_info.content_size = Some(COMPRESSION1K.len() as u64);
+        let mut compressed =
+            lz4_flex_frame_compress_with(frame_info.clone(), COMPRESSION1K).unwrap();
+
+        // roundtrip
+        let uncompressed = lz4_flex_frame_decompress(&compressed).unwrap();
+        assert_eq!(uncompressed, COMPRESSION1K);
+
+        // corrupt the len in the compressed bytes
+        {
+            // We'll generate a valid FrameInfo and copy it to the test data
+            let mut frame_info = lz4_flex::frame::FrameInfo::new();
+            frame_info.content_size = Some(3);
+            let dummy_compressed =
+                lz4_flex_frame_compress_with(frame_info.clone(), b"123").unwrap();
+            // `15` (7 + 8) is the size of the header plus the content size in the compressed bytes
+            compressed[..15].copy_from_slice(&dummy_compressed[..15]);
+        }
+        assert!(lz4_flex_frame_decompress(&compressed)
+            .unwrap_err()
+            .to_string()
+            .contains(
+                &lz4_flex::frame::Error::ContentLengthError {
+                    expected: 3,
+                    actual: 725
+                }
+                .to_string()
+            ));
     }
 }
 
