@@ -270,7 +270,7 @@ impl FrameInfo {
         let block_checksums = flg_byte & FLG_BLOCK_CHECKSUMS != 0;
 
         let block_size = match (bd_byte & BD_BLOCK_SIZE_MASK) >> BD_BLOCK_SIZE_MASK_RSHIFT {
-            i @ 0..=3 => return Err(Error::UnimplementedBlocksize(i)),
+            i @ 0..=3 => return Err(Error::UnsupportedBlocksize(i)),
             4 => BlockSize::Max64KB,
             5 => BlockSize::Max256KB,
             6 => BlockSize::Max1MB,

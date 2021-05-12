@@ -22,7 +22,7 @@ pub enum Error {
     /// An io::Error was encountered.
     IoError(io::Error),
     /// Unsupported block size.
-    UnimplementedBlocksize(u8),
+    UnsupportedBlocksize(u8),
     /// Unsupported frame version.
     UnsupportedVersion(u8),
     /// Wrong magic number for the LZ4 frame format.
@@ -50,12 +50,32 @@ pub enum Error {
 
 impl From<Error> for io::Error {
     fn from(e: Error) -> Self {
-        io::Error::new(io::ErrorKind::Other, e)
+        match e {
+            Error::IoError(e) => e,
+            Error::CompressionError(_)
+            | Error::DecompressionError(_)
+            | Error::SkippableFrame(_)
+            | Error::DictionaryNotSupported => io::Error::new(io::ErrorKind::Other, e),
+            Error::WrongMagicNumber
+            | Error::UnsupportedBlocksize(..)
+            | Error::UnsupportedVersion(..)
+            | Error::ReservedBitsSet
+            | Error::InvalidBlockInfo
+            | Error::BlockTooBig
+            | Error::HeaderChecksumError
+            | Error::ContentChecksumError
+            | Error::BlockChecksumError
+            | Error::ContentLengthError { .. } => io::Error::new(io::ErrorKind::InvalidData, e),
+        }
     }
 }
+
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {
-        Error::IoError(e)
+        match e.get_ref().map(|e| e.downcast_ref::<Error>()) {
+            Some(_) => *e.into_inner().unwrap().downcast::<Error>().unwrap(),
+            None => Error::IoError(e),
+        }
     }
 }
 

@@ -490,10 +490,10 @@ mod frame {
             // corrupt last block checksum, which is at 8th to 4th last bytes of the compressed output
             let compressed_len = compressed.len();
             compressed[compressed_len - 5] ^= 0xFF;
-            assert!(lz4_flex_frame_decompress(&compressed)
-                .unwrap_err()
-                .to_string()
-                .contains(&lz4_flex::frame::Error::BlockChecksumError.to_string()));
+            match lz4_flex_frame_decompress(&compressed) {
+                Err(lz4_flex::frame::Error::BlockChecksumError) => (),
+                r => panic!("{:?}", r),
+            }
 
             // Content checksum
             let mut frame_info = lz4_flex::frame::FrameInfo::new();
@@ -506,10 +506,10 @@ mod frame {
             // corrupt content checksum, which is the last 4 bytes of the compressed output
             let compressed_len = compressed.len();
             compressed[compressed_len - 1] ^= 0xFF;
-            assert!(lz4_flex_frame_decompress(&compressed)
-                .unwrap_err()
-                .to_string()
-                .contains(&lz4_flex::frame::Error::ContentChecksumError.to_string()));
+            match lz4_flex_frame_decompress(&compressed) {
+                Err(lz4_flex::frame::Error::ContentChecksumError) => (),
+                r => panic!("{:?}", r),
+            }
         }
     }
 
@@ -558,16 +558,13 @@ mod frame {
             // `15` (7 + 8) is the size of the header plus the content size in the compressed bytes
             compressed[..15].copy_from_slice(&dummy_compressed[..15]);
         }
-        assert!(lz4_flex_frame_decompress(&compressed)
-            .unwrap_err()
-            .to_string()
-            .contains(
-                &lz4_flex::frame::Error::ContentLengthError {
-                    expected: 3,
-                    actual: 725
-                }
-                .to_string()
-            ));
+        match lz4_flex_frame_decompress(&compressed) {
+            Err(lz4_flex::frame::Error::ContentLengthError { expected, actual }) => {
+                assert_eq!(expected, 3);
+                assert_eq!(actual, 725);
+            }
+            r => panic!("{:?}", r),
+        }
     }
 }
 
