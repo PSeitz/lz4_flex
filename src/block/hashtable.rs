@@ -197,14 +197,16 @@ impl HashTable for HashTableU16 {
 #[inline]
 pub fn get_table_size(input_len: usize) -> (usize, usize) {
     let (dict_size, dict_bitshift) = match input_len {
+        // U16 Positions
         0..=500 => (128, 9),
         501..=1_000 => (256, 8),
         1_001..=4_000 => (512, 7),
         4_001..=8_000 => (1024, 6),
         8_001..=16_000 => (2048, 5),
-        16_001..=30_000 => (8192, 3),
-        // 100_000..=400_000 => (8192, 3),
-        _ => (16384, 2),
+        16_001..=65535 => (8192, 3),
+        // U32 positions => 16KB table
+        // Usize (U64) positions => 32KB table
+        _ => (4096, 4),
     };
     (dict_size, dict_bitshift)
 }

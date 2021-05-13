@@ -103,7 +103,10 @@ impl<W: io::Write> FrameEncoder<W> {
         unsafe {
             src.set_len(src_size);
         }
-        let (dict_size, dict_bitshift) = crate::block::hashtable::get_table_size(u32::MAX as _);
+
+        // 16 KB hash table for matches, same as the reference implementation.
+        let (dict_size, dict_bitshift) = (4 * 1024, 4);
+
         FrameEncoder {
             src,
             w: wtr,
