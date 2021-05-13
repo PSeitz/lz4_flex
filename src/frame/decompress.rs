@@ -130,22 +130,10 @@ impl<R: io::Read> FrameDecoder<R> {
         } else {
             max_block_size
         };
-        #[cfg(feature = "safe-encode")]
-        {
-            self.src.resize(max_block_size, 0);
-            self.dst.resize(dst_size, 0);
-        }
-        #[cfg(not(feature = "safe-encode"))]
-        {
-            self.src.clear();
-            self.dst.clear();
-            self.src.reserve_exact(max_block_size);
-            self.dst.reserve_exact(dst_size);
-            unsafe {
-                self.src.set_len(max_block_size);
-                self.dst.set_len(dst_size);
-            }
-        }
+        self.src.clear();
+        self.dst.clear();
+        self.src.reserve_exact(max_block_size);
+        self.dst.reserve_exact(dst_size);
         self.current_frame_info = Some(frame_info);
         self.content_hasher = XxHash32::with_seed(0);
         self.content_len = 0;
@@ -186,7 +174,8 @@ impl<R: io::Read> FrameDecoder<R> {
             // That is at least until we have at least `max_block_size + WINDOW_SIZE`
             // bytes in dst, then we setup an ext_dict with the last WINDOW_SIZE bytes
             // and the output goes to the beginning of dst again.
-            if self.dst_start + max_block_size > self.dst.len() {
+            debug_assert_eq!(self.dst.capacity(), max_block_size * 2 + WINDOW_SIZE);
+            if self.dst_start + max_block_size > self.dst.capacity() {
                 // Output might not fit in the buffer.
                 // The ext_dict will become the last WINDOW_SIZE bytes
                 debug_assert!(self.dst_start >= max_block_size + WINDOW_SIZE);
@@ -204,6 +193,8 @@ impl<R: io::Read> FrameDecoder<R> {
                 self.ext_dict_len -= delta;
             }
         } else {
+            debug_assert_eq!(self.ext_dict_len, 0);
+            debug_assert_eq!(self.dst.capacity(), max_block_size);
             self.dst_start = 0;
             self.dst_end = 0;
         }
@@ -220,8 +211,11 @@ impl<R: io::Read> FrameDecoder<R> {
                 if len > max_block_size {
                     return Err(Error::BlockTooBig.into());
                 }
-                self.r
-                    .read_exact(&mut self.dst[self.dst_start..self.dst_start + len])?;
+                self.r.read_exact(vec_bytes_mut(
+                    &mut self.dst,
+                    self.dst_start,
+                    self.dst_start + len,
+                ))?;
                 if frame_info.block_checksums {
                     let expected_checksum = Self::read_checksum(&mut self.r)?;
                     Self::check_block_checksum(
@@ -238,10 +232,15 @@ impl<R: io::Read> FrameDecoder<R> {
                 if len > max_block_size {
                     return Err(Error::BlockTooBig.into());
                 }
-                self.r.read_exact(&mut self.src[..len])?;
+                self.r.read_exact(vec_bytes_mut(&mut self.src, 0, len))?;
                 if frame_info.block_checksums {
                     let expected_checksum = Self::read_checksum(&mut self.r)?;
                     Self::check_block_checksum(&self.src[..len], expected_checksum)?;
+                }
+
+                // Ensure dst has enough len to decompress into
+                if self.dst.len() - self.dst_start < max_block_size {
+                    vec_set_len(&mut self.dst, self.dst_start + max_block_size);
                 }
 
                 let with_dict_mode =
@@ -398,4 +397,32 @@ impl<R: fmt::Debug + io::Read> fmt::Debug for FrameDecoder<R> {
             .field("current_frame_info", &self.current_frame_info)
             .finish()
     }
+}
+
+/// Similar to set_len but panics if the vec doesn't have enough capacity.
+#[cfg(feature = "safe-decode")]
+#[inline]
+fn vec_set_len(v: &mut Vec<u8>, new_len: usize) {
+    debug_assert!(new_len <= v.capacity());
+    v.resize(new_len, 0);
+}
+
+/// Similar to set_len but panics if the vec doesn't have enough capacity.
+#[cfg(not(feature = "safe-decode"))]
+#[inline]
+fn vec_set_len(v: &mut Vec<u8>, new_len: usize) {
+    assert!(new_len <= v.capacity());
+    unsafe {
+        v.set_len(new_len);
+    }
+}
+
+/// Similar to `v.get_mut(start..end) but will adjust the len if needed.
+/// Panics if there's not enough capacity.
+#[inline]
+fn vec_bytes_mut(v: &mut Vec<u8>, start: usize, end: usize) -> &mut [u8] {
+    if end > v.len() {
+        vec_set_len(v, end);
+    }
+    &mut v[start..end]
 }

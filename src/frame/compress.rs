@@ -96,13 +96,10 @@ impl<W: io::Write> FrameEncoder<W> {
         } else {
             max_block_size
         };
-        let mut src = Vec::with_capacity(src_size);
-        #[cfg(feature = "safe-encode")]
-        src.resize(src_size, 0);
-        #[cfg(not(feature = "safe-encode"))]
-        unsafe {
-            src.set_len(src_size);
-        }
+        let src = Vec::with_capacity(src_size);
+        let dst = Vec::with_capacity(crate::block::compress::get_maximum_output_size(
+            max_block_size,
+        ));
 
         // 16 KB hash table for matches, same as the reference implementation.
         let (dict_size, dict_bitshift) = (4 * 1024, 4);
@@ -113,7 +110,7 @@ impl<W: io::Write> FrameEncoder<W> {
             compression_table: HashTableU32::new(dict_size, dict_bitshift),
             content_hasher: XxHash32::with_seed(0),
             content_len: 0,
-            dst: crate::block::compress::get_output_vec(max_block_size),
+            dst,
             is_frame_open: false,
             frame_info,
             src_start: 0,
@@ -205,6 +202,7 @@ impl<W: io::Write> FrameEncoder<W> {
             // reset compressor state for the new frame.
             self.content_len = 0;
             self.src_stream_offset = 0;
+            self.src.clear();
             self.src_start = 0;
             self.src_end = 0;
             self.ext_dict_len = 0;
@@ -232,6 +230,12 @@ impl<W: io::Write> FrameEncoder<W> {
         let input = &self.src[..self.src_end];
         // the contents of the block are between src_start and src_end
         let src = &input[self.src_start..];
+
+        // ensure dst has enough len for the compressed output
+        let dst_required_size = crate::block::compress::get_maximum_output_size(src.len());
+        if self.dst.len() < dst_required_size {
+            vec_set_len(&mut self.dst, dst_required_size)
+        }
 
         let compress_result = if self.ext_dict_len != 0 {
             debug_assert_eq!(self.frame_info.block_mode, BlockMode::Linked);
@@ -288,7 +292,7 @@ impl<W: io::Write> FrameEncoder<W> {
             // That is at least until we have at least `max_block_size + WINDOW_SIZE`
             // bytes in src, then we setup an ext_dict with the last WINDOW_SIZE bytes
             // and the input goes to the beginning of src again.
-            debug_assert_eq!(self.src.len(), max_block_size * 2 + WINDOW_SIZE);
+            debug_assert_eq!(self.src.capacity(), max_block_size * 2 + WINDOW_SIZE);
             if self.src_start >= max_block_size + WINDOW_SIZE {
                 // The ext_dict will become the last WINDOW_SIZE bytes
                 self.ext_dict_offset = self.src_end - WINDOW_SIZE;
@@ -312,7 +316,7 @@ impl<W: io::Write> FrameEncoder<W> {
             // In independent block mode we consume the entire src buffer
             // which is sized equal to the frame max_block_size.
             debug_assert_eq!(self.ext_dict_len, 0);
-            debug_assert_eq!(self.src.len(), max_block_size);
+            debug_assert_eq!(self.src.capacity(), max_block_size);
             self.src_start = 0;
             self.src_end = 0;
             // Advance stream offset so we don't have to reset the match dict
@@ -320,7 +324,7 @@ impl<W: io::Write> FrameEncoder<W> {
             self.src_stream_offset += src.len();
         }
         debug_assert!(self.src_start <= self.src_end);
-        debug_assert!(self.src_start + max_block_size <= self.src.len());
+        debug_assert!(self.src_start + max_block_size <= self.src.capacity());
         Ok(())
     }
 }
@@ -343,7 +347,7 @@ impl<W: io::Write> io::Write for FrameEncoder<W> {
             }
 
             let fill_len = max_fill_len.min(buf.len());
-            self.src[self.src_end..self.src_end + fill_len].copy_from_slice(&buf[..fill_len]);
+            vec_copy_overwriting(&mut self.src, self.src_end, &buf[..fill_len]);
             buf = &buf[fill_len..];
             self.src_end += fill_len;
         }
@@ -375,4 +379,34 @@ impl<W: fmt::Debug + io::Write> fmt::Debug for FrameEncoder<W> {
             .field("src_stream_offset", &self.src_stream_offset)
             .finish()
     }
+}
+
+/// Similar to set_len but panics if the vec doesn't have enough capacity.
+#[cfg(feature = "safe-encode")]
+#[inline]
+fn vec_set_len(v: &mut Vec<u8>, new_len: usize) {
+    debug_assert!(new_len <= v.capacity());
+    v.resize(new_len, 0);
+}
+
+/// Similar to set_len but panics if the vec doesn't have enough capacity.
+#[cfg(not(feature = "safe-encode"))]
+#[inline]
+fn vec_set_len(v: &mut Vec<u8>, new_len: usize) {
+    assert!(new_len <= v.capacity());
+    unsafe {
+        v.set_len(new_len);
+    }
+}
+
+/// Copy `src` into `v` starting from the `start` index, overwriting existing data if any.
+#[inline]
+fn vec_copy_overwriting(v: &mut Vec<u8>, start: usize, src: &[u8]) {
+    debug_assert!(start + src.len() <= v.capacity());
+
+    // By combining overwriting (copy_from_slice) and extending (extend_from_slice)
+    // we can fill the ring buffer without initializing it (eg. filling with 0).
+    let overwrite_len = (v.len() - start).min(src.len());
+    v[start..start + overwrite_len].copy_from_slice(&src[..overwrite_len]);
+    v.extend_from_slice(&src[overwrite_len..]);
 }
