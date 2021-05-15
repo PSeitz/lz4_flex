@@ -145,17 +145,10 @@ fn uncompressed_size(input: &[u8]) -> Result<(usize, &[u8]), DecompressError> {
 }
 
 /// Sink is used as target to de/compress data into a preallocated space.
-/// Make sure to allocate enough for compression (`get_maximum_output_size`) AND decompression(decompress_sink_size).
+/// Make sure to allocate enough for compression (`get_maximum_output_size`)
 /// Sink can be created from a `Vec` or a `Slice`. The new pos on the data after the operation
 /// can be retrieved via `sink.pos()`
-/// # Examples
-/// ```
-/// use lz4_flex::block::Sink;
-/// let mut data = Vec::new();
-/// data.resize(5, 0);
-/// let mut sink: Sink = (&mut data).into();
-/// ```
-pub struct Sink<'a> {
+pub(crate) struct Sink<'a> {
     output: &'a mut [u8],
     pos: usize,
 }
@@ -180,6 +173,16 @@ impl<'a> From<&'a mut [u8]> for Sink<'a> {
     }
 }
 
+impl<'a> From<(&'a mut [u8], usize)> for Sink<'a> {
+    #[inline]
+    fn from(data: (&'a mut [u8], usize)) -> Self {
+        Sink {
+            output: data.0,
+            pos: data.1,
+        }
+    }
+}
+
 impl<'a> Sink<'a> {
     #[cfg(any(feature = "safe-encode", feature = "safe-decode"))]
     #[inline]
@@ -198,11 +201,6 @@ impl<'a> Sink<'a> {
     #[inline]
     pub(crate) fn as_mut_ptr(&mut self) -> *mut u8 {
         unsafe { self.output.as_mut_ptr().add(self.pos) }
-    }
-
-    #[inline]
-    pub fn get_data(&self) -> &[u8] {
-        &self.output[0..self.pos]
     }
 
     #[inline]
@@ -232,9 +230,7 @@ fn test_sink() {
     let mut data = Vec::new();
     data.resize(5, 0);
     let mut sink: Sink = (&mut data).into();
-    assert_eq!(sink.get_data(), &[]);
     assert_eq!(sink.pos(), 0);
     sink.extend_from_slice(&[1, 2, 3]);
-    assert_eq!(sink.get_data(), &[1, 2, 3]);
     assert_eq!(sink.pos(), 3);
 }

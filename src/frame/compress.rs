@@ -242,7 +242,8 @@ impl<W: io::Write> FrameEncoder<W> {
             compress_internal::<_, true>(
                 input,
                 self.src_start,
-                &mut (&mut self.dst[..]).into(),
+                &mut self.dst[..],
+                0,
                 &mut self.compression_table,
                 &self.src[self.ext_dict_offset..self.ext_dict_offset + self.ext_dict_len],
                 self.src_stream_offset,
@@ -251,7 +252,8 @@ impl<W: io::Write> FrameEncoder<W> {
             compress_internal::<_, false>(
                 input,
                 self.src_start,
-                &mut (&mut self.dst[..]).into(),
+                &mut self.dst[..],
+                0,
                 &mut self.compression_table,
                 b"",
                 self.src_stream_offset,

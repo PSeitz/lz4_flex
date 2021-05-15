@@ -251,20 +251,21 @@ impl<R: io::Read> FrameDecoder<R> {
                     let (head, tail) = self.dst.split_at_mut(self.ext_dict_offset);
                     let ext_dict = &tail[..self.ext_dict_len];
 
-                    let mut sink: crate::block::Sink = head.into();
-                    sink.set_pos(self.dst_start);
-                    debug_assert!(sink.capacity() - sink.pos() >= max_block_size);
+                    debug_assert!(head.len() - self.dst_start >= max_block_size);
                     crate::block::decompress::decompress_into_with_dict(
                         &self.src[..len],
-                        &mut sink,
+                        head,
+                        self.dst_start,
                         ext_dict,
                     )
                 } else {
                     // Independent blocks OR linked blocks with only prefix data
-                    let mut sink: crate::block::Sink = (&mut self.dst).into();
-                    sink.set_pos(self.dst_start);
-                    debug_assert!(sink.capacity() - sink.pos() >= max_block_size);
-                    crate::block::decompress::decompress_into(&self.src[..len], &mut sink)
+                    debug_assert!(self.dst.len() - self.dst_start >= max_block_size);
+                    crate::block::decompress::decompress_into(
+                        &self.src[..len],
+                        &mut self.dst,
+                        self.dst_start,
+                    )
                 }
                 .map_err(Error::DecompressionError)?;
 

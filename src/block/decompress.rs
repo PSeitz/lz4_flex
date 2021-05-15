@@ -171,19 +171,27 @@ fn does_token_fit(token: u8) -> bool {
 }
 
 /// Decompress all bytes of `input` into `output`.
-/// `Sink` should be preallocated with a size of of the uncompressed data.
+/// `output` should be preallocated with a size of of the uncompressed data.
 #[inline]
-pub fn decompress_into(input: &[u8], output: &mut Sink) -> Result<usize, DecompressError> {
-    decompress_internal::<false>(input, output, b"")
+pub fn decompress_into(
+    input: &[u8],
+    output: &mut [u8],
+    output_pos: usize,
+) -> Result<usize, DecompressError> {
+    decompress_internal::<false>(input, &mut (output, output_pos).into(), b"")
 }
 
+/// Decompress all bytes of `input` into `output`.
+///
+/// Returns the number of bytes written (decompressed) into `output`.
 #[inline]
 pub fn decompress_into_with_dict(
     input: &[u8],
-    output: &mut Sink,
+    output: &mut [u8],
+    output_pos: usize,
     ext_dict: &[u8],
 ) -> Result<usize, DecompressError> {
-    decompress_internal::<true>(input, output, ext_dict)
+    decompress_internal::<true>(input, &mut (output, output_pos).into(), ext_dict)
 }
 
 /// Decompress all bytes of `input` into `output`.
@@ -441,8 +449,7 @@ pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, Dec
     unsafe {
         vec.set_len(uncompressed_size);
     }
-    let mut sink: Sink = (&mut vec).into();
-    let decomp_len = decompress_into(input, &mut sink)?;
+    let decomp_len = decompress_into(input, &mut vec, 0)?;
     if decomp_len != uncompressed_size {
         return Err(DecompressError::UncompressedSizeDiffers {
             expected: uncompressed_size,
@@ -480,8 +487,7 @@ pub fn decompress_with_dict(
     unsafe {
         vec.set_len(uncompressed_size);
     }
-    let mut sink: Sink = (&mut vec).into();
-    let decomp_len = decompress_into_with_dict(input, &mut sink, ext_dict)?;
+    let decomp_len = decompress_into_with_dict(input, &mut vec, 0, ext_dict)?;
     if decomp_len != uncompressed_size {
         return Err(DecompressError::UncompressedSizeDiffers {
             expected: uncompressed_size,
