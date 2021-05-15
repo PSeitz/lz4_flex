@@ -17,7 +17,8 @@ assert_eq!(input, uncompressed);
 
 - `safe-encode` uses only safe rust for encode. _enabled by default_
 - `safe-decode` uses only safe rust for encode. _enabled by default_
-- `checked-decode` will add aditional checks if `safe-decode` is not enabled, to avoid out of bounds access. This should be enabled for untrusted input.
+- `checked-decode` will add additional checks if `safe-decode` is not enabled, to avoid out of bounds access. This should be enabled for untrusted input.
+- `frame` support for LZ4 frame format. _implies `std`, enabled by default_
 - `std` enables dependency on the standard library. _enabled by default_
 
 For maximum performance use `no-default-features`.
@@ -26,16 +27,17 @@ For maximum performance use `no-default-features`.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[cfg_attr(test, macro_use)]
 extern crate alloc;
 
+#[cfg(test)]
+#[macro_use]
+extern crate more_asserts;
+
 pub mod block;
-#[cfg(feature = "std")]
-mod frame;
+#[cfg(feature = "frame")]
+pub mod frame;
 
-pub use block::compress::{compress, compress_into, compress_prepend_size};
+pub use block::{compress, compress_into, compress_prepend_size};
 
-#[cfg(feature = "safe-decode")]
-pub use block::decompress_safe::{decompress, decompress_into, decompress_size_prepended};
-
-#[cfg(not(feature = "safe-decode"))]
-pub use block::decompress::{decompress, decompress_into, decompress_size_prepended};
+pub use block::{decompress, decompress_into, decompress_size_prepended};

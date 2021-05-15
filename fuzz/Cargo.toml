@@ -9,12 +9,18 @@ edition = "2018"
 [package.metadata]
 cargo-fuzz = true
 
+[features]
+default = ["safe-encode", "safe-decode"]
+safe-encode = ["lz4_flex/safe-encode"]
+safe-decode = ["lz4_flex/safe-decode"]
+
 [dependencies]
-libfuzzer-sys = "0.3"
-lz4 = "1.23.1"
+arbitrary = { version = "1", features = ["derive"] }
+libfuzzer-sys = "0.4"
+lzzzz = "0.8"
 
 # checked-decode" is required for the fuzz_decomp_corrupted_data target
-lz4_flex = { path = "..", default-features = false, features=["checked-decode"] }
+lz4_flex = { path = "..", default-features = false, features=["frame", "checked-decode"] }
 
 # Prevent this from interfering with workspaces
 [workspace]
@@ -27,13 +33,31 @@ test = false
 doc = false
 
 [[bin]]
+name = "fuzz_roundtrip_frame"
+path = "fuzz_targets/fuzz_roundtrip_frame.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "fuzz_roundtrip_cpp_compress"
 path = "fuzz_targets/fuzz_roundtrip_cpp_compress.rs"
 test = false
 doc = false
 
 [[bin]]
-name = "fuzz_decomp_corrupted_data"
-path = "fuzz_targets/fuzz_decomp_corrupted_data.rs"
+name = "fuzz_roundtrip_cpp_decompress"
+path = "fuzz_targets/fuzz_roundtrip_cpp_decompress.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_decomp_corrupt_block"
+path = "fuzz_targets/fuzz_decomp_corrupt_block.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_decomp_corrupt_frame"
+path = "fuzz_targets/fuzz_decomp_corrupt_frame.rs"
 test = false
 doc = false

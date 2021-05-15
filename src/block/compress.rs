@@ -18,74 +18,42 @@ use alloc::vec::Vec;
 #[cfg(feature = "safe-encode")]
 use core::convert::TryInto;
 
+use super::{CompressError, WINDOW_SIZE};
+
 /// Increase step size after 1<<INCREASE_STEPSIZE_BITSHIFT non matches
 const INCREASE_STEPSIZE_BITSHIFT: usize = 5;
-
-/// hashes and right shifts to a maximum value of 16bit, 65535
-/// The right shift is done in order to not exceed, the hashtables capacity
-fn hash(sequence: u32) -> u32 {
-    (sequence.wrapping_mul(2654435761_u32)) >> 16
-}
-
-/// hashes and right shifts to a maximum value of 16bit, 65535
-/// The right shift is done in order to not exceed, the hashtables capacity
-#[cfg(target_pointer_width = "64")]
-fn hash5(sequence: usize) -> u32 {
-    let primebytes = if cfg!(target_endian = "little") {
-        889523592379_usize
-    } else {
-        11400714785074694791_usize
-    };
-    return (((sequence << 24).wrapping_mul(primebytes)) >> 48) as u32;
-}
 
 /// Read a 4-byte "batch" from some position.
 ///
 /// This will read a native-endian 4-byte integer from some position.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn get_batch(input: &[u8], n: usize) -> u32 {
+pub(super) fn get_batch(input: &[u8], n: usize) -> u32 {
     unsafe { read_u32_ptr(input.as_ptr().add(n)) }
 }
 
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn get_batch(input: &[u8], n: usize) -> u32 {
+pub(super) fn get_batch(input: &[u8], n: usize) -> u32 {
     let arr: &[u8; 4] = input[n..n + 4].try_into().unwrap();
-    u32::from_le_bytes(*arr)
+    u32::from_ne_bytes(*arr)
 }
 
-/// Read a 4-byte "batch" from some position.
+/// Read an usize sized "batch" from some position.
 ///
-/// This will read a native-endian 4-byte integer from some position.
+/// This will read a native-endian usize from some position.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn get_batch_arch(input: &[u8], n: usize) -> usize {
+pub(super) fn get_batch_arch(input: &[u8], n: usize) -> usize {
     unsafe { read_usize_ptr(input.as_ptr().add(n)) }
 }
 
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn get_batch_arch(input: &[u8], n: usize) -> usize {
+pub(super) fn get_batch_arch(input: &[u8], n: usize) -> usize {
     const USIZE_SIZE: usize = core::mem::size_of::<usize>();
     let arr: &[u8; USIZE_SIZE] = input[n..n + USIZE_SIZE].try_into().unwrap();
-    usize::from_le_bytes(*arr)
-}
-
-#[inline]
-#[cfg(target_pointer_width = "64")]
-fn get_hash_at(input: &[u8], pos: usize) -> usize {
-    if input.len() < u16::MAX as usize {
-        hash(get_batch(input, pos)) as usize
-    } else {
-        hash5(get_batch_arch(input, pos)) as usize
-    }
-}
-
-#[inline]
-#[cfg(target_pointer_width = "32")]
-fn get_hash_at(input: &[u8], pos: usize) -> usize {
-    hash(get_batch(input, pos)) as usize
+    usize::from_ne_bytes(*arr)
 }
 
 #[inline]
@@ -99,6 +67,7 @@ fn token_from_literal(lit_len: usize) -> u8 {
         0xF0
     }
 }
+
 #[inline]
 fn token_from_literal_and_match_length(lit_len: usize, duplicate_length: usize) -> u8 {
     let mut token = if lit_len < 0xF {
@@ -125,88 +94,82 @@ fn token_from_literal_and_match_length(lit_len: usize, duplicate_length: usize) 
 /// Counts the number of same bytes in two byte streams.
 /// `input` is the complete input
 /// `cur` is the current position in the input. it will be incremented by the number of matched bytes
-/// `input_dupl` is a pointer back in the input
+/// `source` either the same as input or an external slice
+/// `candidate` is the candidate position in `source`
 ///
-/// The function ignores the last 7bytes (END_OFFSET) in input as this should be literals.
+/// The function ignores the last END_OFFSET bytes in input as those should be literals.
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
-    let input_dupl = &input[candidate as usize..];
+fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
+    const USIZE_SIZE: usize = core::mem::size_of::<usize>();
     let cur_slice = &input[*cur..input.len() - END_OFFSET];
+    let cand_slice = &source[candidate..];
 
     let mut num = 0;
-    const USIZE_SIZE: usize = core::mem::size_of::<usize>();
     for (block1, block2) in cur_slice
         .chunks_exact(USIZE_SIZE)
-        .zip(input_dupl.chunks_exact(USIZE_SIZE))
+        .zip(cand_slice.chunks_exact(USIZE_SIZE))
     {
-        let input_block = as_usize_le(block1);
-        let match_block = as_usize_le(block2);
+        let input_block = usize::from_ne_bytes(block1.try_into().unwrap());
+        let match_block = usize::from_ne_bytes(block2.try_into().unwrap());
 
         if input_block == match_block {
             num += USIZE_SIZE;
         } else {
             let diff = input_block ^ match_block;
-            num += get_common_bytes(diff) as usize;
-            break;
+            num += (diff.to_le().trailing_zeros() / 8) as usize;
+            *cur += num;
+            return num;
         }
     }
+
+    // If we're here we may have 1 to 7 bytes left to check close to the end of input
+    // or source slices. Since this is rare occurrence we mark it cold to get better
+    // ~5% better performance.
+    #[cold]
+    fn count_same_bytes_tail(a: &[u8], b: &[u8], offset: usize) -> usize {
+        a.iter()
+            .zip(b)
+            .skip(offset)
+            .take_while(|(a, b)| a == b)
+            .count()
+    }
+    num += count_same_bytes_tail(cur_slice, cand_slice, num);
 
     *cur += num;
     num
 }
 
-#[inline]
-#[cfg(feature = "safe-encode")]
-#[cfg(target_pointer_width = "64")]
-fn as_usize_le(array: &[u8]) -> usize {
-    (array[0] as usize)
-        | ((array[1] as usize) << 8)
-        | ((array[2] as usize) << 16)
-        | ((array[3] as usize) << 24)
-        | ((array[4] as usize) << 32)
-        | ((array[5] as usize) << 40)
-        | ((array[6] as usize) << 48)
-        | ((array[7] as usize) << 56)
-}
-
-#[inline]
-#[cfg(feature = "safe-encode")]
-#[cfg(target_pointer_width = "32")]
-fn as_usize_le(array: &[u8]) -> usize {
-    (array[0] as usize)
-        | ((array[1] as usize) << 8)
-        | ((array[2] as usize) << 16)
-        | ((array[3] as usize) << 24)
-}
-
 /// Counts the number of same bytes in two byte streams.
 /// `input` is the complete input
 /// `cur` is the current position in the input. it will be incremented by the number of matched bytes
-/// `input_dupl` is a pointer back in the input
+/// `source` either the same as input OR an external slice
+/// `candidate` is the candidate position in `source`
 ///
-/// The function ignores the last 7bytes (END_OFFSET) in input as this should be literals.
+/// The function ignores the last END_OFFSET bytes in input as those should be literals.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
-    let start = *cur;
+fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
+    let max_input_match = input.len().saturating_sub(*cur + END_OFFSET);
+    let max_candidate_match = source.len() - candidate;
+    // Considering both limits calc how far we may match in input.
+    let input_end = *cur + max_input_match.min(max_candidate_match);
 
-    let mut input_dupl_ptr = unsafe { input.as_ptr().add(candidate) };
+    let start = *cur;
+    let mut source_ptr = unsafe { source.as_ptr().add(candidate) };
 
     // compare 4/8 bytes blocks depending on the arch
     const STEP_SIZE: usize = core::mem::size_of::<usize>();
-    while *cur + STEP_SIZE + END_OFFSET < input.len() {
-        let diff =
-            read_usize_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_usize_ptr(input_dupl_ptr);
+    while *cur + STEP_SIZE <= input_end {
+        let diff = read_usize_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_usize_ptr(source_ptr);
 
         if diff == 0 {
             *cur += STEP_SIZE;
             unsafe {
-                input_dupl_ptr = input_dupl_ptr.add(STEP_SIZE);
+                source_ptr = source_ptr.add(STEP_SIZE);
             }
-            continue;
         } else {
-            *cur += get_common_bytes(diff) as usize;
+            *cur += (diff.to_le().trailing_zeros() / 8) as usize;
             return *cur - start;
         }
     }
@@ -214,35 +177,33 @@ fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
     // compare 4 bytes block
     #[cfg(target_pointer_width = "64")]
     {
-        if *cur + 4 + END_OFFSET < input.len() {
-            let diff =
-                read_u32_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u32_ptr(input_dupl_ptr);
+        if *cur + 4 <= input_end {
+            let diff = read_u32_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u32_ptr(source_ptr);
 
             if diff == 0 {
                 *cur += 4;
-                return *cur - start;
+                unsafe {
+                    source_ptr = source_ptr.add(4);
+                }
             } else {
-                *cur += (diff.trailing_zeros() >> 3) as usize;
+                *cur += (diff.to_le().trailing_zeros() / 8) as usize;
                 return *cur - start;
             }
         }
     }
 
     // compare 2 bytes block
-    if *cur + 2 + END_OFFSET < input.len() {
-        let diff = read_u16_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u16_ptr(input_dupl_ptr);
-
-        if diff == 0 {
-            *cur += 2;
-            return *cur - start;
-        } else {
-            *cur += (diff.trailing_zeros() >> 3) as usize;
-            return *cur - start;
+    if *cur + 2 <= input_end
+        && unsafe { read_u16_ptr(input.as_ptr().add(*cur)) == read_u16_ptr(source_ptr) }
+    {
+        *cur += 2;
+        unsafe {
+            source_ptr = source_ptr.add(2);
         }
     }
 
-    if *cur + 1 + END_OFFSET < input.len()
-        && unsafe { input.as_ptr().add(*cur).read() } == unsafe { input_dupl_ptr.read() }
+    if *cur + 1 <= input_end
+        && unsafe { input.as_ptr().add(*cur).read() } == unsafe { source_ptr.read() }
     {
         *cur += 1;
     }
@@ -250,16 +211,17 @@ fn count_same_bytes(input: &[u8], candidate: usize, cur: &mut usize) -> usize {
     *cur - start
 }
 
-/// Write an integer to the output in LSIC format.
+// Write an integer to the output in LSIC format.
 #[inline]
 #[cfg(feature = "safe-encode")]
 fn write_integer(output: &mut Sink, mut n: usize) {
+    // Note: Since `n` is usually < 0xFF and writing multiple bytes to the output
+    // requires 2 branches of bound check (due to the possibility of add overflows)
+    // the simple byte at a time implementation bellow is faster in most cases.
     while n >= 0xFF {
         n -= 0xFF;
         push_byte(output, 0xFF);
     }
-
-    // Write the remaining byte.
     push_byte(output, n as u8);
 }
 
@@ -268,53 +230,58 @@ fn write_integer(output: &mut Sink, mut n: usize) {
 #[cfg(not(feature = "safe-encode"))]
 fn write_integer(output: &mut Sink, mut n: usize) {
     // Write the 0xFF bytes as long as the integer is higher than said value.
-    push_u32(output, 0xFFFFFFFF);
-    while n >= 4 * 0xFF {
-        n -= 4 * 0xFF;
-        output.set_pos(output.pos() + 4);
-        push_u32(output, 0xFFFFFFFF);
+    if n >= 4 * 0xFF {
+        // In this unlikelly branch we use a fill instead of a loop,
+        // otherwise rustc may output a large unrolled/vectorized loop.
+        let bulk = n / (4 * 0xFF);
+        n %= 4 * 0xFF;
+        unsafe {
+            output
+                .output
+                .get_unchecked_mut(output.pos()..output.pos() + 4 * bulk)
+                .fill(0xFF)
+        }
+        output.set_pos(output.pos() + 4 * bulk);
     }
 
+    // Handle last 1 to 4 bytes
+    push_u32(output, 0xFFFFFFFF);
     // Updating output len for the remainder
-    output.set_pos(output.pos() + 1 + n / 255);
+    output.set_pos(output.pos() - 4 + 1 + n / 255);
     unsafe {
         // Write the remaining byte.
         *output.as_mut_ptr().sub(1) = (n % 255) as u8;
-    };
-}
-
-#[inline]
-#[cfg(not(feature = "safe-encode"))]
-fn push_u32(output: &mut Sink, el: u32) {
-    unsafe {
-        let out_ptr = output.as_mut_ptr();
-        core::ptr::copy_nonoverlapping(el.to_le_bytes().as_ptr(), out_ptr, 4);
     }
 }
 
 /// Handle the last bytes from the input as literals
 #[cold]
-fn handle_last_literals(output: &mut Sink, input: &[u8], input_size: usize, start: usize) -> usize {
-    let lit_len = input_size - start;
+fn handle_last_literals(output: &mut Sink, input: &[u8], start: usize) {
+    let lit_len = input.len() - start;
 
     let token = token_from_literal(lit_len);
     push_byte(output, token);
-    // output.push(token);
     if lit_len >= 0xF {
         write_integer(output, lit_len - 0xF);
     }
     // Now, write the actual literals.
-    copy_literals(output, &input[start..]);
-    output.pos()
+    output.extend_from_slice(&input[start..]);
 }
 
 /// Moves the cursors back as long as the bytes match, to find additional bytes in a duplicate
-///
 #[inline]
 #[cfg(feature = "safe-encode")]
-pub fn backtrack_match(candidate: &mut usize, cur: &mut usize, literal_start: usize, input: &[u8]) {
+fn backtrack_match(
+    input: &[u8],
+    cur: &mut usize,
+    literal_start: usize,
+    source: &[u8],
+    candidate: &mut usize,
+) {
+    // Note: Even if iterator version of this loop has less branches inside the loop it has more
+    // branches before the loop. That in practice seems to make it slower than the while version bellow.
     // TODO: It should be possible remove all bounds checks, since we are walking backwards
-    while *candidate > 0 && *cur > literal_start && input[*cur - 1] == input[*candidate - 1] {
+    while *candidate > 0 && *cur > literal_start && input[*cur - 1] == source[*candidate - 1] {
         *cur -= 1;
         *candidate -= 1;
     }
@@ -324,117 +291,185 @@ pub fn backtrack_match(candidate: &mut usize, cur: &mut usize, literal_start: us
 ///
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-pub fn backtrack_match(candidate: &mut usize, cur: &mut usize, literal_start: usize, input: &[u8]) {
+fn backtrack_match(
+    input: &[u8],
+    cur: &mut usize,
+    literal_start: usize,
+    source: &[u8],
+    candidate: &mut usize,
+) {
     while unsafe {
         *candidate > 0
             && *cur > literal_start
-            && input.get_unchecked(*cur - 1) == input.get_unchecked(*candidate - 1)
+            && input.get_unchecked(*cur - 1) == source.get_unchecked(*candidate - 1)
     } {
         *cur -= 1;
         *candidate -= 1;
     }
 }
 
-/// Compress all bytes of `input` into `output`.
+/// Compress all bytes of `input[input_pos..]` into `output`.
 ///
-/// T:HashTable is the dictionary of previously encoded sequences.
+/// Bytes in `input[..input_pos]` are treated as a preamble and can be used for lookback.
+/// This part is known as the compressor "prefix".
+/// Bytes in `ext_dict` logically precede the bytes in `input` and can also be used for lookback.
+///
+/// `input_stream_offset` is the logical position of the first byte of `input`. This allows same `dict`
+/// to be used for many calls to `compress_internal` as we can "readdress" the first byte of `input`
+/// to be something other than 0.
+///
+/// `dict` is the dictionary of previously encoded sequences.
 ///
 /// This is used to find duplicates in the stream so they are not written multiple times.
 ///
 /// Every four bytes are hashed, and in the resulting slot their position in the input buffer
 /// is placed in the dict. This way we can easily look up a candidate to back references.
 ///
-/// returns the new end position of the Sink (=added elements, if start pos in the sink was 0)
+/// Returns the number of bytes written (compressed) into `output`.
+///
+/// # Const parameters
+/// `USE_DICT`: Disables usage of ext_dict (it'll panic if a non-empty slice is used).
+/// In other words, this generates more optimized code when an external dictionary isn't used.
+///
+/// A similar const argument could be used to disable the Prefix mode (eg. USE_PREFIX),
+/// which would impose `input_pos == 0 && input_stream_offset == 0`. Experiments didn't
+/// show significant improvement though.
 #[inline]
-pub fn compress_into_with_table<T: HashTable>(
+pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
     input: &[u8],
+    input_pos: usize,
     output: &mut Sink,
     dict: &mut T,
-) -> usize {
-    let input_size = input.len();
-
-    // Input too small, no compression (all literals)
-    if input_size < LZ4_MIN_LENGTH as usize {
-        // The length (in bytes) of the literals section.
-        let lit_len = input_size;
-        let token = token_from_literal(lit_len);
-        push_byte(output, token);
-        // output.push(token);
-        if lit_len >= 0xF {
-            write_integer(output, lit_len - 0xF);
-        }
-
-        // Now, write the actual literals.
-        copy_literals(output, &input);
-        return output.pos();
+    ext_dict: &[u8],
+    input_stream_offset: usize,
+) -> Result<usize, CompressError> {
+    assert!(input_pos <= input.len());
+    assert!(ext_dict.len() <= super::WINDOW_SIZE);
+    assert!(ext_dict.len() <= input_stream_offset);
+    if USE_DICT {
+        // Check for overflow hazard when using ext_dict
+        assert!(input_stream_offset
+            .checked_add(input.len())
+            .and_then(|i| i.checked_add(ext_dict.len()))
+            .map_or(false, |i| i <= isize::MAX as usize));
+    }
+    if output.capacity() - output.pos() < get_maximum_output_size(input.len() - input_pos) {
+        return Err(CompressError::OutputTooSmall);
     }
 
-    let hash = get_hash_at(input, 0);
-    dict.put_at(hash, 0);
+    let output_start_pos = output.pos();
+    if input_pos + LZ4_MIN_LENGTH > input.len() {
+        handle_last_literals(output, input, 0);
+        return Ok(output.pos() - output_start_pos);
+    }
 
-    assert!(LZ4_MIN_LENGTH as usize > END_OFFSET);
-    let end_pos_check = input_size - MFLIMIT as usize;
+    let ext_dict_stream_offset = input_stream_offset - ext_dict.len();
+    let end_pos_check = input.len() - MFLIMIT;
+    let mut literal_start = input_pos;
+    let mut cur = input_pos;
 
-    let mut cur = 0;
-    let mut literal_start = cur;
-    cur += 1;
-    // let mut forward_hash = get_hash_at(input, cur, dict_bitshift);
+    if cur == 0 && input_stream_offset == 0 {
+        // According to the spec we can't start with a match,
+        // except when referencing another block.
+        let hash = T::get_hash_at(input, 0);
+        dict.put_at(hash, 0);
+        cur = 1;
+    }
 
     loop {
         // Read the next block into two sections, the literals and the duplicates.
         let mut step_size;
         let mut candidate;
+        let mut candidate_source;
+        let mut offset;
         let mut non_match_count = 1 << INCREASE_STEPSIZE_BITSHIFT;
         // The number of bytes before our cursor, where the duplicate starts.
         let mut next_cur = cur;
 
         // In this loop we search for duplicates via the hashtable. 4bytes or 8bytes are hashed and compared.
         loop {
-            non_match_count += 1;
             step_size = non_match_count >> INCREASE_STEPSIZE_BITSHIFT;
+            non_match_count += 1;
 
             cur = next_cur;
             next_cur += step_size;
 
+            // Same as cur + MFLIMIT > input.len()
             if cur > end_pos_check {
-                return handle_last_literals(output, input, input_size, literal_start);
+                handle_last_literals(output, input, literal_start);
+                return Ok(output.pos() - output_start_pos);
             }
             // Find a candidate in the dictionary with the hash of the current four bytes.
             // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
             // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
-            let hash = get_hash_at(input, cur);
+            let hash = T::get_hash_at(input, cur);
             candidate = dict.get_at(hash);
-            dict.put_at(hash, cur);
+            dict.put_at(hash, cur + input_stream_offset);
+
+            // Sanity check: Matches can't be ahead of `cur`.
+            debug_assert!(candidate <= input_stream_offset + cur);
 
             // Two requirements to the candidate exists:
-            // - We should not return a position which is merely a hash collision, so w that the
+            // - We should not return a position which is merely a hash collision, so that the
             //   candidate actually matches what we search for.
             // - We can address up to 16-bit offset, hence we are only able to address the candidate if
             //   its offset is less than or equals to 0xFFFF.
-            if (candidate as usize + MAX_DISTANCE) < cur {
+            if input_stream_offset + cur - candidate > MAX_DISTANCE {
                 continue;
             }
 
-            if get_batch(input, candidate as usize) == get_batch(input, cur) {
+            if candidate >= input_stream_offset {
+                // match within input
+                offset = (input_stream_offset + cur - candidate) as u16;
+                candidate -= input_stream_offset;
+                candidate_source = input;
+            } else if USE_DICT {
+                // Sanity check, which may fail if we lost history beyond MAX_DISTANCE
+                debug_assert!(
+                    candidate >= ext_dict_stream_offset,
+                    "Lost history in ext dict mode"
+                );
+                // match within ext dict
+                offset = (input_stream_offset + cur - candidate) as u16;
+                candidate -= ext_dict_stream_offset;
+                candidate_source = ext_dict;
+            } else {
+                // Match is not reachable anymore
+                // eg. compressing an independent block frame w/o clearing
+                // the matches tables, only increasing input_stream_offset.
+                // Sanity check
+                debug_assert!(input_pos == 0, "Lost history in prefix mode");
+                continue;
+            }
+
+            if get_batch(candidate_source, candidate) == get_batch(input, cur) {
                 break;
             }
         }
 
-        backtrack_match(&mut candidate, &mut cur, literal_start, input);
+        // Extend the match backwards if we can
+        backtrack_match(
+            input,
+            &mut cur,
+            literal_start,
+            candidate_source,
+            &mut candidate,
+        );
 
         // The length (in bytes) of the literals section.
         let lit_len = cur - literal_start;
 
         // Generate the higher half of the token.
-        let offset = (cur - candidate as usize) as u16;
         cur += MINMATCH;
+        candidate += MINMATCH;
+        let duplicate_length = count_same_bytes(input, &mut cur, candidate_source, candidate);
 
-        let duplicate_length = count_same_bytes(input, candidate as usize + MINMATCH, &mut cur);
-
-        let hash = get_hash_at(input, cur - 2);
-        dict.put_at(hash, cur - 2);
+        // Note: The `- 2` offset was copied from the reference implementation, it could be arbitrary.
+        let hash = T::get_hash_at(input, cur - 2);
+        dict.put_at(hash, cur - 2 + input_stream_offset);
 
         let token = token_from_literal_and_match_length(lit_len, duplicate_length);
+
         // Push the token to the output stream.
         push_byte(output, token);
         // If we were unable to fit the literals length into the token, write the extensional
@@ -446,7 +481,7 @@ pub fn compress_into_with_table<T: HashTable>(
         // Now, write the actual literals.
         //
         // The unsafe version copies blocks of 8bytes, and therefore may copy up to 7bytes more than needed.
-        // This is safe, because the last 16 bytes (MF_LIMIT) are handled in handle_last_literals.
+        // This is safe, because the last 12 bytes (MF_LIMIT) are handled in handle_last_literals.
         copy_literals_wild(output, &input, literal_start, lit_len);
         // write the offset in little endian.
         push_u16(output, offset);
@@ -457,7 +492,6 @@ pub fn compress_into_with_table<T: HashTable>(
             write_integer(output, duplicate_length - 0xF);
         }
         literal_start = cur;
-        // forward_hash = get_hash_at(input, cur, dict_bitshift);
     }
 }
 
@@ -472,7 +506,7 @@ fn push_byte(output: &mut Sink, el: u8) {
 fn push_byte(output: &mut Sink, el: u8) {
     unsafe {
         core::ptr::write(output.as_mut_ptr(), el);
-        output.set_pos(output.pos() + 1);
+        output.pos += 1;
     }
 }
 
@@ -486,37 +520,83 @@ fn push_u16(output: &mut Sink, el: u16) {
 #[cfg(not(feature = "safe-encode"))]
 fn push_u16(output: &mut Sink, el: u16) {
     unsafe {
-        let out_ptr = output.as_mut_ptr();
-        core::ptr::write(out_ptr, el as u8);
-        core::ptr::write(out_ptr.add(1), (el >> 8) as u8);
-        output.set_pos(output.pos() + 2);
-    }
-}
-
-#[inline]
-fn copy_literals(output: &mut Sink, input: &[u8]) {
-    output.extend_from_slice(input);
+        output
+            .output
+            .get_unchecked_mut(output.pos()..output.pos() + 2)
+            .copy_from_slice(&el.to_le_bytes())
+    };
+    output.pos += 2;
 }
 
 #[inline]
 #[cfg(feature = "safe-encode")]
+fn push_u32(output: &mut Sink, el: u32) {
+    output.extend_from_slice(&el.to_le_bytes());
+}
+
+#[inline]
+#[cfg(not(feature = "safe-encode"))]
+fn push_u32(output: &mut Sink, el: u32) {
+    unsafe {
+        output
+            .output
+            .get_unchecked_mut(output.pos()..output.pos() + 4)
+            .copy_from_slice(&el.to_le_bytes())
+    };
+    output.pos += 4;
+}
+
+#[inline(always)] // (always) necessary otherwise compiler fails to inline it
+#[cfg(feature = "safe-encode")]
 fn copy_literals_wild(output: &mut Sink, input: &[u8], input_start: usize, len: usize) {
-    output.extend_from_slice(&input[input_start..input_start + len]);
+    match len {
+        0..=8 => output.output[output.pos..output.pos + 8]
+            .copy_from_slice(&input[input_start..input_start + 8]),
+        9..=16 => output.output[output.pos..output.pos + 16]
+            .copy_from_slice(&input[input_start..input_start + 16]),
+        17..=24 => output.output[output.pos..output.pos + 24]
+            .copy_from_slice(&input[input_start..input_start + 24]),
+        _ => output.output[output.pos..output.pos + len]
+            .copy_from_slice(&input[input_start..input_start + len]),
+    }
+    output.pos += len;
 }
 
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
 fn copy_literals_wild(output: &mut Sink, input: &[u8], input_start: usize, len: usize) {
-    use crate::block::wild_copy_from_src_8;
+    debug_assert!(input_start + len / 8 * 8 + ((len % 8) != 0) as usize * 8 <= input.len());
+    debug_assert!(output.pos() + len / 8 * 8 + ((len % 8) != 0) as usize * 8 <= output.capacity());
     unsafe {
-        wild_copy_from_src_8(input.as_ptr().add(input_start), output.as_mut_ptr(), len);
-        //output.set_len(output.len() + len);
-        output.pos += len;
+        // Note: This used to be a wild copy loop of 8 bytes, but the compiler consistently
+        // transformed it into a call to memcopy, which hurts performance significantly for
+        // small copies, which are common.
+        match len {
+            0..=8 => output
+                .output
+                .get_unchecked_mut(output.pos..output.pos + 8)
+                .copy_from_slice(input.get_unchecked(input_start..input_start + 8)),
+            9..=16 => output
+                .output
+                .get_unchecked_mut(output.pos..output.pos + 16)
+                .copy_from_slice(input.get_unchecked(input_start..input_start + 16)),
+            17..=24 => output
+                .output
+                .get_unchecked_mut(output.pos..output.pos + 24)
+                .copy_from_slice(input.get_unchecked(input_start..input_start + 24)),
+            _ => core::ptr::copy_nonoverlapping(
+                input.as_ptr().add(input_start),
+                output.as_mut_ptr(),
+                len,
+            ),
+        }
     }
+    output.pos += len;
 }
 
 /// Returns the maximum output size of the compressed data.
 /// Can be used to preallocate capacity on the output vector
+#[inline]
 pub fn get_maximum_output_size(input_len: usize) -> usize {
     16 + 4 + (input_len as f64 * 1.1) as usize
 }
@@ -525,23 +605,66 @@ pub fn get_maximum_output_size(input_len: usize) -> usize {
 /// The method chooses an appropriate hashtable to lookup duplicates and calls `compress_into_with_table`.
 /// Sink should be preallocated with a size of `get_maximum_output_size`.
 ///
-/// returns the new end position of the Sink (=added elements, if start pos in the sink was 0)
+/// Returns the number of bytes written (compressed) into `output`.
 #[inline]
-pub fn compress_into(input: &[u8], compressed: &mut Sink) -> usize {
+pub fn compress_into(input: &[u8], compressed: &mut Sink) -> Result<usize, CompressError> {
     let (dict_size, dict_bitshift) = get_table_size(input.len());
     if input.len() < u16::MAX as usize {
         let mut dict = HashTableU16::new(dict_size, dict_bitshift);
-        compress_into_with_table(input, compressed, &mut dict)
+        compress_internal::<_, false>(input, 0, compressed, &mut dict, b"", 0)
     } else if input.len() < u32::MAX as usize {
         let mut dict = HashTableU32::new(dict_size, dict_bitshift);
-        compress_into_with_table(input, compressed, &mut dict)
+        compress_internal::<_, false>(input, 0, compressed, &mut dict, b"", 0)
     } else {
         let mut dict = HashTableUsize::new(dict_size, dict_bitshift);
-        compress_into_with_table(input, compressed, &mut dict)
+        compress_internal::<_, false>(input, 0, compressed, &mut dict, b"", 0)
     }
 }
-fn get_output_vec(input: &[u8]) -> Vec<u8> {
-    let max_size = get_maximum_output_size(input.len());
+
+/// Compress all bytes of `input` into `output`.
+/// The method chooses an appropriate hashtable to lookup duplicates and calls `compress_into_with_table`.
+/// Sink should be preallocated with a size of `get_maximum_output_size`.
+///
+/// Returns the number of bytes written (compressed) into `output`.
+#[inline]
+pub fn compress_into_with_dict(
+    input: &[u8],
+    compressed: &mut Sink,
+    mut dict_data: &[u8],
+) -> Result<usize, CompressError> {
+    let (dict_size, dict_bitshift) = get_table_size(input.len());
+    if dict_data.len() + input.len() < u16::MAX as usize {
+        let mut dict = HashTableU16::new(dict_size, dict_bitshift);
+        init_dict(&mut dict, &mut dict_data);
+        compress_internal::<_, true>(input, 0, compressed, &mut dict, dict_data, dict_data.len())
+    } else if dict_data.len() + input.len() < u32::MAX as usize {
+        let mut dict = HashTableU32::new(dict_size, dict_bitshift);
+        init_dict(&mut dict, &mut dict_data);
+        compress_internal::<_, true>(input, 0, compressed, &mut dict, dict_data, dict_data.len())
+    } else {
+        let mut dict = HashTableUsize::new(dict_size, dict_bitshift);
+        init_dict(&mut dict, &mut dict_data);
+        compress_internal::<_, true>(input, 0, compressed, &mut dict, dict_data, dict_data.len())
+    }
+}
+
+#[inline]
+fn init_dict<T: HashTable>(dict: &mut T, dict_data: &mut &[u8]) {
+    if dict_data.len() > WINDOW_SIZE {
+        *dict_data = &dict_data[dict_data.len() - WINDOW_SIZE..];
+    }
+    let mut i = 0usize;
+    while i + core::mem::size_of::<usize>() <= dict_data.len() {
+        let hash = T::get_hash_at(dict_data, i);
+        dict.put_at(hash, i);
+        // Note: The 3 byte step was copied from the reference implementation, it could be arbitrary.
+        i += 3;
+    }
+}
+
+#[inline]
+pub(crate) fn get_output_vec(input_len: usize) -> Vec<u8> {
+    let max_size = get_maximum_output_size(input_len);
 
     let mut compressed = Vec::with_capacity(max_size);
     #[cfg(not(feature = "safe-encode"))]
@@ -555,34 +678,51 @@ fn get_output_vec(input: &[u8]) -> Vec<u8> {
     compressed
 }
 
-/// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as litte endian.
-/// Can be used in conjuction with `decompress_size_prepended`
+/// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as a little endian u32.
+/// Can be used in conjunction with `decompress_size_prepended`
 #[inline]
 pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
-    let mut compressed = get_output_vec(input);
-    //compress_into(input, &mut sink);
-    let size = input.len() as u32;
-    compressed[0] = size as u8;
-    compressed[1] = (size >> 8) as u8;
-    compressed[2] = (size >> 16) as u8;
-    compressed[3] = (size >> 24) as u8;
+    let mut compressed = get_output_vec(4 + input.len());
     let mut sink: Sink = (&mut compressed).into();
-    sink.pos = 4;
-    let new_pos = compress_into(input, &mut sink);
-    compressed.resize(new_pos, 0);
+    push_u32(&mut sink, input.len() as u32);
+    let compressed_len = compress_into(input, &mut sink).unwrap();
+    compressed.truncate(4 + compressed_len);
     compressed
 }
 
 /// Compress all bytes of `input`.
-///
 #[inline]
 pub fn compress(input: &[u8]) -> Vec<u8> {
     // In most cases, the compression won't expand the size, so we set the input size as capacity.
-    let mut compressed = get_output_vec(input);
+    let mut compressed = get_output_vec(input.len());
     let mut sink = (&mut compressed).into();
-    let new_pos = compress_into(input, &mut sink);
-    compressed.resize(new_pos, 0);
+    let compressed_len = compress_into(input, &mut sink).unwrap();
+    compressed.truncate(compressed_len);
+    compressed
+}
+
+/// Compress all bytes of `input` with an external dictionary.
+#[inline]
+pub fn compress_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
+    // In most cases, the compression won't expand the size, so we set the input size as capacity.
+    let mut compressed = get_output_vec(input.len());
+    let mut sink = (&mut compressed).into();
+    let compressed_len = compress_into_with_dict(input, &mut sink, ext_dict).unwrap();
+    compressed.truncate(compressed_len);
+    compressed
+}
+
+/// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as a little endian u32.
+/// Can be used in conjunction with `decompress_size_prepended_with_dict`
+#[inline]
+pub fn compress_prepend_size_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
+    // In most cases, the compression won't expand the size, so we set the input size as capacity.
+    let mut compressed = get_output_vec(4 + input.len());
+    let mut sink: Sink = (&mut compressed).into();
+    push_u32(&mut sink, input.len() as u32);
+    let compressed_len = compress_into_with_dict(input, &mut sink, ext_dict).unwrap();
+    compressed.truncate(4 + compressed_len);
     compressed
 }
 
@@ -609,6 +749,7 @@ fn read_usize_ptr(input: *const u8) -> usize {
     }
     num
 }
+
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
 fn read_u16_ptr(input: *const u8) -> u16 {
@@ -619,89 +760,86 @@ fn read_u16_ptr(input: *const u8) -> u16 {
     num
 }
 
-#[inline]
-fn get_common_bytes(diff: usize) -> u32 {
-    let tr_zeroes = diff.trailing_zeros();
-    // right shift by 3, because we are only interested in 8 bit blocks (1 byte)
-    tr_zeroes >> 3
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    #[cfg(target_pointer_width = "64")]
-    #[cfg(not(feature = "safe-encode"))]
-    fn test_get_common_bytes() {
-        let num1 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 1].as_ptr());
-        let num2 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 2].as_ptr());
-        let diff = num1 ^ num2;
+    fn test_count_same_bytes() {
+        // 8byte aligned block, zeros and ones are added because the end/offset
+        let first: &[u8] = &[
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let second: &[u8] = &[
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        ];
+        assert_eq!(count_same_bytes(first, &mut 0, second, 0), 16);
 
-        assert_eq!(get_common_bytes(diff), 7);
+        // 4byte aligned block
+        let first: &[u8] = &[
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0,
+        ];
+        let second: &[u8] = &[
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1,
+        ];
+        assert_eq!(count_same_bytes(first, &mut 0, second, 0), 20);
 
-        let num1 = read_usize_ptr([0, 0, 0, 0, 0, 0, 1, 1].as_ptr());
-        let num2 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 2].as_ptr());
-        let diff = num1 ^ num2;
-        assert_eq!(get_common_bytes(diff), 6);
-        let num1 = read_usize_ptr([1, 0, 0, 0, 0, 0, 1, 1].as_ptr());
-        let num2 = read_usize_ptr([0, 0, 0, 0, 0, 0, 0, 2].as_ptr());
-        let diff = num1 ^ num2;
-        assert_eq!(get_common_bytes(diff), 0);
+        // 2byte aligned block
+        let first: &[u8] = &[
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0,
+        ];
+        let second: &[u8] = &[
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1,
+        ];
+        assert_eq!(count_same_bytes(first, &mut 0, second, 0), 22);
+
+        // 1byte aligned block
+        let first: &[u8] = &[
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0,
+        ];
+        let second: &[u8] = &[
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1,
+        ];
+        assert_eq!(count_same_bytes(first, &mut 0, second, 0), 23);
+
+        // 1byte aligned block - last byte different
+        let first: &[u8] = &[
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0,
+        ];
+        let second: &[u8] = &[
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 6, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1,
+        ];
+        assert_eq!(count_same_bytes(first, &mut 0, second, 0), 22);
+
+        // 1byte aligned block
+        let first: &[u8] = &[
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 9, 5, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0,
+        ];
+        let second: &[u8] = &[
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 6, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1,
+        ];
+        assert_eq!(count_same_bytes(first, &mut 0, second, 0), 21);
+
+        for diff_idx in 0..100 {
+            let first: Vec<u8> = (0u8..255).cycle().take(100 + END_OFFSET).collect();
+            let mut second = first.clone();
+            second[diff_idx] = 255;
+            for start in 0..=diff_idx {
+                let same_bytes = count_same_bytes(&first, &mut start.clone(), &second, start);
+                assert_eq!(same_bytes, diff_idx - start);
+            }
+        }
     }
-
-    #[test]
-    #[cfg(target_pointer_width = "32")]
-    #[cfg(not(feature = "safe-encode"))]
-    fn test_get_common_bytes() {
-        let num1 = read_usize_ptr([0, 0, 0, 1].as_ptr());
-        let num2 = read_usize_ptr([0, 0, 0, 2].as_ptr());
-        let diff = num1 ^ num2;
-
-        assert_eq!(get_common_bytes(diff as usize), 3);
-
-        let num1 = read_usize_ptr([0, 0, 1, 1].as_ptr());
-        let num2 = read_usize_ptr([0, 0, 0, 2].as_ptr());
-        let diff = num1 ^ num2;
-        assert_eq!(get_common_bytes(diff as usize), 2);
-        let num1 = read_usize_ptr([1, 0, 1, 1].as_ptr());
-        let num2 = read_usize_ptr([0, 0, 0, 2].as_ptr());
-        let diff = num1 ^ num2;
-        assert_eq!(get_common_bytes(diff as usize), 0);
-    }
-
-    // #[test]
-    // fn test_count_same_bytes() {
-    //     // 8byte aligned block, zeros and ones are added because the end/offset
-    //     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    //     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-    //     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 16);
-
-    //     // 4byte aligned block
-    //     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
-    //     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-    //     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 20);
-
-    //     // 2byte aligned block
-    //     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
-    //     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-    //     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 22);
-
-    //     // 1byte aligned block
-    //     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
-    //     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-    //     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 23);
-
-    //     // 1byte aligned block - last byte different
-    //     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
-    //     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 6, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-    //     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 22);
-
-    //     // 1byte aligned block
-    //     let first:&[u8]  = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 9, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] ;
-    //     let second:&[u8] = &[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 3, 4, 6, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-    //     assert_eq!(count_same_bytes(first, second, &mut 0, first.len()), 21);
-    // }
 
     #[test]
     fn test_bug() {
@@ -709,5 +847,104 @@ mod tests {
             10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
         ];
         let _out = compress(&input);
+    }
+
+    #[test]
+    fn test_dict() {
+        let input: &[u8] = &[
+            10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
+        ];
+        let dict = input;
+        let compressed = compress_with_dict(&input, &dict);
+        assert_lt!(compressed.len(), compress(input).len());
+
+        assert!(compressed.len() < compress(input).len());
+        let mut uncompressed = vec![0u8; input.len()];
+        let uncomp_size = crate::block::decompress::decompress_into_with_dict(
+            &compressed,
+            &mut (&mut uncompressed).into(),
+            &dict,
+        )
+        .unwrap();
+        uncompressed.truncate(uncomp_size);
+        assert_eq!(input, uncompressed);
+    }
+
+    #[test]
+    fn test_dict_match_crossing() {
+        let input: &[u8] = &[
+            10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
+        ];
+        let dict = input;
+        let compressed = compress_with_dict(&input, &dict);
+        assert_lt!(compressed.len(), compress(input).len());
+
+        let mut uncompressed = vec![0u8; input.len() * 2];
+        // copy first half of the input into output
+        let dict_cutoff = dict.len() / 2;
+        let output_start = dict.len() - dict_cutoff;
+        uncompressed[..output_start].copy_from_slice(&dict[dict_cutoff..]);
+
+        let mut sink: Sink = (&mut uncompressed).into();
+        sink.set_pos(output_start);
+        let uncomp_len = crate::block::decompress::decompress_into_with_dict(
+            &compressed,
+            &mut sink,
+            &dict[..dict_cutoff],
+        )
+        .unwrap();
+        assert_eq!(input.len(), uncomp_len);
+        assert_eq!(
+            input,
+            &uncompressed[output_start..output_start + uncomp_len]
+        );
+    }
+
+    #[test]
+    fn test_conformant_last_block() {
+        // From the spec:
+        // The last match must start at least 12 bytes before the end of block.
+        // The last match is part of the penultimate sequence. It is followed by the last sequence, which contains only literals.
+        // Note that, as a consequence, an independent block < 13 bytes cannot be compressed, because the match must copy "something",
+        // so it needs at least one prior byte.
+        // When a block can reference data from another block, it can start immediately with a match and no literal,
+        // so a block of 12 bytes can be compressed.
+        let aaas: &[u8] = b"aaaaaaaaaaaaaaa";
+
+        // uncompressible
+        let out = compress(&aaas[..12]);
+        assert_gt!(out.len(), 12);
+        // compressible
+        let out = compress(&aaas[..13]);
+        assert_le!(out.len(), 13);
+        let out = compress(&aaas[..14]);
+        assert_le!(out.len(), 14);
+        let out = compress(&aaas[..15]);
+        assert_le!(out.len(), 15);
+
+        // dict uncompressible
+        let out = compress_with_dict(&aaas[..11], &aaas);
+        assert_gt!(out.len(), 11);
+        // compressible
+        let out = compress_with_dict(&aaas[..12], &aaas);
+        // According to the spec this _could_ compres, but it doesn't in this lib
+        // as it aborts compression for any input len < LZ4_MIN_LENGTH
+        assert_gt!(out.len(), 12);
+        let out = compress_with_dict(&aaas[..13], &aaas);
+        assert_le!(out.len(), 13);
+        let out = compress_with_dict(&aaas[..14], &aaas);
+        assert_le!(out.len(), 14);
+        let out = compress_with_dict(&aaas[..15], &aaas);
+        assert_le!(out.len(), 15);
+    }
+
+    #[test]
+    fn test_dict_size() {
+        let dict = vec![b'a'; 1024 * 1024];
+        let input = &b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaa"[..];
+        let compressed = compress_prepend_size_with_dict(&input, &dict);
+        let decompressed =
+            crate::block::decompress_size_prepended_with_dict(&compressed, &dict).unwrap();
+        assert_eq!(decompressed, input);
     }
 }

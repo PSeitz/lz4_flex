@@ -1,7 +1,7 @@
 mod utils;
 
-use lz4_flex::block::compress::compress_prepend_size;
-use lz4_flex::block::decompress::decompress_size_prepended;
+use lz4_flex::block::compress_prepend_size;
+use lz4_flex::block::decompress_size_prepended;
 use wasm_bindgen::prelude::*;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global

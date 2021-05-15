@@ -11,5 +11,5 @@ fuzz_target!(|data: &[u8]| {
 		}
 	}
     // should not panic
-    decompress_size_prepended(&data);
+    let _ = decompress_size_prepended(&data);
 });

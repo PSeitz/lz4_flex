@@ -16,5 +16,4 @@ script:
 - cargo tarpaulin --verbose --timeout 120 --out Xml --no-default-features --features safe-encode --ciserver travis-ci --coveralls $TRAVIS_JOB_ID
 - cargo tarpaulin --verbose --timeout 120 --out Xml --no-default-features --features safe-decode --ciserver travis-ci --coveralls $TRAVIS_JOB_ID
 - cargo tarpaulin --verbose --timeout 120 --out Xml --no-default-features --ciserver travis-ci --coveralls $TRAVIS_JOB_ID
-
-
+- cargo tarpaulin --verbose --timeout 120 --out Xml --ciserver travis-ci --coveralls $TRAVIS_JOB_ID

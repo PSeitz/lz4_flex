@@ -4,8 +4,8 @@
 
 extern crate wasm_bindgen_test;
 use wasm_bindgen_test::*;
-use lz4_flex::block::compress::compress_prepend_size;
-use lz4_flex::block::decompress::decompress_size_prepended;
+use lz4_flex::block::compress_prepend_size;
+use lz4_flex::block::decompress_size_prepended;
 
 #[wasm_bindgen_test]
 fn test_compression() {

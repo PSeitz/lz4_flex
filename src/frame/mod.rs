@@ -1,115 +1,88 @@
-pub mod compress;
-pub mod decompress;
+//! LZ4 Frame Format
+//!
+//! As defined in <https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md>
 
-const MAGIC_NUMBER: u32 = 0x184D2204;
-const END_MARK: u32 = 0;
+use std::{fmt, io};
 
-#[allow(dead_code)]
-#[derive(Clone, Copy)]
-pub enum BlockSize {
-    Default = 0, // Default - 64KB
-    Max64KB = 4,
-    Max256KB = 5,
-    Max1MB = 6,
-    Max4MB = 7,
+pub(crate) mod compress;
+pub(crate) mod decompress;
+pub(crate) mod header;
+
+pub use compress::FrameEncoder;
+pub use decompress::FrameDecoder;
+pub use header::{BlockMode, BlockSize, FrameInfo};
+
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum Error {
+    /// Compression error.
+    CompressionError(crate::block::CompressError),
+    /// Decompression error.
+    DecompressionError(crate::block::DecompressError),
+    /// An io::Error was encountered.
+    IoError(io::Error),
+    /// Unsupported block size.
+    UnsupportedBlocksize(u8),
+    /// Unsupported frame version.
+    UnsupportedVersion(u8),
+    /// Wrong magic number for the LZ4 frame format.
+    WrongMagicNumber,
+    /// Reserved bits set.
+    ReservedBitsSet,
+    /// Block header is malformed.
+    InvalidBlockInfo,
+    /// Read a block larger than specified in the Frame header.
+    BlockTooBig,
+    /// The Frame header checksum doesn't match.
+    HeaderChecksumError,
+    /// The block checksum doesn't match.
+    BlockChecksumError,
+    /// The content checksum doesn't match.
+    ContentChecksumError,
+    /// Read an skippable frame.
+    /// The caller may read the specified amount of bytes from the underlying io::Read.
+    SkippableFrame(u32),
+    /// External dictionaries are not supported.
+    DictionaryNotSupported,
+    /// Content length differs.
+    ContentLengthError { expected: u64, actual: u64 },
 }
 
-#[allow(dead_code)]
-impl BlockSize {
-    pub fn get_size(&self) -> usize {
-        match self {
-            &BlockSize::Default | &BlockSize::Max64KB => 64 * 1024,
-            &BlockSize::Max256KB => 256 * 1024,
-            &BlockSize::Max1MB => 1024 * 1024,
-            &BlockSize::Max4MB => 4 * 1024 * 1024,
+impl From<Error> for io::Error {
+    fn from(e: Error) -> Self {
+        match e {
+            Error::IoError(e) => e,
+            Error::CompressionError(_)
+            | Error::DecompressionError(_)
+            | Error::SkippableFrame(_)
+            | Error::DictionaryNotSupported => io::Error::new(io::ErrorKind::Other, e),
+            Error::WrongMagicNumber
+            | Error::UnsupportedBlocksize(..)
+            | Error::UnsupportedVersion(..)
+            | Error::ReservedBitsSet
+            | Error::InvalidBlockInfo
+            | Error::BlockTooBig
+            | Error::HeaderChecksumError
+            | Error::ContentChecksumError
+            | Error::BlockChecksumError
+            | Error::ContentLengthError { .. } => io::Error::new(io::ErrorKind::InvalidData, e),
         }
     }
 }
 
-#[allow(dead_code)]
-#[derive(Clone, Copy)]
-#[repr(C)]
-pub enum BlockMode {
-    Linked = 0,
-    Independent,
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Copy)]
-pub enum Checksum {
-    NoChecksum = 0,
-    ChecksumEnabled,
-}
-
-/// Frame Descriptor
-/// FLG     BD      (Content Size)  (Dictionary ID)     HC
-/// 1 byte  1 byte  0 - 8 bytes     0 - 4 bytes         1 byte
-#[allow(dead_code)]
-#[repr(C)]
-pub(crate) struct LZ4FFrameInfo {
-    pub content_size: Option<u64>,
-    pub block_size_id: BlockSize,
-    pub block_mode: BlockMode,
-    pub content_checksum_flag: Checksum,
-    // pub reserved: [u32; 5],
-}
-
-#[allow(dead_code)]
-impl LZ4FFrameInfo {
-    fn read(input: &[u8]) -> LZ4FFrameInfo {
-        // read flag bytes
-
-        let flg_byte = input[0];
-        assert!((flg_byte & 0b11000000) as usize == 1); // version is always 01
-
-        let block_mode = if (flg_byte & 1 << 5) as usize == 1 {
-            BlockMode::Independent
-        } else {
-            BlockMode::Linked
-        };
-        let content_checksum_flag = if (flg_byte & 1 << 2) as usize == 1 {
-            Checksum::ChecksumEnabled
-        } else {
-            Checksum::NoChecksum
-        };
-
-        // let content_size_included = (flg_byte & 1 << 4) == 1;
-
-        LZ4FFrameInfo {
-            block_mode,
-            content_checksum_flag,
-            block_size_id: BlockSize::Default, // TODO
-            content_size: None,                // TODO
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        match e.get_ref().map(|e| e.downcast_ref::<Error>()) {
+            Some(_) => *e.into_inner().unwrap().downcast::<Error>().unwrap(),
+            None => Error::IoError(e),
         }
     }
+}
 
-    /// writes flag byte
-    ///
-    /// FLG byte
-    /// BitNumber   7-6         5                      4               3             2                 1           0
-    /// FieldName   Version     Block Independence     Block-Checksum  Content-Size  Content-Checksum  Reserved    DictID
-    ///
-    /// Content-Size (Optional) - The size of the uncompressed data included within the frame will be present as an 8 bytes unsigned little endian value, after the flags
-    fn write_flg_byte(&self) -> u32 {
-        let version = 1 << 6; // always 01
-        let mut res = version;
-        res |= (self.block_mode as u32) << 5;
-        if self.content_size.is_some() {
-            res |= 1 << 3; // set the content_size flag
-        }
-        res |= (self.content_checksum_flag as u32) << 2;
-        // res |= 0 << 4;
-        res
-    }
-
-    /// writes block descriptor byte
-    /// Block Maximum Size
-    ///
-    /// This information is useful to help the decoder allocate memory. Size here refers to the original (uncompressed) data size.
-    /// Block Maximum Size is one value among the following table :
-    /// 0       1       2       3       4       5       6       7
-    /// N/A     N/A     N/A     N/A     64 KB   256 KB  1 MB    4 MB
-    fn write_bd_byte(&self) -> u32 {
-        1 << (self.block_size_id as u32)
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
+
+impl std::error::Error for Error {}
