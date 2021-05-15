@@ -491,6 +491,15 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
         if duplicate_length >= 0xF {
             write_integer(output, duplicate_length - 0xF);
         }
+        #[cfg(not(feature = "safe-encode"))]
+        {
+            unsafe {
+                core::arch::x86_64::_mm_prefetch(
+                    input.as_ptr().add(cur) as *const i8,
+                    core::arch::x86_64::_MM_HINT_T0,
+                );
+            }
+        }
         literal_start = cur;
     }
 }

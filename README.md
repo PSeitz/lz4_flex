@@ -19,8 +19,9 @@ The results in the table are from a benchmark in this project (66Kb JSON).
 ## Features
 - Very good logo
 - LZ4 Block format
+- LZ4 Frame format (thanks @arthurprs)
 - High performance
-- 0,5s clean release build time
+- 1,5s clean release build time
 - Feature flags to configure safe/unsafe code usage
 - no-std support (thanks @coolreader18)
 - 32-bit support
@@ -30,17 +31,17 @@ Compression and decompression uses no usafe via the default feature flags "safe-
 
 Safe:
 ```
-lz4_flex = { version = "1.0.0" }
+lz4_flex = { version = "0.8.0" }
 ```
 
 Performance:
 ```
-lz4_flex = { version = "1.0.0", default-features = false }
+lz4_flex = { version = "0.8.0", default-features = false }
 ```
 
 Warning: If you don't trust your input, use checked-decode in order to avoid out of bounds access.
 ```
-lz4_flex = { version = "1.0.0", default-features = false, features = ["checked-decode"] }
+lz4_flex = { version = "0.8.0", default-features = false, features = ["checked-decode"] }
 ```
 
 ```rust
@@ -99,7 +100,5 @@ This fuzz target asserts compression with cpp and decompression with lz4_flex re
 `cargo fuzz run fuzz_roundtrip_cpp_compress`
 
 ## TODO
-- Frame format
 - High compression
-- Dictionary Compression
 
