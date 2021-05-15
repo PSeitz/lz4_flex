@@ -198,15 +198,26 @@ impl HashTable for HashTableU16 {
 pub fn get_table_size(input_len: usize) -> (usize, usize) {
     let (dict_size, dict_bitshift) = match input_len {
         // U16 Positions
-        0..=500 => (128, 9),
-        501..=1_000 => (256, 8),
-        1_001..=4_000 => (512, 7),
-        4_001..=8_000 => (1024, 6),
-        8_001..=16_000 => (2048, 5),
-        16_001..=65535 => (8192, 3),
+        0..=65535 => {
+            // Considering we want a table with up to 16K bytes and each slot takes 2 bytes.
+            // Calculate size the matching table size according to the input size,
+            // so the overhead of "zeroing" the table is not too large for small inputs.
+            let size = input_len.next_power_of_two().clamp(256, 16 * 1024) / 2;
+            (size, 16 - size.trailing_zeros() as usize)
+        }
         // U32 positions => 16KB table
         // Usize (U64) positions => 32KB table
         _ => (4096, 4),
     };
     (dict_size, dict_bitshift)
+}
+
+#[test]
+fn test_get_table_size() {
+    const MAX_HASH: usize = u16::MAX as usize;
+    for i in 0..32 {
+        let input_len = 2usize.pow(i);
+        let (size, shift) = get_table_size(input_len);
+        assert_eq!(size, (MAX_HASH >> shift) + 1);
+    }
 }
