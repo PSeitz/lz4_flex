@@ -385,7 +385,8 @@ impl<W: fmt::Debug + io::Write> fmt::Debug for FrameEncoder<W> {
 #[cfg(feature = "safe-encode")]
 #[inline]
 fn vec_set_len(v: &mut Vec<u8>, new_len: usize) {
-    debug_assert!(new_len <= v.capacity());
+    // The assert isn't strictly needed but we want to assert the same behavior as the unsafe version
+    assert!(new_len <= v.capacity());
     v.resize(new_len, 0);
 }
 

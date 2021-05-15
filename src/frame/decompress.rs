@@ -211,7 +211,7 @@ impl<R: io::Read> FrameDecoder<R> {
                 if len > max_block_size {
                     return Err(Error::BlockTooBig.into());
                 }
-                self.r.read_exact(vec_bytes_mut(
+                self.r.read_exact(vec_resize_and_get_mut(
                     &mut self.dst,
                     self.dst_start,
                     self.dst_start + len,
@@ -232,7 +232,8 @@ impl<R: io::Read> FrameDecoder<R> {
                 if len > max_block_size {
                     return Err(Error::BlockTooBig.into());
                 }
-                self.r.read_exact(vec_bytes_mut(&mut self.src, 0, len))?;
+                self.r
+                    .read_exact(vec_resize_and_get_mut(&mut self.src, 0, len))?;
                 if frame_info.block_checksums {
                     let expected_checksum = Self::read_checksum(&mut self.r)?;
                     Self::check_block_checksum(&self.src[..len], expected_checksum)?;
@@ -403,7 +404,8 @@ impl<R: fmt::Debug + io::Read> fmt::Debug for FrameDecoder<R> {
 #[cfg(feature = "safe-decode")]
 #[inline]
 fn vec_set_len(v: &mut Vec<u8>, new_len: usize) {
-    debug_assert!(new_len <= v.capacity());
+    // The assert isn't strictly needed but we want to assert the same behavior as the unsafe version
+    assert!(new_len <= v.capacity());
     v.resize(new_len, 0);
 }
 
@@ -420,7 +422,7 @@ fn vec_set_len(v: &mut Vec<u8>, new_len: usize) {
 /// Similar to `v.get_mut(start..end) but will adjust the len if needed.
 /// Panics if there's not enough capacity.
 #[inline]
-fn vec_bytes_mut(v: &mut Vec<u8>, start: usize, end: usize) -> &mut [u8] {
+fn vec_resize_and_get_mut(v: &mut Vec<u8>, start: usize, end: usize) -> &mut [u8] {
     if end > v.len() {
         vec_set_len(v, end);
     }
