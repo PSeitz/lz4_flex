@@ -207,6 +207,13 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
         name,
         compressed.len() as f64 / input.len() as f64
     );
+
+    let compressed = snap::raw::Encoder::new().compress_vec(input).unwrap();
+    println!(
+        "snap Compression Ratio {:?} {:?}",
+        name,
+        compressed.len() as f64 / input.len() as f64
+    );
 }
 
 // #[test]

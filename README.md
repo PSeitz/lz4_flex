@@ -7,14 +7,16 @@
 ![lz4_flex_logo](https://raw.githubusercontent.com/PSeitz/lz4_flex/master/logo.jpg)
 
 Fastest LZ4 implementation in Rust. Originally based on [redox-os' lz4 compression](https://crates.io/crates/lz4-compress), but now a complete rewrite.
-The results in the table are from a benchmark in this project (66Kb JSON).
+The results in the table are from a benchmark in this project (66Kb JSON) on with the block format.
 
 |    Compressor        | Compression | Decompression | Ratio		 |
 |----------------------|-------------|---------------|---------------|
-| lz4_flex unsafe      | 947 MiB/s   | 5017 MiB/s    | 0.2270   	 |
-| lz4_flex safe        | 661 MiB/s   | 1723 MiB/s    | 0.2270   	 |
-| lz4_rs (lz4 1.8.1)   | 1001 MiB/s  | 4627 MiB/s    | 0.2283   	 |
-| lz4_fear             | 456 MiB/s   | 809 MiB/s     | 0.2283	     |
+| lz4_flex unsafe      | 898 MiB/s   | 4417 MiB/s    | 0.2289   	 |
+| lz4_flex safe        | 724 MiB/s   | 2014 MiB/s    | 0.2289   	 |
+| lzzz (lz4 1.9.3)     | 993 MiB/s   | 4193 MiB/s    | 0.2283   	 |
+| lz4_fear             | 456 MiB/s   | 976 MiB/s     | 0.2283	     |
+| snap                 | 861 MiB/s   | 941 MiB/s     | 0.2242      |
+
 
 ## Features
 - Very good logo
@@ -39,7 +41,7 @@ Performance:
 lz4_flex = { version = "0.8.0", default-features = false }
 ```
 
-Warning: If you don't trust your input, use checked-decode in order to avoid out of bounds access.
+Warning: If you don't trust your input and your are using the Block format, use checked-decode in order to avoid out of bounds access. When using the Frame format make sure to enable checksums.
 ```
 lz4_flex = { version = "0.8.0", default-features = false, features = ["checked-decode"] }
 ```
@@ -58,14 +60,14 @@ fn main(){
 ## Benchmarks
 The benchmark is run with criterion, the test files are in the benches folder.
 
-Currently 3 implementations are compared, this one, the [redox-version](https://crates.io/crates/lz4-compress), [lz-fear](https://github.com/main--/rust-lz-fear) and the [c++ version via rust bindings](https://crates.io/crates/lz4). 
+Currently 4 implementations are compared, this one, [lz-fear](https://github.com/main--/rust-lz-fear) and the [c++ version via rust bindings](https://crates.io/crates/lz4) and [snappy](https://github.com/burntsushi/rust-snappy). 
 The lz4-flex version is tested with the feature flags safe-decode and safe-encode switched on and off.
 
-- lz4_redox_rust: https://crates.io/crates/lz4-compress
 - lz4_cpp: https://crates.io/crates/lz4
 - lz-fear: https://github.com/main--/rust-lz-fear
+- snap: https://github.com/burntsushi/rust-snappy 
 
-### Results v1.0.0 06-04-2021 (safe-decode and safe-encode off)
+### Results v0.8.0 17-05-2021 (safe-decode and safe-encode off)
 `cargo bench --no-default-features`
 
 Executed on Core i7-6700 Linux Mint.
@@ -74,7 +76,7 @@ Executed on Core i7-6700 Linux Mint.
 
 ![Decompress](./decompress_bench.svg)
 
-### Results v1.0.0 06-04-2021 (safe-decode and safe-encode on)
+### Results v0.8.0 17-05-2021 (safe-decode and safe-encode on)
 `cargo bench`
 
 Executed on Core i7-6700 Linux Mint.
