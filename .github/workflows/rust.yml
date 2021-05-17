@@ -22,7 +22,7 @@ jobs:
     - name: Run tests safe-decode
       run: cargo test --verbose --features safe-decode
     - name: Run tests no-default-features (no safe-decode)
-      run: cargo test --verbose --no-default-features
+      run: cargo test --verbose --no-default-features --features frame
     - name: Run fuzz tests (safe)
       run: for fuzz_test in `cargo fuzz list`; do cargo fuzz run $fuzz_test -- -max_total_time=10 || exit 1; done
     - name: Run fuzz tests (unsafe)
