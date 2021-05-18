@@ -12,6 +12,7 @@ The results in the table are from a benchmark in this project (66Kb JSON) on wit
 |    Compressor        | Compression | Decompression | Ratio		 |
 |----------------------|-------------|---------------|---------------|
 | lz4_flex unsafe      | 898 MiB/s   | 4417 MiB/s    | 0.2289   	 |
+| lz4_flex unsafe w. checked_decode      | 898 MiB/s   | 4023 MiB/s    | 0.2289   	 |
 | lz4_flex safe        | 724 MiB/s   | 2014 MiB/s    | 0.2289   	 |
 | lzzz (lz4 1.9.3)     | 993 MiB/s   | 4193 MiB/s    | 0.2283   	 |
 | lz4_fear             | 456 MiB/s   | 976 MiB/s     | 0.2283	     |

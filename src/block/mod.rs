@@ -123,7 +123,7 @@ impl fmt::Display for CompressError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             CompressError::OutputTooSmall => {
-                f.write_str("output is too small for the decompressed data")
+                f.write_str("output is too small for the compressed data, use get_maximum_output_size to reserve enough space")
             }
         }
     }
