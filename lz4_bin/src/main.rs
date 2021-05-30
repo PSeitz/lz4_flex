@@ -34,10 +34,6 @@ struct Options {
 }
 const LZ_ENDING: &'static str = "lz4";
 
-//fn default_clean() -> bool {
-//false
-//}
-
 fn main() -> Result<()> {
     let opts: Options = argh::from_env();
 
@@ -55,14 +51,14 @@ fn main() -> Result<()> {
         }
     } else {
         if let Some(file) = opts.input_file {
-            handle_file(&file, opts.out, opts.clean)?;
+            handle_file(&file, opts.out, opts.clean, true)?;
         }
     }
 
     Ok(())
 }
 
-fn handle_file(file: &Path, out: Option<PathBuf>, clean: bool) -> Result<()> {
+fn handle_file(file: &Path, out: Option<PathBuf>, clean: bool, print_info: bool) -> Result<()> {
     let decompress = file.extension() == Some(std::ffi::OsStr::new(LZ_ENDING));
     let output = out.as_ref().cloned().unwrap_or_else(|| {
         if decompress {
@@ -82,7 +78,6 @@ fn handle_file(file: &Path, out: Option<PathBuf>, clean: bool) -> Result<()> {
         }
     });
 
-    dbg!(decompress);
     if decompress {
         let in_file = File::open(file)?;
         let mut out_file = File::create(output)?;
@@ -92,10 +87,25 @@ fn handle_file(file: &Path, out: Option<PathBuf>, clean: bool) -> Result<()> {
     } else {
         let mut in_file = File::open(file)?;
 
-        let out_file = File::create(output)?;
+        let out_file = File::create(output.clone())?;
         let mut compressor = lz4_flex::frame::FrameEncoder::new(out_file);
         std::io::copy(&mut in_file, &mut compressor)?;
+
         compressor.finish().unwrap();
+        if print_info {
+            println!(
+                "Compressed filename will be: {:?}",
+                output.file_name().unwrap()
+            );
+            let input_size = std::fs::metadata(file)?.len();
+            let output_size = std::fs::metadata(output)?.len();
+            println!(
+                "Compressed {} bytes into {} ==> {:.2}%",
+                input_size,
+                output_size,
+                output_size as f32 * 100.0 / input_size as f32
+            );
+        }
     }
     if clean {
         std::fs::remove_file(file)?;
