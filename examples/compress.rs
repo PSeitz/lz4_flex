@@ -6,4 +6,5 @@ fn main() {
     // Wrap the stdout writer in a LZ4 Frame writer.
     let mut wtr = lz4_flex::frame::FrameEncoder::new(stdout.lock());
     io::copy(&mut rdr, &mut wtr).expect("I/O operation failed");
+    wtr.finish().unwrap();
 }

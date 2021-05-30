@@ -1,91 +1,133 @@
-use lz4_flex::block::DecompressError;
-use tokio::fs::File;
-use tokio::prelude::*; // for write_all()
+use anyhow::Result;
 use argh::FromArgs;
 
-#[macro_use]
-extern crate quick_error;
+use std::fs::File;
+use std::io;
+use std::path::Path;
+use std::path::PathBuf;
 
 #[derive(FromArgs, Debug)]
 /// Reach new heights.
 struct Options {
-    // #[argh(switch, short = 'm')]
-    // /// multiple input files
-    // multiple: bool,
+    //#[argh(option, default = "false")]
+    #[argh(switch)]
+    /// delete original files (default: false)
+    clean: bool,
+
+    #[argh(switch, short = 'd')]
+    /// force decompress
+    decompress: bool,
 
     // #[argh(switch, short = 'f')]
     // /// overwrite_files
     // force: bool,
-
     #[argh(positional)]
-    file: String,
-
-    #[argh(positional)]
-    out: Option<String>,
-
+    input_file: Option<PathBuf>,
+    //#[argh(positional)]
+    /// zoo
+    #[argh(option, short = 'o')]
+    out: Option<PathBuf>,
+    /// file[s] to compress/decompress
+    /// list of input files
+    #[argh(option, short = 'f')]
+    files: Vec<PathBuf>,
 }
+const LZ_ENDING: &'static str = "lz4";
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum IoWrapper {
-        Io(err: io::Error) {
-            from()
-            display("I/O error: {}", err)
-            source(err)
-        }
-        DecompressError(err: DecompressError) {
-            from()
-            display("DecompressError error: {}", err)
-            source(err)
-        }
-    }
-}
+//fn default_clean() -> bool {
+//false
+//}
 
-
-const LZ_ENDING: &'static str = ".lz4";
-
-#[tokio::main]
-async fn main() -> Result<(), IoWrapper> {
-
+fn main() -> Result<()> {
     let opts: Options = argh::from_env();
 
-    let decompress = opts.file.ends_with(LZ_ENDING);
-    let output = opts.out.as_ref().cloned().unwrap_or_else(||{
-        if decompress{
-            let mut f = opts.file.to_string();
-            f.truncate(opts.file.len() - LZ_ENDING.len());
-            f
-        }else{
-            opts.file.to_string() + LZ_ENDING
+    if opts.input_file.is_none() && opts.files.is_empty() {
+        let stdin = io::stdin();
+        let mut stdin = stdin.lock();
+        let stdout = io::stdout();
+        let mut stdout = stdout.lock();
+        if opts.decompress {
+            let mut decoder = lz4_flex::frame::FrameDecoder::new(&mut stdin);
+            std::io::copy(&mut decoder, &mut stdout)?;
+        } else {
+            let mut wtr = lz4_flex::frame::FrameEncoder::new(&mut stdout);
+            std::io::copy(&mut stdin, &mut wtr)?;
         }
-    });
-
-    if decompress{
-        // let mut in_file = File::open(opts.file);
-        // let mut file = File::create(output);
-        let (in_file, file) = tokio::join!(File::open(opts.file), File::create(output));
-        let mut contents = vec![];
-        in_file?.read_to_end(&mut contents).await?;
-
-        
-
-        let compressed = lz4_flex::decompress_size_prepended(&contents)?;
-
-        
-        file?.write_all(&compressed).await?;
-
-    }else{
-
-        let mut in_file = File::open(opts.file).await?;
-        let mut contents = vec![];
-        in_file.read_to_end(&mut contents).await?;
-
-        let compressed = lz4_flex::compress_prepend_size(&contents);
-
-        let mut file = File::create(output).await?;
-        file.write_all(&compressed).await?;
+    } else {
+        if let Some(file) = opts.input_file {
+            handle_file(&file, opts.out, opts.clean)?;
+        }
     }
+
     Ok(())
 }
 
+fn handle_file(file: &Path, out: Option<PathBuf>, clean: bool) -> Result<()> {
+    let decompress = file.extension() == Some(std::ffi::OsStr::new(LZ_ENDING));
+    let output = out.as_ref().cloned().unwrap_or_else(|| {
+        if decompress {
+            let mut f = file.to_path_buf();
+            f.set_extension("");
+            f
+        } else {
+            let curr_extesion = file
+                .extension()
+                .map(|ext| ext.to_str().unwrap_or(""))
+                .unwrap_or("");
+            if curr_extesion != "" {
+                file.with_extension(curr_extesion.to_string() + "." + LZ_ENDING)
+            } else {
+                file.with_extension(LZ_ENDING)
+            }
+        }
+    });
 
+    dbg!(decompress);
+    if decompress {
+        let in_file = File::open(file)?;
+        let mut out_file = File::create(output)?;
+
+        let mut rdr = lz4_flex::frame::FrameDecoder::new(in_file);
+        std::io::copy(&mut rdr, &mut out_file)?;
+    } else {
+        let mut in_file = File::open(file)?;
+
+        let out_file = File::create(output)?;
+        let mut compressor = lz4_flex::frame::FrameEncoder::new(out_file);
+        std::io::copy(&mut in_file, &mut compressor)?;
+        compressor.finish().unwrap();
+    }
+    if clean {
+        std::fs::remove_file(file)?;
+    }
+
+    Ok(())
+}
+
+pub fn lz4_flex_frame_compress_with(
+    frame_info: lz4_flex::frame::FrameInfo,
+    input: &[u8],
+) -> Result<Vec<u8>, std::io::Error> {
+    let buffer = Vec::new();
+    let mut enc = lz4_flex::frame::FrameEncoder::with_frame_info(frame_info, buffer);
+    std::io::Write::write_all(&mut enc, input)?;
+    Ok(enc.finish()?)
+}
+
+#[cfg(feature = "frame")]
+pub fn lz4_flex_frame_decompress(input: &[u8]) -> Result<Vec<u8>, lz4_flex::frame::Error> {
+    let mut de = lz4_flex::frame::FrameDecoder::new(input);
+    let mut out = Vec::new();
+    std::io::Read::read_to_end(&mut de, &mut out)?;
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_comp_cargo_toml() {
+        handle_file(Path::new("../Cargo.toml"), None).unwrap();
+    }
+}

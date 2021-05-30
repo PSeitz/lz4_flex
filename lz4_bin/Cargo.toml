@@ -11,3 +11,4 @@ tokio = { version = "0.3", features = ["fs", "macros", "rt-multi-thread", "io-ut
 lz4_flex = { path = "../", features = [] }
 argh = "0.1.4"
 quick-error = "2.0.0"
+anyhow = "1.0.40"
