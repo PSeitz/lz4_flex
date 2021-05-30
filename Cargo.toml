@@ -8,7 +8,7 @@ homepage = "https://github.com/pseitz/lz4_flex"
 repository = "https://github.com/pseitz/lz4_flex"
 readme = "README.md"
 license = "MIT"
-version = "0.8.0"
+version = "0.8.1"
 include = ["src/lib.rs", "src/frame/**/*", "src/block/**/*", "README.md"]
 
 [[bench]]
