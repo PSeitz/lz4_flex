@@ -2,80 +2,137 @@ use anyhow::Result;
 use argh::FromArgs;
 
 use std::fs::File;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 #[derive(FromArgs, Debug)]
-/// Reach new heights.
+/// [De]Compress data in the lz4 format.
 struct Options {
-    //#[argh(option, default = "false")]
     #[argh(switch)]
     /// delete original files (default: false)
     clean: bool,
+
+    #[argh(switch, short = 'f')]
+    /// overwrite output files
+    force: bool,
 
     #[argh(switch, short = 'd')]
     /// force decompress
     decompress: bool,
 
-    // #[argh(switch, short = 'f')]
-    // /// overwrite_files
-    // force: bool,
     #[argh(positional)]
+    /// file to compress/decompress
     input_file: Option<PathBuf>,
     //#[argh(positional)]
-    /// zoo
+    /// output file to write to. defaults to stdout
     #[argh(option, short = 'o')]
     out: Option<PathBuf>,
-    /// file[s] to compress/decompress
-    /// list of input files
-    #[argh(option, short = 'f')]
-    files: Vec<PathBuf>,
 }
-const LZ_ENDING: &'static str = "lz4";
+const LZ_ENDING: &str = "lz4";
+const LZ_EXTENSION: &str = ".lz4";
 
 fn main() -> Result<()> {
     let opts: Options = argh::from_env();
 
-    if opts.input_file.is_none() && opts.files.is_empty() {
+    let input_file = opts.input_file.filter(|f| f.as_os_str() != "-");
+
+    if let Some(file) = input_file {
+        handle_file(
+            &file,
+            opts.out,
+            opts.clean,
+            opts.force,
+            opts.decompress,
+            true,
+        )?;
+    } else {
         let stdin = io::stdin();
         let mut stdin = stdin.lock();
-        let stdout = io::stdout();
-        let mut stdout = stdout.lock();
+        let stdout;
+        let mut out = match opts.out {
+            Some(path) => Ok(File::create(path)?),
+            None => {
+                stdout = io::stdout();
+                Err(stdout.lock())
+            }
+        };
         if opts.decompress {
             let mut decoder = lz4_flex::frame::FrameDecoder::new(&mut stdin);
-            io::copy(&mut decoder, &mut stdout)?;
+            match &mut out {
+                Ok(f) => io::copy(&mut decoder, f)?,
+                Err(stdout) => io::copy(&mut decoder, stdout)?,
+            };
         } else {
-            let mut wtr = lz4_flex::frame::FrameEncoder::new(&mut stdout);
-            io::copy(&mut stdin, &mut wtr)?;
-        }
-    } else {
-        if let Some(file) = opts.input_file {
-            handle_file(&file, opts.out, opts.clean, true)?;
+            match &mut out {
+                Ok(f) => {
+                    let mut wtr = lz4_flex::frame::FrameEncoder::new(f);
+                    io::copy(&mut stdin, &mut wtr)?;
+                }
+                Err(stdout) => {
+                    let mut wtr = lz4_flex::frame::FrameEncoder::new(stdout);
+                    io::copy(&mut stdin, &mut wtr)?;
+                }
+            };
         }
     }
 
     Ok(())
 }
 
-fn handle_file(file: &Path, out: Option<PathBuf>, clean: bool, print_info: bool) -> Result<()> {
-    let decompress = file.extension() == Some(std::ffi::OsStr::new(LZ_ENDING));
-    let output = out.as_ref().cloned().unwrap_or_else(|| {
-        if decompress {
-            let mut f = file.to_path_buf();
-            f.set_extension("");
-            f
-        } else {
-            let curr_extesion = file
-                .extension()
-                .map(|ext| ext.to_str().unwrap_or(""))
-                .unwrap_or("");
-            if curr_extesion != "" {
-                file.with_extension(curr_extesion.to_string() + "." + LZ_ENDING)
+fn handle_file(
+    file: &Path,
+    out: Option<PathBuf>,
+    clean: bool,
+    force: bool,
+    force_decompress: bool,
+    print_info: bool,
+) -> Result<()> {
+    let decompress = file.extension() == Some(LZ_ENDING.as_ref());
+    if force_decompress && !decompress {
+        anyhow::bail!("Can't determine an output filename")
+    }
+    let output = match out {
+        Some(out) => out,
+        None => {
+            let output = if decompress {
+                file.with_extension("")
             } else {
-                file.with_extension(LZ_ENDING)
+                let mut f = file.as_os_str().to_os_string();
+                f.push(LZ_EXTENSION);
+                f.into()
+            };
+            if print_info {
+                println!(
+                    "{} filename will be: {}",
+                    if decompress {
+                        "Decompressed"
+                    } else {
+                        "Compressed"
+                    },
+                    output.display()
+                );
             }
+            if !force && output.exists() {
+                {
+                    let stdout = io::stdout();
+                    let mut stdout = stdout.lock();
+                    write!(
+                        stdout,
+                        "{} already exists, do you want to overwrite? (y/N) ",
+                        output.display()
+                    )?;
+                    stdout.flush()?;
+                }
+                let mut answer = String::new();
+                io::stdin().read_line(&mut answer)?;
+                if !answer.starts_with("y") {
+                    println!("Not overwriting");
+                    return Ok(());
+                }
+            }
+            output
         }
-    });
+    };
 
     if decompress {
         let in_file = File::open(file)?;
@@ -86,18 +143,13 @@ fn handle_file(file: &Path, out: Option<PathBuf>, clean: bool, print_info: bool)
     } else {
         let mut in_file = File::open(file)?;
 
-        let out_file = File::create(output.clone())?;
-        let mut compressor = lz4_flex::frame::FrameEncoder::new(out_file);
-        io::copy(&mut in_file, &mut compressor)?;
+        let out_file = File::create(&output)?;
+        let mut compressor = lz4_flex::frame::FrameEncoder::new(TrackWriteSize::new(out_file));
+        let input_size = io::copy(&mut in_file, &mut compressor)?;
 
-        compressor.finish().unwrap();
+        let output_size = compressor.finish()?.written;
+
         if print_info {
-            println!(
-                "Compressed filename will be: {:?}",
-                output.file_name().unwrap()
-            );
-            let input_size = std::fs::metadata(file)?.len();
-            let output_size = std::fs::metadata(output)?.len();
             println!(
                 "Compressed {} bytes into {} ==> {:.2}%",
                 input_size,
@@ -111,6 +163,33 @@ fn handle_file(file: &Path, out: Option<PathBuf>, clean: bool, print_info: bool)
     }
 
     Ok(())
+}
+
+struct TrackWriteSize<W: io::Write> {
+    inner: W,
+    written: u64,
+}
+impl<W: io::Write> TrackWriteSize<W> {
+    fn new(inner: W) -> Self {
+        TrackWriteSize { inner, written: 0 }
+    }
+}
+impl<W: io::Write> io::Write for TrackWriteSize<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let written = self.inner.write(buf)?;
+        self.written += written as u64;
+        Ok(written)
+    }
+
+    fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
+        let written = self.inner.write_vectored(bufs)?;
+        self.written += written as u64;
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 pub fn lz4_flex_frame_compress_with(
