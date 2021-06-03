@@ -3,8 +3,7 @@ use argh::FromArgs;
 
 use std::fs::File;
 use std::io;
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(FromArgs, Debug)]
 /// Reach new heights.
@@ -44,10 +43,10 @@ fn main() -> Result<()> {
         let mut stdout = stdout.lock();
         if opts.decompress {
             let mut decoder = lz4_flex::frame::FrameDecoder::new(&mut stdin);
-            std::io::copy(&mut decoder, &mut stdout)?;
+            io::copy(&mut decoder, &mut stdout)?;
         } else {
             let mut wtr = lz4_flex::frame::FrameEncoder::new(&mut stdout);
-            std::io::copy(&mut stdin, &mut wtr)?;
+            io::copy(&mut stdin, &mut wtr)?;
         }
     } else {
         if let Some(file) = opts.input_file {
@@ -83,13 +82,13 @@ fn handle_file(file: &Path, out: Option<PathBuf>, clean: bool, print_info: bool)
         let mut out_file = File::create(output)?;
 
         let mut rdr = lz4_flex::frame::FrameDecoder::new(in_file);
-        std::io::copy(&mut rdr, &mut out_file)?;
+        io::copy(&mut rdr, &mut out_file)?;
     } else {
         let mut in_file = File::open(file)?;
 
         let out_file = File::create(output.clone())?;
         let mut compressor = lz4_flex::frame::FrameEncoder::new(out_file);
-        std::io::copy(&mut in_file, &mut compressor)?;
+        io::copy(&mut in_file, &mut compressor)?;
 
         compressor.finish().unwrap();
         if print_info {
@@ -117,10 +116,10 @@ fn handle_file(file: &Path, out: Option<PathBuf>, clean: bool, print_info: bool)
 pub fn lz4_flex_frame_compress_with(
     frame_info: lz4_flex::frame::FrameInfo,
     input: &[u8],
-) -> Result<Vec<u8>, std::io::Error> {
+) -> io::Result<Vec<u8>> {
     let buffer = Vec::new();
     let mut enc = lz4_flex::frame::FrameEncoder::with_frame_info(frame_info, buffer);
-    std::io::Write::write_all(&mut enc, input)?;
+    io::Write::write_all(&mut enc, input)?;
     Ok(enc.finish()?)
 }
 
@@ -128,7 +127,7 @@ pub fn lz4_flex_frame_compress_with(
 pub fn lz4_flex_frame_decompress(input: &[u8]) -> Result<Vec<u8>, lz4_flex::frame::Error> {
     let mut de = lz4_flex::frame::FrameDecoder::new(input);
     let mut out = Vec::new();
-    std::io::Read::read_to_end(&mut de, &mut out)?;
+    io::Read::read_to_end(&mut de, &mut out)?;
     Ok(out)
 }
 
