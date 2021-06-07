@@ -307,9 +307,12 @@ impl<W: io::Write> FrameEncoder<W> {
                 // There's more than WINDOW_SIZE bytes of lookback adding the prefix and ext_dict.
                 // Since we have a limited buffer we must shrink ext_dict in favor of the prefix,
                 // so that we can fit up to max_block_size bytes between dst_start and ext_dict start.
-                let delta = self.ext_dict_len.min(self.src_start);
+                let delta = self
+                    .ext_dict_len
+                    .min(self.src_start + self.ext_dict_len - WINDOW_SIZE);
                 self.ext_dict_offset += delta;
                 self.ext_dict_len -= delta;
+                debug_assert!(self.src_start + self.ext_dict_len >= WINDOW_SIZE)
             }
             debug_assert!(
                 self.ext_dict_len == 0 || self.src_start + max_block_size <= self.ext_dict_offset
