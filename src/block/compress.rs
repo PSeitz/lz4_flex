@@ -365,7 +365,7 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
 
     let output_start_pos = output.pos();
     if input_pos + LZ4_MIN_LENGTH > input.len() {
-        handle_last_literals(output, input, 0);
+        handle_last_literals(output, input, input_pos);
         return Ok(output.pos() - output_start_pos);
     }
 
