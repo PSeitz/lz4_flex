@@ -22,6 +22,7 @@ fuzz_target!(|input: Input| {
     }
     let chunk_size = (chunk_size_seed % ONE_MB).max(1);
     let data_size = data_size_seed % ONE_MB;
+
     let mut data = Vec::with_capacity(data_size);
     while data.len() < data_size {
         data.extend_from_slice(&sample);
@@ -39,6 +40,9 @@ fuzz_target!(|input: Input| {
             lz4_flex::frame::FrameEncoder::with_frame_info(fi, Vec::with_capacity(data_size));
         for chunk in data.chunks(chunk_size) {
             enc.write(chunk).unwrap();
+            // by flushing we force encoder to output a frame block
+            // if buffered data <= max block size
+            enc.flush().unwrap();
         }
         let compressed = enc.finish().unwrap();
         // io::Read
