@@ -4,7 +4,9 @@
 
 use std::{fmt, io};
 
+#[cfg_attr(feature = "safe-encode", forbid(unsafe_code))]
 pub(crate) mod compress;
+#[cfg_attr(feature = "safe-decode", forbid(unsafe_code))]
 pub(crate) mod decompress;
 pub(crate) mod header;
 

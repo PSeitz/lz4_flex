@@ -13,15 +13,15 @@ const COMPRESSION1K: &'static [u8] = include_bytes!("compression_1k.txt");
 const COMPRESSION34K: &'static [u8] = include_bytes!("compression_34k.txt");
 const COMPRESSION65K: &'static [u8] = include_bytes!("compression_65k.txt");
 const COMPRESSION66K: &'static [u8] = include_bytes!("compression_66k_JSON.txt");
-//const COMPRESSION10MB: &'static [u8] = include_bytes!("dickens.txt");
+const COMPRESSION10MB: &'static [u8] = include_bytes!("dickens.txt");
 const COMPRESSION95K_VERY_GOOD_LOGO: &'static [u8] = include_bytes!("../logo.jpg");
 
 const ALL: &[&[u8]] = &[
     COMPRESSION1K as &[u8],
     COMPRESSION34K as &[u8],
-    COMPRESSION65K as &[u8],
+    // COMPRESSION65K as &[u8],
     COMPRESSION66K as &[u8],
-    //COMPRESSION10MB as &[u8],
+    // COMPRESSION10MB as &[u8],
     // COMPRESSION95K_VERY_GOOD_LOGO as &[u8],
 ];
 
@@ -117,6 +117,25 @@ pub fn lz4_flex_frame_decompress(input: &[u8]) -> Result<Vec<u8>, lz4_flex::fram
     Ok(out)
 }
 
+pub fn lz4_flex_master_frame_compress_with(
+    frame_info: lz4_flex_master::frame::FrameInfo,
+    input: &[u8],
+) -> Result<Vec<u8>, lz4_flex_master::frame::Error> {
+    let buffer = Vec::new();
+    let mut enc = lz4_flex_master::frame::FrameEncoder::with_frame_info(frame_info, buffer);
+    enc.write_all(input)?;
+    Ok(enc.finish()?)
+}
+
+pub fn lz4_flex_master_frame_decompress(
+    input: &[u8],
+) -> Result<Vec<u8>, lz4_flex_master::frame::Error> {
+    let mut de = lz4_flex_master::frame::FrameDecoder::new(input);
+    let mut out = Vec::new();
+    de.read_to_end(&mut out)?;
+    Ok(out)
+}
+
 fn bench_block_compression_throughput(c: &mut Criterion) {
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Linear);
 
@@ -143,29 +162,29 @@ fn bench_block_compression_throughput(c: &mut Criterion) {
         //&input,
         //|b, i| b.iter(|| lz4_flex::block::compress_with_dict(&i, &empty_vec)),
         //);
-        //// group.bench_with_input(
-        //     BenchmarkId::new("lz4_flex_rust_master", input_bytes),
-        //     &input,
-        //     |b, i| b.iter(|| lz4_flex_master::compress(&i)),
-        // );
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flex_rust_master", input_bytes),
+            &input,
+            |b, i| b.iter(|| lz4_flex_master::compress(&i)),
+        );
         // group.bench_with_input(
         //     BenchmarkId::new("lz4_redox_rust", input_bytes),
         //     &input,
         //     |b, i| b.iter(|| lz4_compress::compress(&i)),
         // );
-        group.bench_with_input(
-            BenchmarkId::new("lz4_fear_rust", input_bytes),
-            &input,
-            |b, i| b.iter(|| compress_lz4_fear(&i)),
-        );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_fear_rust", input_bytes),
+        //     &input,
+        //     |b, i| b.iter(|| compress_lz4_fear(&i)),
+        // );
 
-        group.bench_with_input(BenchmarkId::new("lz4_cpp", input_bytes), &input, |b, i| {
-            b.iter(|| lz4_cpp_block_compress(&i))
-        });
+        // group.bench_with_input(BenchmarkId::new("lz4_cpp", input_bytes), &input, |b, i| {
+        //     b.iter(|| lz4_cpp_block_compress(&i))
+        // });
 
-        group.bench_with_input(BenchmarkId::new("snap", input_bytes), &input, |b, i| {
-            b.iter(|| compress_snap(&i))
-        });
+        // group.bench_with_input(BenchmarkId::new("snap", input_bytes), &input, |b, i| {
+        //     b.iter(|| compress_snap(&i))
+        // });
     }
 
     group.finish();
@@ -199,32 +218,32 @@ fn bench_block_decompression_throughput(c: &mut Criterion) {
         //&comp_lz4,
         //|b, i| b.iter(|| lz4_flex::block::decompress_with_dict(&i, input.len(), &empty_vec)),
         //);
-        // group.bench_with_input(
-        //     BenchmarkId::new("lz4_flex_rust_master", input_bytes),
-        //     &comp_lz4,
-        //     |b, i| b.iter(|| lz4_flex_master::decompress(&i, input.len())),
-        // );
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flex_rust_master", input_bytes),
+            &comp_lz4,
+            |b, i| b.iter(|| lz4_flex_master::decompress(&i, input.len())),
+        );
         // group.bench_with_input(
         //     BenchmarkId::new("lz4_redox_rust", input_bytes),
         //     &comp_lz4,
         //     |b, i| b.iter(|| lz4_compress::decompress(&i)),
         // );
-        group.bench_with_input(
-            BenchmarkId::new("lz4_fear_rust", input_bytes),
-            &comp_lz4,
-            |b, i| b.iter(|| decompress_lz4_fear(&i)),
-        );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_fear_rust", input_bytes),
+        //     &comp_lz4,
+        //     |b, i| b.iter(|| decompress_lz4_fear(&i)),
+        // );
 
-        group.bench_with_input(
-            BenchmarkId::new("lz4_cpp", input_bytes),
-            &comp_lz4,
-            |b, i| b.iter(|| lz4_cpp_block_decompress(&i, input.len())),
-        );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_cpp", input_bytes),
+        //     &comp_lz4,
+        //     |b, i| b.iter(|| lz4_cpp_block_decompress(&i, input.len())),
+        // );
 
-        let comp_snap = compress_snap(&input);
-        group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
-            b.iter(|| decompress_snap(&i))
-        });
+        // let comp_snap = compress_snap(&input);
+        // group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
+        //     b.iter(|| decompress_snap(&i))
+        // });
     }
 
     group.finish();
@@ -246,30 +265,40 @@ fn bench_frame_decompression_throughput(c: &mut Criterion) {
 
         group.bench_with_input(
             BenchmarkId::new("lz4_flex_rust_indep", input_bytes),
-            &comp_lz4_linked,
-            |b, i| b.iter(|| lz4_flex_frame_decompress(&i)),
-        );
-        group.bench_with_input(
-            BenchmarkId::new("lz4_flex_rust_linked", input_bytes),
-            &comp_lz4_linked,
-            |b, i| b.iter(|| lz4_flex_frame_decompress(&i)),
-        );
-
-        group.bench_with_input(
-            BenchmarkId::new("lz4_cpp_indep", input_bytes),
             &comp_lz4_indep,
-            |b, i| b.iter(|| lz4_cpp_frame_decompress(&i)),
+            |b, i| b.iter(|| lz4_flex_frame_decompress(&i)),
         );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_flex_rust_linked", input_bytes),
+        //     &comp_lz4_linked,
+        //     |b, i| b.iter(|| lz4_flex_frame_decompress(&i)),
+        // );
         group.bench_with_input(
-            BenchmarkId::new("lz4_cpp_linked", input_bytes),
-            &comp_lz4_linked,
-            |b, i| b.iter(|| lz4_cpp_frame_decompress(&i)),
+            BenchmarkId::new("lz4_flex_master_rust_indep", input_bytes),
+            &comp_lz4_indep,
+            |b, i| b.iter(|| lz4_flex_master_frame_decompress(&i)),
         );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_flex_master_rust_linked", input_bytes),
+        //     &comp_lz4_linked,
+        //     |b, i| b.iter(|| lz4_flex_master_frame_decompress(&i)),
+        // );
 
-        let comp_snap = compress_snap_frame(&input);
-        group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
-            b.iter(|| decompress_snap_frame(&i))
-        });
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_cpp_indep", input_bytes),
+        //     &comp_lz4_indep,
+        //     |b, i| b.iter(|| lz4_cpp_frame_decompress(&i)),
+        // );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_cpp_linked", input_bytes),
+        //     &comp_lz4_linked,
+        //     |b, i| b.iter(|| lz4_cpp_frame_decompress(&i)),
+        // );
+
+        // let comp_snap = compress_snap_frame(&input);
+        // group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
+        //     b.iter(|| decompress_snap_frame(&i))
+        // });
     }
 
     group.finish();
@@ -297,32 +326,55 @@ fn bench_frame_compression_throughput(c: &mut Criterion) {
                 })
             },
         );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_flex_rust_linked", input_bytes),
+        //     &input,
+        //     |b, i| {
+        //         b.iter(|| {
+        //             let mut frame_info = lz4_flex::frame::FrameInfo::new();
+        //             frame_info.block_mode = lz4_flex::frame::BlockMode::Linked;
+        //             lz4_flex_frame_compress_with(frame_info, i)
+        //         })
+        //     },
+        // );
+
         group.bench_with_input(
-            BenchmarkId::new("lz4_flex_rust_linked", input_bytes),
+            BenchmarkId::new("lz4_flex_master_rust_indep", input_bytes),
             &input,
             |b, i| {
                 b.iter(|| {
-                    let mut frame_info = lz4_flex::frame::FrameInfo::new();
-                    frame_info.block_mode = lz4_flex::frame::BlockMode::Linked;
-                    lz4_flex_frame_compress_with(frame_info, i)
+                    let mut frame_info = lz4_flex_master::frame::FrameInfo::new();
+                    frame_info.block_mode = lz4_flex_master::frame::BlockMode::Independent;
+                    lz4_flex_master_frame_compress_with(frame_info, i)
                 })
             },
         );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_flex_master_rust_linked", input_bytes),
+        //     &input,
+        //     |b, i| {
+        //         b.iter(|| {
+        //             let mut frame_info = lz4_flex_master::frame::FrameInfo::new();
+        //             frame_info.block_mode = lz4_flex_master::frame::BlockMode::Linked;
+        //             lz4_flex_master_frame_compress_with(frame_info, i)
+        //         })
+        //     },
+        // );
 
-        group.bench_with_input(
-            BenchmarkId::new("lz4_cpp_indep", input_bytes),
-            &input,
-            |b, i| b.iter(|| lz4_cpp_frame_compress(i, true)),
-        );
-        group.bench_with_input(
-            BenchmarkId::new("lz4_cpp_linked", input_bytes),
-            &input,
-            |b, i| b.iter(|| lz4_cpp_frame_compress(i, false)),
-        );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_cpp_indep", input_bytes),
+        //     &input,
+        //     |b, i| b.iter(|| lz4_cpp_frame_compress(i, true)),
+        // );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_cpp_linked", input_bytes),
+        //     &input,
+        //     |b, i| b.iter(|| lz4_cpp_frame_compress(i, false)),
+        // );
 
-        group.bench_with_input(BenchmarkId::new("snap", input_bytes), &input, |b, i| {
-            b.iter(|| compress_snap_frame(i))
-        });
+        // group.bench_with_input(BenchmarkId::new("snap", input_bytes), &input, |b, i| {
+        //     b.iter(|| compress_snap_frame(i))
+        // });
     }
 
     group.finish();
