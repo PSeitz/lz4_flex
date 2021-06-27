@@ -5,9 +5,12 @@ use std::{
 };
 use twox_hash::XxHash32;
 
-use crate::block::{
-    compress::compress_internal,
-    hashtable::{HashTable, HashTableU32},
+use crate::{
+    block::{
+        compress::compress_internal,
+        hashtable::{HashTable, HashTableU32},
+    },
+    sink::VecSink,
 };
 
 use super::header::{BlockInfo, BlockMode, FrameInfo, BLOCK_INFO_SIZE, MAX_FRAME_INFO_SIZE};
@@ -60,7 +63,7 @@ pub struct FrameEncoder<W: io::Write> {
     ext_dict_offset: usize,
     /// Length of external dictionary
     ext_dict_len: usize,
-    /// Counter of bytes already compressed to the compression_table (applicable in Linked block mode)
+    /// Counter of bytes already compressed to the compression_table
     /// _Not_ the same as `content_len` as this is reset every to 2GB.
     src_stream_offset: usize,
     /// Encoder table
@@ -231,19 +234,16 @@ impl<W: io::Write> FrameEncoder<W> {
         // the contents of the block are between src_start and src_end
         let src = &input[self.src_start..];
 
-        // ensure dst has enough len for the compressed output
+        // ensure dst sink has enough capacity for the compressed output
         let dst_required_size = crate::block::compress::get_maximum_output_size(src.len());
-        if self.dst.len() < dst_required_size {
-            vec_set_len(&mut self.dst, dst_required_size)
-        }
+        debug_assert!(self.dst.capacity() >= dst_required_size);
 
-        let compress_result = if self.ext_dict_len != 0 {
+        let comp_len = if self.ext_dict_len != 0 {
             debug_assert_eq!(self.frame_info.block_mode, BlockMode::Linked);
             compress_internal::<_, true>(
                 input,
                 self.src_start,
-                &mut self.dst[..],
-                0,
+                &mut VecSink::new(&mut self.dst, 0, 0),
                 &mut self.compression_table,
                 &self.src[self.ext_dict_offset..self.ext_dict_offset + self.ext_dict_len],
                 self.src_stream_offset,
@@ -252,19 +252,18 @@ impl<W: io::Write> FrameEncoder<W> {
             compress_internal::<_, false>(
                 input,
                 self.src_start,
-                &mut self.dst[..],
-                0,
+                &mut VecSink::new(&mut self.dst, 0, 0),
                 &mut self.compression_table,
                 b"",
                 self.src_stream_offset,
             )
-        };
+        }
+        .map_err(Error::CompressionError)?;
 
-        let (block_info, block_data) = match compress_result.map_err(Error::CompressionError)? {
-            comp_len if comp_len < src.len() => {
-                (BlockInfo::Compressed(comp_len as _), &self.dst[..comp_len])
-            }
-            _ => (BlockInfo::Uncompressed(src.len() as _), src),
+        let (block_info, block_data) = if comp_len < src.len() {
+            (BlockInfo::Compressed(comp_len as _), &self.dst[..comp_len])
+        } else {
+            (BlockInfo::Uncompressed(src.len() as _), src)
         };
 
         // Write the (un)compressed block to the writer and the block checksum (if applicable).
@@ -383,25 +382,6 @@ impl<W: fmt::Debug + io::Write> fmt::Debug for FrameEncoder<W> {
             .field("ext_dict_len", &self.ext_dict_len)
             .field("src_stream_offset", &self.src_stream_offset)
             .finish()
-    }
-}
-
-/// Similar to set_len but panics if the vec doesn't have enough capacity.
-#[cfg(feature = "safe-encode")]
-#[inline]
-fn vec_set_len(v: &mut Vec<u8>, new_len: usize) {
-    // The assert isn't strictly needed but we want to assert the same behavior as the unsafe version
-    assert!(new_len <= v.capacity());
-    v.resize(new_len, 0);
-}
-
-/// Similar to set_len but panics if the vec doesn't have enough capacity.
-#[cfg(not(feature = "safe-encode"))]
-#[inline]
-fn vec_set_len(v: &mut Vec<u8>, new_len: usize) {
-    assert!(new_len <= v.capacity());
-    unsafe {
-        v.set_len(new_len);
     }
 }
 
