@@ -1,6 +1,6 @@
+use alloc::vec::Vec;
 use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
-use alloc::vec::Vec;
 
 /// Sink is used as target to de/compress data into a preallocated and possibly uninitialized memory space.
 /// Sink can be created from a `Vec` or a `Slice`. The new pos on the data after the operation

@@ -7,12 +7,32 @@ on:
     branches: [ master ]
 
 jobs:
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - run: rustup component add rustfmt
+      - uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
   build:
 
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v2
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
     - name: Build
       run: cargo build --verbose
     - name: Run tests
@@ -23,6 +43,8 @@ jobs:
       run: cargo test --verbose --features safe-decode
     - name: Run tests no-default-features (no safe-decode)
       run: cargo test --verbose --no-default-features --features frame
+    - name: Install cargo fuzz
+      run: cargo install cargo-fuzz
     - name: Run fuzz tests (safe)
       run: for fuzz_test in `cargo fuzz list`; do cargo fuzz run $fuzz_test -- -max_total_time=10 || exit 1; done
     - name: Run fuzz tests (unsafe)
