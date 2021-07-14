@@ -8,7 +8,7 @@ on:
 
 jobs:
   fmt:
-    name: Rustfmt
+    name: Rustfmt check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -24,7 +24,7 @@ jobs:
           args: --all -- --check
 
   build:
-
+    name: Build and test
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
@@ -43,6 +43,17 @@ jobs:
       run: cargo test --verbose --features safe-decode
     - name: Run tests no-default-features (no safe-decode)
       run: cargo test --verbose --no-default-features --features frame
+
+  fuzz:
+    name: Fuzz testing
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: nightly
+        override: true
     - name: Install cargo fuzz
       run: cargo install cargo-fuzz
     - name: Run fuzz tests (safe)
