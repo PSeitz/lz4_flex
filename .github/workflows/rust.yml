@@ -35,6 +35,8 @@ jobs:
         override: true
     - name: Build
       run: cargo build --verbose
+    - name: Build no-default-features
+      run: cargo build --verbose --no-default-features
     - name: Run tests
       run: cargo test
     - name: Run tests --features safe-encode
