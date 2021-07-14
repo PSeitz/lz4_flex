@@ -24,9 +24,11 @@ const ALL: &[&[u8]] = &[
 fn compress_lz4_fear(input: &[u8]) -> Vec<u8> {
     let mut buf = Vec::new();
     if input.len() <= 0xFFFF {
-        lz_fear::raw::compress2(input, 0, &mut lz_fear::raw::U16Table::default(), &mut buf).unwrap();
+        lz_fear::raw::compress2(input, 0, &mut lz_fear::raw::U16Table::default(), &mut buf)
+            .unwrap();
     } else {
-        lz_fear::raw::compress2(input, 0, &mut lz_fear::raw::U32Table::default(), &mut buf).unwrap();
+        lz_fear::raw::compress2(input, 0, &mut lz_fear::raw::U32Table::default(), &mut buf)
+            .unwrap();
     }
     buf
 }
