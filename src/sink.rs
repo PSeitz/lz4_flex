@@ -7,6 +7,7 @@ use core::mem::MaybeUninit;
 /// bytes at `vec[offset..offset+required_capacity]`.
 /// It can be either a `SliceSink` (pre-filling the vec with zeroes if necessary)
 /// when the `safe-decode` feature is enabled, or `VecSink` otherwise.
+/// The argument `pos` defines the initial output position in the Sink.
 #[inline]
 pub fn vec_sink_for_compression<'a>(
     vec: &'a mut Vec<u8>,
@@ -31,6 +32,7 @@ pub fn vec_sink_for_compression<'a>(
 /// bytes at `vec[offset..offset+required_capacity]`.
 /// It can be either a `SliceSink` (pre-filling the vec with zeroes if necessary)
 /// when the `safe-decode` feature is enabled, or `VecSink` otherwise.
+/// The argument `pos` defines the initial output position in the Sink.
 #[inline]
 pub fn vec_sink_for_decompression<'a>(
     vec: &'a mut Vec<u8>,
@@ -139,6 +141,9 @@ pub struct SliceSink<'a> {
 
 impl<'a> SliceSink<'a> {
     /// Creates a `Sink` backed by the given byte slice.
+    /// `pos` defines the initial output position in the Sink.
+    /// # Panics
+    /// Panics if `pos` is out of bounds.
     #[inline]
     pub fn new(output: &'a mut [u8], pos: usize) -> Self {
         // SAFETY: Caller guarantees that all elements of `output` are initialized.
@@ -231,9 +236,12 @@ pub struct VecSink<'a> {
 #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
 impl<'a> VecSink<'a> {
     /// Creates a `Sink` backed by the Vec bytes at `vec[offset..vec.capacity()]`.
+    /// `pos` defines the initial output position (counted from `offset`) in the Sink.
     /// Note that the bytes at `vec[output.len()..]` are actually uninitialized and will
     /// not be readable until written.
     /// When the `Sink` is dropped the Vec len will be adjusted to `offset` + `Sink.pos`.
+    /// # Panics
+    /// Panics if `pos` is out of bounds.
     #[inline]
     pub fn new(output: &'a mut Vec<u8>, offset: usize, pos: usize) -> VecSink<'a> {
         // The truncation also works as bounds checking for offset and pos.
