@@ -53,6 +53,11 @@ unsafe fn duplicate_overlapping(
     mut start: *const u8,
     match_length: usize,
 ) {
+    // There is an edge case when output_ptr == start, which causes the decoder to potentially
+    // expose up to match_length bytes of uninitialized data in the decompression buffer.
+    // To prevent that we write a dummy zero to output, which will zero out output in such cases.
+    // This is the same strategy used by the reference C implementation https://github.com/lz4/lz4/pull/772
+    output_ptr.write(0u8);
     // Note: this looks like a harmless loop but is unrolled/auto-vectorized by the compiler
     for _ in 0..match_length {
         let curr = start.read();
@@ -262,7 +267,7 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
             let mut start_ptr = unsafe { output_ptr.sub(offset) };
             #[cfg(feature = "checked-decode")]
             {
-                if offset == 0 || unsafe { start_ptr.add(ext_dict.len()) } < output_base {
+                if unsafe { start_ptr.add(ext_dict.len()) } < output_base {
                     return Err(DecompressError::OffsetOutOfBounds);
                 }
             }
@@ -375,7 +380,7 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
         // We'll do a bounds check in checked-decode.
         #[cfg(feature = "checked-decode")]
         {
-            if offset == 0 || unsafe { start_ptr.add(ext_dict.len()) } < output_base {
+            if unsafe { start_ptr.add(ext_dict.len()) } < output_base {
                 return Err(DecompressError::OffsetOutOfBounds);
             }
             if unsafe { output_ptr.add(match_length) } > output_end {
