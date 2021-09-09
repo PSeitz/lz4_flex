@@ -1,38 +1,29 @@
-name:                           coverage
+name: Coverage
 
-on:                             [push]
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
 jobs:
-  test:
-    name:                       coverage
-    runs-on:                    ubuntu-latest
-    container:
-      image:                    xd009642/tarpaulin
-      options:                  --security-opt seccomp=unconfined
+  coverage:
+    runs-on: ubuntu-latest
     steps:
-      - name:                   Checkout repository
-        uses:                   actions/checkout@v2
-
-      - name: Generate code coverage
-        run: cargo tarpaulin --verbose --workspace --timeout 120 --out Xml --all-features
-      - name:                   Upload to codecov.io 1
-        uses:                   codecov/codecov-action@v1
+      - uses: actions/checkout@v2
+      - name: Install Rust
+        run: rustup toolchain install nightly --component llvm-tools-preview
+      - name: Install cargo-llvm-cov
+        run: curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | tar xzf - -C ~/.cargo/bin
+      - name: Generate code coverage normal run
+        run: cargo llvm-cov --workspace --lcov --output-path lcov1.info
+      - name: Generate code coverage all-features
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov2.info
+      - name: Generate code coverage unsafe w. checked-decode
+        run: cargo llvm-cov --no-default-features --features frame --features checked-decode --workspace --lcov --output-path lcov3.info
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v1
         with:
-          fail_ci_if_error:     true
-      - name: Generate code coverage --features safe-encode
-        run: cargo tarpaulin --verbose --workspace --timeout 120 --out Xml --no-default-features --features safe-encode
-      - name:                   Upload to codecov.io 2
-        uses:                   codecov/codecov-action@v1
-        with:
-          fail_ci_if_error:     true
-      - name: Generate code coverage safe-decode
-        run: cargo tarpaulin --verbose --workspace --timeout 120 --out Xml --no-default-features --features safe-decode
-      - name:                   Upload to codecov.io 3
-        uses:                   codecov/codecov-action@v1
-        with:
-          fail_ci_if_error:     true
-      - name: Generate code coverage no-default-features
-        run: cargo tarpaulin --verbose --workspace --timeout 120 --out Xml --no-default-features
-      - name:                   Upload to codecov.io 4
-        uses:                   codecov/codecov-action@v1
-        with:
-          fail_ci_if_error:     true
+          token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
+          files: lcov1.info,lcov2.info,lcov3.info
+          fail_ci_if_error: true
