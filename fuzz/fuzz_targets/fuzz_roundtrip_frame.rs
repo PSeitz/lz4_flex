@@ -33,34 +33,48 @@ fuzz_target!(|input: Input| {
         lz4_flex::frame::BlockMode::Independent,
         lz4_flex::frame::BlockMode::Linked,
     ] {
-        // io::Write
-        let mut fi = lz4_flex::frame::FrameInfo::default();
-        fi.block_mode = *bm;
-        let mut enc =
-            lz4_flex::frame::FrameEncoder::with_frame_info(fi, Vec::with_capacity(data_size));
-        for chunk in data.chunks(chunk_size) {
-            enc.write(chunk).unwrap();
-            // by flushing we force encoder to output a frame block
-            // if buffered data <= max block size
-            enc.flush().unwrap();
-        }
-        let compressed = enc.finish().unwrap();
-        // io::Read
-        let mut decompressed = Vec::new();
-        decompressed.resize(data.len() + chunk_size, 0);
-        let mut pos = 0;
-        let mut dec = lz4_flex::frame::FrameDecoder::new(&*compressed);
-        loop {
-            match dec.read(&mut decompressed[pos..pos + chunk_size]).unwrap() {
-                0 => {
-                    decompressed.truncate(pos);
-                    break;
+        for bs in &[
+            lz4_flex::frame::BlockSize::Max64KB,
+            lz4_flex::frame::BlockSize::Max256KB,
+            lz4_flex::frame::BlockSize::Max1MB,
+            lz4_flex::frame::BlockSize::Max4MB,
+        ] {
+            for check_sum in &[true, false] {
+                // io::Write
+                let mut fi = lz4_flex::frame::FrameInfo::default();
+                fi.block_mode = *bm;
+                fi.block_size = *bs;
+                fi.block_checksums = *check_sum;
+                fi.content_checksum = *check_sum;
+                let mut enc = lz4_flex::frame::FrameEncoder::with_frame_info(
+                    fi,
+                    Vec::with_capacity(data_size),
+                );
+                for chunk in data.chunks(chunk_size) {
+                    enc.write(chunk).unwrap();
+                    // by flushing we force encoder to output a frame block
+                    // if buffered data <= max block size
+                    enc.flush().unwrap();
                 }
-                i => {
-                    pos += i;
+                let compressed = enc.finish().unwrap();
+                // io::Read
+                let mut decompressed = Vec::new();
+                decompressed.resize(data.len() + chunk_size, 0);
+                let mut pos = 0;
+                let mut dec = lz4_flex::frame::FrameDecoder::new(&*compressed);
+                loop {
+                    match dec.read(&mut decompressed[pos..pos + chunk_size]).unwrap() {
+                        0 => {
+                            decompressed.truncate(pos);
+                            break;
+                        }
+                        i => {
+                            pos += i;
+                        }
+                    }
                 }
+                assert_eq!(data, decompressed);
             }
         }
-        assert_eq!(data, decompressed);
     }
 });
