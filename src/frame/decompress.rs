@@ -8,7 +8,10 @@ use twox_hash::XxHash32;
 
 use super::header::{BlockInfo, BlockMode, FrameInfo, MAX_FRAME_INFO_SIZE, MIN_FRAME_INFO_SIZE};
 use super::Error;
-use crate::block::WINDOW_SIZE;
+use crate::{
+    block::WINDOW_SIZE,
+    sink::{vec_sink_for_decompression, SliceSink},
+};
 
 /// A reader for decompressing the LZ4 frame format
 ///
@@ -214,6 +217,8 @@ impl<R: io::Read> FrameDecoder<R> {
                 if len > max_block_size {
                     return Err(Error::BlockTooBig.into());
                 }
+                // TODO: Attempt to avoid initialization of read buffer when
+                // https://github.com/rust-lang/rust/issues/42788 stabilizes
                 self.r.read_exact(vec_resize_and_get_mut(
                     &mut self.dst,
                     self.dst_start,
@@ -235,16 +240,13 @@ impl<R: io::Read> FrameDecoder<R> {
                 if len > max_block_size {
                     return Err(Error::BlockTooBig.into());
                 }
+                // TODO: Attempt to avoid initialization of read buffer when
+                // https://github.com/rust-lang/rust/issues/42788 stabilizes
                 self.r
                     .read_exact(vec_resize_and_get_mut(&mut self.src, 0, len))?;
                 if frame_info.block_checksums {
                     let expected_checksum = Self::read_checksum(&mut self.r)?;
                     Self::check_block_checksum(&self.src[..len], expected_checksum)?;
-                }
-
-                // Ensure dst has enough len to decompress into
-                if self.dst.len() - self.dst_start < max_block_size {
-                    vec_set_len(&mut self.dst, self.dst_start + max_block_size);
                 }
 
                 let with_dict_mode =
@@ -255,19 +257,23 @@ impl<R: io::Read> FrameDecoder<R> {
                     let ext_dict = &tail[..self.ext_dict_len];
 
                     debug_assert!(head.len() - self.dst_start >= max_block_size);
-                    crate::block::decompress::decompress_into_with_dict(
+                    crate::block::decompress::decompress_internal::<_, true>(
                         &self.src[..len],
-                        head,
-                        self.dst_start,
+                        &mut SliceSink::new(head, self.dst_start),
                         ext_dict,
                     )
                 } else {
                     // Independent blocks OR linked blocks with only prefix data
-                    debug_assert!(self.dst.len() - self.dst_start >= max_block_size);
-                    crate::block::decompress::decompress_into(
+                    debug_assert!(self.dst.capacity() - self.dst_start >= max_block_size);
+                    crate::block::decompress::decompress_internal::<_, false>(
                         &self.src[..len],
-                        &mut self.dst,
-                        self.dst_start,
+                        &mut vec_sink_for_decompression(
+                            &mut self.dst,
+                            0,
+                            self.dst_start,
+                            self.dst_start + max_block_size,
+                        ),
+                        b"",
                     )
                 }
                 .map_err(Error::DecompressionError)?;
@@ -404,31 +410,12 @@ impl<R: fmt::Debug + io::Read> fmt::Debug for FrameDecoder<R> {
     }
 }
 
-/// Similar to set_len but panics if the vec doesn't have enough capacity.
-#[cfg(feature = "safe-decode")]
-#[inline]
-fn vec_set_len(v: &mut Vec<u8>, new_len: usize) {
-    // The assert isn't strictly needed but we want to assert the same behavior as the unsafe version
-    assert!(new_len <= v.capacity());
-    v.resize(new_len, 0);
-}
-
-/// Similar to set_len but panics if the vec doesn't have enough capacity.
-#[cfg(not(feature = "safe-decode"))]
-#[inline]
-fn vec_set_len(v: &mut Vec<u8>, new_len: usize) {
-    assert!(new_len <= v.capacity());
-    unsafe {
-        v.set_len(new_len);
-    }
-}
-
 /// Similar to `v.get_mut(start..end) but will adjust the len if needed.
 /// Panics if there's not enough capacity.
 #[inline]
 fn vec_resize_and_get_mut(v: &mut Vec<u8>, start: usize, end: usize) -> &mut [u8] {
     if end > v.len() {
-        vec_set_len(v, end);
+        v.resize(end, 0)
     }
     &mut v[start..end]
 }

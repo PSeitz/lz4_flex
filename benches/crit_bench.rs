@@ -13,7 +13,7 @@ const COMPRESSION1K: &'static [u8] = include_bytes!("compression_1k.txt");
 const COMPRESSION34K: &'static [u8] = include_bytes!("compression_34k.txt");
 const COMPRESSION65K: &'static [u8] = include_bytes!("compression_65k.txt");
 const COMPRESSION66K: &'static [u8] = include_bytes!("compression_66k_JSON.txt");
-//const COMPRESSION10MB: &'static [u8] = include_bytes!("dickens.txt");
+const COMPRESSION10MB: &'static [u8] = include_bytes!("dickens.txt");
 const COMPRESSION95K_VERY_GOOD_LOGO: &'static [u8] = include_bytes!("../logo.jpg");
 
 const ALL: &[&[u8]] = &[
@@ -21,7 +21,7 @@ const ALL: &[&[u8]] = &[
     COMPRESSION34K as &[u8],
     COMPRESSION65K as &[u8],
     COMPRESSION66K as &[u8],
-    //COMPRESSION10MB as &[u8],
+    // COMPRESSION10MB as &[u8],
     // COMPRESSION95K_VERY_GOOD_LOGO as &[u8],
 ];
 
@@ -117,6 +117,25 @@ pub fn lz4_flex_frame_decompress(input: &[u8]) -> Result<Vec<u8>, lz4_flex::fram
     Ok(out)
 }
 
+// pub fn lz4_flex_master_frame_compress_with(
+//     frame_info: lz4_flex_master::frame::FrameInfo,
+//     input: &[u8],
+// ) -> Result<Vec<u8>, lz4_flex_master::frame::Error> {
+//     let buffer = Vec::new();
+//     let mut enc = lz4_flex_master::frame::FrameEncoder::with_frame_info(frame_info, buffer);
+//     enc.write_all(input)?;
+//     Ok(enc.finish()?)
+// }
+
+// pub fn lz4_flex_master_frame_decompress(
+//     input: &[u8],
+// ) -> Result<Vec<u8>, lz4_flex_master::frame::Error> {
+//     let mut de = lz4_flex_master::frame::FrameDecoder::new(input);
+//     let mut out = Vec::new();
+//     de.read_to_end(&mut out)?;
+//     Ok(out)
+// }
+
 fn bench_block_compression_throughput(c: &mut Criterion) {
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Linear);
 
@@ -133,26 +152,26 @@ fn bench_block_compression_throughput(c: &mut Criterion) {
             |b, i| b.iter(|| lz4_flex::compress(&i)),
         );
         // an empty slice that the compiler can't infer the size
-        //let empty_vec = std::env::args()
-        //.skip(1000000)
-        //.next()
-        //.unwrap_or_default()
-        //.into_bytes();
-        //group.bench_with_input(
-        //BenchmarkId::new("lz4_flex_rust_with_dict", input_bytes),
-        //&input,
-        //|b, i| b.iter(|| lz4_flex::block::compress_with_dict(&i, &empty_vec)),
-        //);
-        //// group.bench_with_input(
+        let empty_vec = std::env::args()
+            .skip(1000000)
+            .next()
+            .unwrap_or_default()
+            .into_bytes();
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flex_rust_with_dict", input_bytes),
+            &input,
+            |b, i| b.iter(|| lz4_flex::block::compress_with_dict(&i, &empty_vec)),
+        );
+        // group.bench_with_input(
         //     BenchmarkId::new("lz4_flex_rust_master", input_bytes),
         //     &input,
         //     |b, i| b.iter(|| lz4_flex_master::compress(&i)),
         // );
-        // group.bench_with_input(
-        //     BenchmarkId::new("lz4_redox_rust", input_bytes),
-        //     &input,
-        //     |b, i| b.iter(|| lz4_compress::compress(&i)),
-        // );
+        group.bench_with_input(
+            BenchmarkId::new("lz4_redox_rust", input_bytes),
+            &input,
+            |b, i| b.iter(|| lz4_compress::compress(&i)),
+        );
         group.bench_with_input(
             BenchmarkId::new("lz4_fear_rust", input_bytes),
             &input,
@@ -189,26 +208,26 @@ fn bench_block_decompression_throughput(c: &mut Criterion) {
             |b, i| b.iter(|| lz4_flex::decompress(&i, input.len())),
         );
         // an empty slice that the compiler can't infer the size
-        //let empty_vec = std::env::args()
-        //.skip(1000000)
-        //.next()
-        //.unwrap_or_default()
-        //.into_bytes();
-        //group.bench_with_input(
-        //BenchmarkId::new("lz4_flex_rust_with_dict", input_bytes),
-        //&comp_lz4,
-        //|b, i| b.iter(|| lz4_flex::block::decompress_with_dict(&i, input.len(), &empty_vec)),
-        //);
+        let empty_vec = std::env::args()
+            .skip(1000000)
+            .next()
+            .unwrap_or_default()
+            .into_bytes();
+        group.bench_with_input(
+            BenchmarkId::new("lz4_flex_rust_with_dict", input_bytes),
+            &comp_lz4,
+            |b, i| b.iter(|| lz4_flex::block::decompress_with_dict(&i, input.len(), &empty_vec)),
+        );
         // group.bench_with_input(
         //     BenchmarkId::new("lz4_flex_rust_master", input_bytes),
         //     &comp_lz4,
         //     |b, i| b.iter(|| lz4_flex_master::decompress(&i, input.len())),
         // );
-        // group.bench_with_input(
-        //     BenchmarkId::new("lz4_redox_rust", input_bytes),
-        //     &comp_lz4,
-        //     |b, i| b.iter(|| lz4_compress::decompress(&i)),
-        // );
+        group.bench_with_input(
+            BenchmarkId::new("lz4_redox_rust", input_bytes),
+            &comp_lz4,
+            |b, i| b.iter(|| lz4_compress::decompress(&i)),
+        );
         group.bench_with_input(
             BenchmarkId::new("lz4_fear_rust", input_bytes),
             &comp_lz4,
@@ -246,7 +265,7 @@ fn bench_frame_decompression_throughput(c: &mut Criterion) {
 
         group.bench_with_input(
             BenchmarkId::new("lz4_flex_rust_indep", input_bytes),
-            &comp_lz4_linked,
+            &comp_lz4_indep,
             |b, i| b.iter(|| lz4_flex_frame_decompress(&i)),
         );
         group.bench_with_input(
@@ -254,6 +273,16 @@ fn bench_frame_decompression_throughput(c: &mut Criterion) {
             &comp_lz4_linked,
             |b, i| b.iter(|| lz4_flex_frame_decompress(&i)),
         );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_flex_master_rust_indep", input_bytes),
+        //     &comp_lz4_indep,
+        //     |b, i| b.iter(|| lz4_flex_master_frame_decompress(&i)),
+        // );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_flex_master_rust_linked", input_bytes),
+        //     &comp_lz4_linked,
+        //     |b, i| b.iter(|| lz4_flex_master_frame_decompress(&i)),
+        // );
 
         group.bench_with_input(
             BenchmarkId::new("lz4_cpp_indep", input_bytes),
@@ -308,6 +337,29 @@ fn bench_frame_compression_throughput(c: &mut Criterion) {
                 })
             },
         );
+
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_flex_master_rust_indep", input_bytes),
+        //     &input,
+        //     |b, i| {
+        //         b.iter(|| {
+        //             let mut frame_info = lz4_flex_master::frame::FrameInfo::new();
+        //             frame_info.block_mode = lz4_flex_master::frame::BlockMode::Independent;
+        //             lz4_flex_master_frame_compress_with(frame_info, i)
+        //         })
+        //     },
+        // );
+        // group.bench_with_input(
+        //     BenchmarkId::new("lz4_flex_master_rust_linked", input_bytes),
+        //     &input,
+        //     |b, i| {
+        //         b.iter(|| {
+        //             let mut frame_info = lz4_flex_master::frame::FrameInfo::new();
+        //             frame_info.block_mode = lz4_flex_master::frame::BlockMode::Linked;
+        //             lz4_flex_master_frame_compress_with(frame_info, i)
+        //         })
+        //     },
+        // );
 
         group.bench_with_input(
             BenchmarkId::new("lz4_cpp_indep", input_bytes),
