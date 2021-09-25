@@ -483,7 +483,7 @@ pub(crate) fn compress_internal<T: HashTable, SINK: Sink, const USE_DICT: bool>(
         //
         // The unsafe version copies blocks of 8bytes, and therefore may copy up to 7bytes more than needed.
         // This is safe, because the last 12 bytes (MF_LIMIT) are handled in handle_last_literals.
-        copy_literals_wild(output, &input, literal_start, lit_len);
+        copy_literals_wild(output, input, literal_start, lit_len);
         // write the offset in little endian.
         push_u16(output, offset);
 
@@ -834,7 +834,7 @@ mod tests {
         let input: &[u8] = &[
             10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
         ];
-        let _out = compress(&input);
+        let _out = compress(input);
     }
 
     #[test]
@@ -843,7 +843,7 @@ mod tests {
             10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
         ];
         let dict = input;
-        let compressed = compress_with_dict(&input, &dict);
+        let compressed = compress_with_dict(input, dict);
         assert_lt!(compressed.len(), compress(input).len());
 
         assert!(compressed.len() < compress(input).len());
@@ -851,7 +851,7 @@ mod tests {
         let uncomp_size = crate::block::decompress::decompress_into_with_dict(
             &compressed,
             &mut uncompressed,
-            &dict,
+            dict,
         )
         .unwrap();
         uncompressed.truncate(uncomp_size);
@@ -864,7 +864,7 @@ mod tests {
             10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
         ];
         let dict = input;
-        let compressed = compress_with_dict(&input, &dict);
+        let compressed = compress_with_dict(input, dict);
         assert_lt!(compressed.len(), compress(input).len());
 
         let mut uncompressed = vec![0u8; input.len() * 2];
@@ -911,18 +911,18 @@ mod tests {
         assert_le!(out.len(), 15);
 
         // dict uncompressible
-        let out = compress_with_dict(&aaas[..11], &aaas);
+        let out = compress_with_dict(&aaas[..11], aaas);
         assert_gt!(out.len(), 11);
         // compressible
-        let out = compress_with_dict(&aaas[..12], &aaas);
+        let out = compress_with_dict(&aaas[..12], aaas);
         // According to the spec this _could_ compres, but it doesn't in this lib
         // as it aborts compression for any input len < LZ4_MIN_LENGTH
         assert_gt!(out.len(), 12);
-        let out = compress_with_dict(&aaas[..13], &aaas);
+        let out = compress_with_dict(&aaas[..13], aaas);
         assert_le!(out.len(), 13);
-        let out = compress_with_dict(&aaas[..14], &aaas);
+        let out = compress_with_dict(&aaas[..14], aaas);
         assert_le!(out.len(), 14);
-        let out = compress_with_dict(&aaas[..15], &aaas);
+        let out = compress_with_dict(&aaas[..15], aaas);
         assert_le!(out.len(), 15);
     }
 
@@ -930,7 +930,7 @@ mod tests {
     fn test_dict_size() {
         let dict = vec![b'a'; 1024 * 1024];
         let input = &b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaa"[..];
-        let compressed = compress_prepend_size_with_dict(&input, &dict);
+        let compressed = compress_prepend_size_with_dict(input, &dict);
         let decompressed =
             crate::block::decompress_size_prepended_with_dict(&compressed, &dict).unwrap();
         assert_eq!(decompressed, input);

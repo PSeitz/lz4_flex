@@ -26,29 +26,25 @@ This program reads data from `stdin`, compresses it and emits it to `stdout`.
 This example can be found in `examples/compress.rs`:
 ```no_run
 use std::io;
-fn main() {
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let mut rdr = stdin.lock();
-    // Wrap the stdout writer in a LZ4 Frame writer.
-    let mut wtr = lz4_flex::frame::FrameEncoder::new(stdout.lock());
-    io::copy(&mut rdr, &mut wtr).expect("I/O operation failed");
-    wtr.finish().unwrap();
-}
+let stdin = io::stdin();
+let stdout = io::stdout();
+let mut rdr = stdin.lock();
+// Wrap the stdout writer in a LZ4 Frame writer.
+let mut wtr = lz4_flex::frame::FrameEncoder::new(stdout.lock());
+io::copy(&mut rdr, &mut wtr).expect("I/O operation failed");
+wtr.finish().unwrap();
 ```
 # Example: decompress data on `stdin` with frame format
 This program reads data from `stdin`, decompresses it and emits it to `stdout`.
 This example can be found in `examples/decompress.rs`:
 ```no_run
 use std::io;
-fn main() {
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    // Wrap the stdin reader in a LZ4 FrameDecoder.
-    let mut rdr = lz4_flex::frame::FrameDecoder::new(stdin.lock());
-    let mut wtr = stdout.lock();
-    io::copy(&mut rdr, &mut wtr).expect("I/O operation failed");
-}
+let stdin = io::stdin();
+let stdout = io::stdout();
+// Wrap the stdin reader in a LZ4 FrameDecoder.
+let mut rdr = lz4_flex::frame::FrameDecoder::new(stdin.lock());
+let mut wtr = stdout.lock();
+io::copy(&mut rdr, &mut wtr).expect("I/O operation failed");
 ```
 
 # Example: block format roundtrip

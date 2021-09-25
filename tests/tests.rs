@@ -11,11 +11,11 @@ use lz4_flex::{
     compress, decompress,
 };
 
-const COMPRESSION1K: &'static [u8] = include_bytes!("../benches/compression_1k.txt");
-const COMPRESSION34K: &'static [u8] = include_bytes!("../benches/compression_34k.txt");
-const COMPRESSION65: &'static [u8] = include_bytes!("../benches/compression_65k.txt");
-const COMPRESSION66JSON: &'static [u8] = include_bytes!("../benches/compression_66k_JSON.txt");
-const COMPRESSION10MB: &'static [u8] = include_bytes!("../benches/dickens.txt");
+const COMPRESSION1K: &[u8] = include_bytes!("../benches/compression_1k.txt");
+const COMPRESSION34K: &[u8] = include_bytes!("../benches/compression_34k.txt");
+const COMPRESSION65: &[u8] = include_bytes!("../benches/compression_65k.txt");
+const COMPRESSION66JSON: &[u8] = include_bytes!("../benches/compression_66k_JSON.txt");
+const COMPRESSION10MB: &[u8] = include_bytes!("../benches/dickens.txt");
 
 fn lz4_cpp_block_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
     let mut out = Vec::new();
@@ -549,7 +549,7 @@ mod frame {
         let mut frame_info = lz4_flex::frame::FrameInfo::new();
         frame_info.content_size = Some(COMPRESSION1K.len() as u64);
         let mut compressed =
-            lz4_flex_frame_compress_with(frame_info.clone(), COMPRESSION1K).unwrap();
+            lz4_flex_frame_compress_with(frame_info, COMPRESSION1K).unwrap();
 
         // roundtrip
         let uncompressed = lz4_flex_frame_decompress(&compressed).unwrap();
@@ -561,7 +561,7 @@ mod frame {
             let mut frame_info = lz4_flex::frame::FrameInfo::new();
             frame_info.content_size = Some(3);
             let dummy_compressed =
-                lz4_flex_frame_compress_with(frame_info.clone(), b"123").unwrap();
+                lz4_flex_frame_compress_with(frame_info, b"123").unwrap();
             // `15` (7 + 8) is the size of the header plus the content size in the compressed bytes
             compressed[..15].copy_from_slice(&dummy_compressed[..15]);
         }
