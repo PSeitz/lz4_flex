@@ -33,6 +33,7 @@ pub fn vec_sink_for_compression<'a>(
 /// It can be either a `SliceSink` (pre-filling the vec with zeroes if necessary)
 /// when the `safe-decode` feature is enabled, or `VecSink` otherwise.
 /// The argument `pos` defines the initial output position in the Sink.
+#[cfg(feature = "frame")]
 #[inline]
 pub fn vec_sink_for_decompression<'a>(
     vec: &'a mut Vec<u8>,
