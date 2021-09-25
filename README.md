@@ -34,18 +34,21 @@ Compression and decompression uses no usafe via the default feature flags "safe-
 
 Safe:
 ```
-lz4_flex = { version = "0.8.0" }
+lz4_flex = { version = "0.9.0" }
 ```
 
 Performance:
+
 ```
-lz4_flex = { version = "0.8.0", default-features = false }
+lz4_flex = { version = "0.9.0", default-features = false, features = ["frame", "checked-decode"] }
 ```
 
 Warning: If you don't trust your input and your are using the Block format, use checked-decode in order to avoid out of bounds access. When using the Frame format make sure to enable checksums.
+
 ```
-lz4_flex = { version = "0.8.0", default-features = false, features = ["checked-decode"] }
+lz4_flex = { version = "0.9.0", default-features = false, features = ["frame"]  }
 ```
+
 
 ```rust
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
