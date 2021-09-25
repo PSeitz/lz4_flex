@@ -1,9 +1,9 @@
-0.9.0 (2021-25-09)
+0.9.0 (2021-09-25)
 ==================
 Fix unsoundness in the the api in regards to unitialized data. (thanks to @arthurprs)
 * https://github.com/PSeitz/lz4_flex/pull/22
 
-0.8.0 (2021-17-05)
+0.8.0 (2021-05-17)
 ==================
 Support for the lz4 frame format, with a massive amount of improvements. (big thanks to @arthurprs)
 ~40% faster safe decompression, ~10% faster safe compression.
