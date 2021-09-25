@@ -7,7 +7,7 @@
 ![lz4_flex_logo](https://raw.githubusercontent.com/PSeitz/lz4_flex/master/logo.jpg)
 
 Fastest LZ4 implementation in Rust. Originally based on [redox-os' lz4 compression](https://crates.io/crates/lz4-compress), but now a complete rewrite.
-The results in the table are from a benchmark in this project (66Kb JSON) on with the block format. 
+The results in the table are from a benchmark in this project (66Kb JSON) with the block format. 
 
 AMD Ryzen 7 5800H, rustc 1.57.0-nightly (5ecc8ad84 2021-09-19), Linux Mint.
 
