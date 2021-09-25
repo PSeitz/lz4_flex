@@ -9,12 +9,12 @@ use core::mem::MaybeUninit;
 /// when the `safe-decode` feature is enabled, or `VecSink` otherwise.
 /// The argument `pos` defines the initial output position in the Sink.
 #[inline]
-pub fn vec_sink_for_compression<'a>(
-    vec: &'a mut Vec<u8>,
+pub fn vec_sink_for_compression(
+    vec: &mut Vec<u8>,
     offset: usize,
     pos: usize,
     required_capacity: usize,
-) -> impl Sink + 'a {
+) -> impl Sink + '_ {
     #[cfg(not(feature = "safe-encode"))]
     return {
         assert!(vec.capacity() >= offset + required_capacity);
@@ -33,13 +33,14 @@ pub fn vec_sink_for_compression<'a>(
 /// It can be either a `SliceSink` (pre-filling the vec with zeroes if necessary)
 /// when the `safe-decode` feature is enabled, or `VecSink` otherwise.
 /// The argument `pos` defines the initial output position in the Sink.
+#[cfg(feature = "frame")]
 #[inline]
-pub fn vec_sink_for_decompression<'a>(
-    vec: &'a mut Vec<u8>,
+pub fn vec_sink_for_decompression(
+    vec: &mut Vec<u8>,
     offset: usize,
     pos: usize,
     required_capacity: usize,
-) -> impl Sink + 'a {
+) -> impl Sink + '_ {
     #[cfg(not(feature = "safe-decode"))]
     return {
         assert!(vec.capacity() >= offset + required_capacity);
