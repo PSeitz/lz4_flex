@@ -7,16 +7,18 @@
 ![lz4_flex_logo](https://raw.githubusercontent.com/PSeitz/lz4_flex/master/logo.jpg)
 
 Fastest LZ4 implementation in Rust. Originally based on [redox-os' lz4 compression](https://crates.io/crates/lz4-compress), but now a complete rewrite.
-The results in the table are from a benchmark in this project (66Kb JSON) on with the block format.
+The results in the table are from a benchmark in this project (66Kb JSON) on with the block format. 
+
+AMD Ryzen 7 5800H, rustc 1.57.0-nightly (5ecc8ad84 2021-09-19), Linux Mint.
 
 |    Compressor        | Compression | Decompression | Ratio		 |
 |----------------------|-------------|---------------|---------------|
-| lz4_flex unsafe      | 898 MiB/s   | 4417 MiB/s    | 0.2289   	 |
-| lz4_flex unsafe w. checked_decode      | 898 MiB/s   | 4023 MiB/s    | 0.2289   	 |
-| lz4_flex safe        | 724 MiB/s   | 2014 MiB/s    | 0.2289   	 |
-| lzzz (lz4 1.9.3)     | 993 MiB/s   | 4193 MiB/s    | 0.2283   	 |
-| lz4_fear             | 456 MiB/s   | 976 MiB/s     | 0.2283	     |
-| snap                 | 861 MiB/s   | 941 MiB/s     | 0.2242      |
+| lz4_flex unsafe      | 1897 MiB/s   | 7123 MiB/s    | 0.2289   	 |
+| lz4_flex unsafe w. checked_decode      | 1897 MiB/s   | 6637 MiB/s    | 0.2289   	 |
+| lz4_flex safe        | 1591 MiB/s   | 5163 MiB/s    | 0.2289   	 |
+| lzzz (lz4 1.9.3)     | 2235 MiB/s   | 7001 MiB/s    | 0.2283   	 |
+| lz4_fear             | 886 MiB/s   | 1359 MiB/s     | 0.2283	     |
+| snap                 | 1886 MiB/s   | 1649 MiB/s     | 0.2242      |
 
 
 ## Features
@@ -38,17 +40,14 @@ lz4_flex = { version = "0.9.0" }
 ```
 
 Performance:
-
 ```
-lz4_flex = { version = "0.9.0", default-features = false, features = ["frame", "checked-decode"] }
+lz4_flex = { version = "0.9.0", default-features = false }
 ```
 
 Warning: If you don't trust your input and your are using the Block format, use checked-decode in order to avoid out of bounds access. When using the Frame format make sure to enable checksums.
-
 ```
-lz4_flex = { version = "0.9.0", default-features = false, features = ["frame"]  }
+lz4_flex = { version = "0.9.0", default-features = false, features = ["checked-decode"] }
 ```
-
 
 ```rust
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
