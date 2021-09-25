@@ -9,7 +9,7 @@ repository = "https://github.com/pseitz/lz4_flex"
 readme = "README.md"
 license = "MIT"
 version = "0.9.0"
-include = ["src/lib.rs", "src/frame/**/*", "src/block/**/*", "README.md"]
+include = ["src/*.rs", "src/frame/**/*", "src/block/**/*", "README.md"]
 
 [[bench]]
 harness = false
