@@ -21,9 +21,15 @@ jobs:
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov2.info
       - name: Generate code coverage unsafe w. checked-decode
         run: cargo llvm-cov --no-default-features --features frame --features checked-decode --workspace --lcov --output-path lcov3.info
+      - name: merge reports
+        run: grep -Ev '^(BRF|BRH)' lcov1.info > lcov1_fixed.info
+        run: grep -Ev '^(BRF|BRH)' lcov2.info > lcov2_fixed.info
+        run: grep -Ev '^(BRF|BRH)' lcov3.info > lcov3_fixed.info
+        run: cargo install lcov-util
+        run: lcov-merge lcov1_fixed.info lcov2_fixed.info lcov3_fixed.info > merged.info 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
-          files: lcov1.info,lcov2.info,lcov3.info
+          files: merged.info
           fail_ci_if_error: true
