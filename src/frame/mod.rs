@@ -1,6 +1,23 @@
-//! LZ4 Frame Format
-//!
-//! As defined in <https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md>
+/*!
+LZ4 Frame Format
+
+As defined in <https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md>
+
+# Example: compress data on `stdin` with frame format
+This program reads data from `stdin`, compresses it and emits it to `stdout`.
+This example can be found in `examples/compress.rs`:
+```no_run
+use std::io;
+let stdin = io::stdin();
+let stdout = io::stdout();
+let mut rdr = stdin.lock();
+// Wrap the stdout writer in a LZ4 Frame writer.
+let mut wtr = lz4_flex::frame::FrameEncoder::new(stdout.lock());
+io::copy(&mut rdr, &mut wtr).expect("I/O operation failed");
+wtr.finish().unwrap();
+```
+
+*/
 
 use std::{fmt, io};
 

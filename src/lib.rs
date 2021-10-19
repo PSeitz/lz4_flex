@@ -67,6 +67,9 @@ assert_eq!(input, uncompressed);
 
 For maximum performance use `no-default-features`.
 
+For no_std support only the [`block format`](block/index.html) is supported.
+
+
 */
 
 #![cfg_attr(not(feature = "std"), no_std)]

@@ -1,6 +1,21 @@
-//! LZ4 Block Format
-//!
-//! As defined in <https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md>
+/*!
+LZ4 Block Format
+
+As defined in <https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md>
+
+Currently for no_std support only the block format is supported.
+
+# Example: block format roundtrip
+```
+use lz4_flex::block::{compress_prepend_size, decompress_size_prepended};
+let input: &[u8] = b"Hello people, what's up?";
+let compressed = compress_prepend_size(input);
+let uncompressed = decompress_size_prepended(&compressed).unwrap();
+assert_eq!(input, uncompressed);
+
+```
+
+*/
 
 #[cfg_attr(feature = "safe-encode", forbid(unsafe_code))]
 pub(crate) mod compress;
