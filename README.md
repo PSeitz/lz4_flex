@@ -28,7 +28,7 @@ AMD Ryzen 7 5800H, rustc 1.57.0-nightly (5ecc8ad84 2021-09-19), Linux Mint.
 - High performance
 - 1,5s clean release build time
 - Feature flags to configure safe/unsafe code usage
-- no-std support (thanks @coolreader18)
+- no-std support with block format (thanks @coolreader18)
 - 32-bit support
 
 ## Usage: 
@@ -59,6 +59,12 @@ fn main(){
     assert_eq!(input, uncompressed);
 }
 ```
+
+
+## no_std support
+
+no_std support is currently only for the block format, since the frame format uses `std::io::Write`, which is not available in core.
+
 
 ## Benchmarks
 The benchmark is run with criterion, the test files are in the benches folder.
