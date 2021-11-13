@@ -202,7 +202,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
         }
     }
 
-    if *cur + 1 <= input_end
+    if *cur < input_end
         && unsafe { input.as_ptr().add(*cur).read() } == unsafe { source_ptr.read() }
     {
         *cur += 1;

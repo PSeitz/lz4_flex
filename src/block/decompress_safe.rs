@@ -325,7 +325,8 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
 /// Decompress all bytes of `input` into a new vec.
 #[inline]
 pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
-    let mut decompressed: Vec<u8> = vec![0; uncompressed_size];
+    let mut decompressed: Vec<u8> = Vec::with_capacity(uncompressed_size);
+    decompressed.resize(uncompressed_size, 0);
     let decomp_len =
         decompress_internal::<_, false>(input, &mut SliceSink::new(&mut decompressed, 0), b"")?;
     if decomp_len != uncompressed_size {
@@ -355,7 +356,8 @@ pub fn decompress_with_dict(
     uncompressed_size: usize,
     ext_dict: &[u8],
 ) -> Result<Vec<u8>, DecompressError> {
-    let mut decompressed: Vec<u8> = vec![0; uncompressed_size];
+    let mut decompressed: Vec<u8> = Vec::with_capacity(uncompressed_size);
+    decompressed.resize(uncompressed_size, 0);
     let decomp_len =
         decompress_internal::<_, true>(input, &mut SliceSink::new(&mut decompressed, 0), ext_dict)?;
     if decomp_len != uncompressed_size {
