@@ -1,3 +1,13 @@
+0.9.2 (2021-11-16) 
+==================
+Fixes imports bug from 0.9.1 for no-default-features
+* https://github.com/PSeitz/lz4_flex/pull/25
+
+0.9.1 (2021-11-15) - YANKED
+==================
+Fix no_std support for safe-decode
+* https://github.com/PSeitz/lz4_flex/pull/24
+
 0.9.0 (2021-09-25)
 ==================
 Fix unsoundness in the the api in regards to unitialized data. (thanks to @arthurprs)
