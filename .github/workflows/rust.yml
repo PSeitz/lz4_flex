@@ -23,6 +23,10 @@ jobs:
       run: cargo test --verbose --features safe-decode
     - name: Run tests no-default-features (no safe-decode)
       run: cargo test --verbose --no-default-features --features frame
+    - name: Ensure no_std compiles for checked-decode
+      run: cargo build --no-default-features --features checked-decode
+    - name: Ensure no_std compiles
+      run: cargo build --no-default-features
     - name: Ensure no_std compiles for safe-decode
       run: cargo build --no-default-features --features safe-decode
     - name: Ensure no_std compiles for safe-encode
