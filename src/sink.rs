@@ -1,4 +1,3 @@
-#[cfg(any(feature = "safe-encode", feature = "safe-decode"))]
 use alloc::vec::Vec;
 #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
 use core::mem::MaybeUninit;
