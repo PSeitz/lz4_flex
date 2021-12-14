@@ -110,6 +110,10 @@ This fuzz target asserts that a compression and decompression rountrip returns t
 This fuzz target asserts compression with cpp and decompression with lz4_flex returns the original input.
 `cargo fuzz run fuzz_roundtrip_cpp_compress`
 
+## Bindings in other languages
+ - Node.js: [lz4-napi](https://github.com/antoniomuso/lz4-napi) 
+ - Wasm: [lz4-wasm](https://github.com/PSeitz/lz4_flex/tree/main/lz4-wasm)
+
 ## TODO
 - High compression
 
