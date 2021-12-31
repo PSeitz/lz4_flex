@@ -85,10 +85,6 @@ pub enum DecompressError {
         expected: usize,
         actual: usize,
     },
-    UncompressedSizeDiffers {
-        expected: usize,
-        actual: usize,
-    },
     /// Literal is out of bounds of the input
     LiteralOutOfBounds,
     /// Expected another byte, but none found.
@@ -121,13 +117,6 @@ impl fmt::Display for DecompressError {
             }
             DecompressError::OffsetOutOfBounds => {
                 f.write_str("the offset to copy is not contained in the decompressed buffer")
-            }
-            DecompressError::UncompressedSizeDiffers { actual, expected } => {
-                write!(
-                    f,
-                    "the expected decompressed size differs, actual {}, expected {}",
-                    actual, expected
-                )
             }
         }
     }

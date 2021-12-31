@@ -450,12 +450,7 @@ pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, Dec
     let mut vec: Vec<u8> = Vec::with_capacity(uncompressed_size);
     let decomp_len =
         decompress_internal::<_, false>(input, &mut VecSink::new(&mut vec, 0, 0), b"")?;
-    if decomp_len != uncompressed_size {
-        return Err(DecompressError::UncompressedSizeDiffers {
-            expected: uncompressed_size,
-            actual: decomp_len,
-        });
-    }
+    vec.truncate(decomp_len);
     Ok(vec)
 }
 
@@ -481,12 +476,7 @@ pub fn decompress_with_dict(
     let mut vec: Vec<u8> = Vec::with_capacity(uncompressed_size);
     let decomp_len =
         decompress_internal::<_, true>(input, &mut VecSink::new(&mut vec, 0, 0), ext_dict)?;
-    if decomp_len != uncompressed_size {
-        return Err(DecompressError::UncompressedSizeDiffers {
-            expected: uncompressed_size,
-            actual: decomp_len,
-        });
-    }
+    vec.truncate(decomp_len);
     Ok(vec)
 }
 
