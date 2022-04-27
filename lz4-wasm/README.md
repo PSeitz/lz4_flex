@@ -47,7 +47,6 @@ Due to a long standing bug in wasm-pack 0.9.1, _manually_ add these files to pkg
 
 ```
     "lz4_wasm_bg.wasm.d.ts",
-    "lz4_wasm_bg.js",
 ```
 
 ```
