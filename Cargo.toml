@@ -40,11 +40,11 @@ default = ["std", "safe-encode", "safe-decode", "frame"]
 safe-decode = []
 safe-encode = []
 checked-decode = []
-frame = ["std"]
+frame = ["std", "dep:twox-hash"]
 std = []
 
 [dependencies]
-twox-hash = { version = "1.6.2", default-features = false }
+twox-hash = { version = "1.6.2", default-features = false, optional = true }
 
 [profile.bench]
 codegen-units = 1
