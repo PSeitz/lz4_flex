@@ -98,7 +98,7 @@ Executed on Core i7-6700 Linux Mint.
 
 [Miri](https://github.com/rust-lang/miri) can be used to find issues related to incorrect unsafe usage:
 
-`MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-disable-stacked-borrows" cargo miri test --no-default-features`
+`MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-disable-stacked-borrows" cargo +nightly miri test --no-default-features --features frame`
 
 ## Fuzzer
 This fuzz target generates corrupted data for the decompressor. Make sure to switch to the checked_decode version in `fuzz/Cargo.toml` before testing this.
