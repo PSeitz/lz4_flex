@@ -1,6 +1,5 @@
 //! The decompression algorithm.
-use crate::block::DecompressError;
-use crate::block::MINMATCH;
+use crate::block::{DecompressError, MINMATCH};
 use crate::sink::{Sink, SliceSink, VecSink};
 use alloc::vec::Vec;
 
@@ -18,8 +17,8 @@ unsafe fn duplicate(
     // Considering that `wild_copy_match_16` can copy up to `16 - 1` extra bytes.
     // Defer to `duplicate_overlapping` in case of an overlapping match
     // OR the if the wild copy would copy beyond the end of the output.
-    if start.add(match_length + 16 - 1) > *output_ptr
-        || output_ptr.add(match_length + 16 - 1) > output_end
+    if (output_ptr.offset_from(start) as usize) < match_length + 16 - 1
+        || (output_end.offset_from(*output_ptr) as usize) < match_length + 16 - 1
     {
         duplicate_overlapping(output_ptr, start, match_length);
     } else {
@@ -192,6 +191,13 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
         }
     }
 
+    let ext_dict = if USE_DICT {
+        ext_dict
+    } else {
+        // ensure optimizer knows ext_dict length is 0 if !USE_DICT
+        debug_assert!(ext_dict.is_empty());
+        &[]
+    };
     let output_base = unsafe { output.base_mut_ptr() };
     let output_end = unsafe { output_base.add(output.capacity()) };
     let output_start_pos_ptr = unsafe { output.pos_mut_ptr() };
@@ -245,7 +251,7 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
             #[cfg(feature = "checked-decode")]
             {
                 // Check if literal is out of bounds for the input
-                if input_pos + literal_length > input.len() {
+                if literal_length > input.len() - input_pos {
                     return Err(DecompressError::OffsetOutOfBounds);
                 }
             }
@@ -262,18 +268,19 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
             }
 
             // input_pos <= safe_input_pos should guarantee we have enough space in input
-            debug_assert!(input_pos + 2 <= input.len());
+            debug_assert!(input.len() - input_pos >= 2);
             let offset = read_u16(input, &mut input_pos) as usize;
-            let mut start_ptr = unsafe { output_ptr.sub(offset) };
+
+            let output_len = unsafe { output_ptr.offset_from(output_base) as usize };
             #[cfg(feature = "checked-decode")]
             {
-                if unsafe { start_ptr.add(ext_dict.len()) } < output_base {
+                if offset > output_len + ext_dict.len() {
                     return Err(DecompressError::OffsetOutOfBounds);
                 }
             }
 
             // Check if part of the match is in the external dict
-            if USE_DICT && start_ptr < output_base {
+            if USE_DICT && offset > output_len {
                 let copied = unsafe {
                     copy_from_dict(output_base, &mut output_ptr, ext_dict, offset, match_length)
                 };
@@ -282,11 +289,14 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
                 }
                 // match crosses ext_dict and output
                 match_length -= copied;
-                unsafe { start_ptr = start_ptr.add(copied) }
             }
 
+            // Calculate the start of this duplicate segment. At this point offset was already checked to be in bounds
+            // and the external dictionary copy, if any, was already copied and subtracted from match_length.
+            let start_ptr = unsafe { output_ptr.sub(offset) };
             debug_assert!(start_ptr >= output_base);
-            debug_assert!(unsafe { start_ptr.add(match_length) } <= output_end);
+            debug_assert!(start_ptr < output_end);
+            debug_assert!(unsafe { output_end.offset_from(start_ptr) as usize } >= match_length);
 
             // In this branch we know that match_length is at most 18 (14 + MINMATCH).
             // But the blocks can overlap, so make sure they are at least 18 bytes apart
@@ -320,10 +330,10 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
             #[cfg(feature = "checked-decode")]
             {
                 // Check if literal is out of bounds for the input, and if there is enough space on the output
-                if input_pos + literal_length > input.len() {
+                if literal_length > input.len() - input_pos {
                     return Err(DecompressError::LiteralOutOfBounds);
                 }
-                if unsafe { output_ptr.add(literal_length) } > output_end {
+                if literal_length > unsafe { output_end.offset_from(output_ptr) as usize } {
                     return Err(DecompressError::OutputTooSmall {
                         expected: unsafe { output_ptr.offset_from(output_base) as usize }
                             + literal_length,
@@ -351,7 +361,7 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
         // Read duplicate section
         #[cfg(feature = "checked-decode")]
         {
-            if input_pos + 2 > input.len() {
+            if input.len() - input_pos < 2 {
                 return Err(DecompressError::ExpectedAnotherByte);
             }
         }
@@ -373,27 +383,23 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
 
         // We now copy from the already decompressed buffer. This allows us for storing duplicates
         // by simply referencing the other location.
-
-        // Calculate the start of this duplicate segment.
-        let mut start_ptr = unsafe { output_ptr.sub(offset) };
+        let output_len = unsafe { output_ptr.offset_from(output_base) as usize };
 
         // We'll do a bounds check in checked-decode.
         #[cfg(feature = "checked-decode")]
         {
-            if unsafe { start_ptr.add(ext_dict.len()) } < output_base {
+            if offset > output_len + ext_dict.len() {
                 return Err(DecompressError::OffsetOutOfBounds);
             }
-            if unsafe { output_ptr.add(match_length) } > output_end {
+            if match_length > unsafe { output_end.offset_from(output_ptr) as usize } {
                 return Err(DecompressError::OutputTooSmall {
-                    expected: unsafe { output_ptr.offset_from(output_base) as usize }
-                        + match_length,
+                    expected: output_len + match_length,
                     actual: output.capacity(),
                 });
             }
         }
 
-        // Check
-        if USE_DICT && start_ptr < output_base {
+        if USE_DICT && offset > output_len {
             let copied = unsafe {
                 copy_from_dict(output_base, &mut output_ptr, ext_dict, offset, match_length)
             };
@@ -402,10 +408,14 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
             }
             // match crosses ext_dict and output
             match_length -= copied;
-            unsafe { start_ptr = start_ptr.add(copied) };
         }
+
+        // Calculate the start of this duplicate segment. At this point offset was already checked to be in bounds
+        // and the external dictionary copy, if any, was already copied and subtracted from match_length.
+        let start_ptr = unsafe { output_ptr.sub(offset) };
         debug_assert!(start_ptr >= output_base);
-        debug_assert!(unsafe { start_ptr.add(match_length) } <= output_end);
+        debug_assert!(start_ptr < output_end);
+        debug_assert!(unsafe { output_end.offset_from(start_ptr) as usize } >= match_length);
         unsafe {
             duplicate(&mut output_ptr, output_end, start_ptr, match_length);
         }

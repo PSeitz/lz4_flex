@@ -177,7 +177,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
     // compare 4 bytes block
     #[cfg(target_pointer_width = "64")]
     {
-        if *cur + 4 <= input_end {
+        if input_end - *cur >= 4 {
             let diff = read_u32_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u32_ptr(source_ptr);
 
             if diff == 0 {
@@ -193,7 +193,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
     }
 
     // compare 2 bytes block
-    if *cur + 2 <= input_end
+    if input_end - *cur >= 2
         && unsafe { read_u16_ptr(input.as_ptr().add(*cur)) == read_u16_ptr(source_ptr) }
     {
         *cur += 2;
@@ -359,7 +359,7 @@ pub(crate) fn compress_internal<T: HashTable, SINK: Sink, const USE_DICT: bool>(
     }
 
     let output_start_pos = output.pos();
-    if input_pos + LZ4_MIN_LENGTH > input.len() {
+    if input.len() - input_pos < LZ4_MIN_LENGTH {
         handle_last_literals(output, input, input_pos);
         return Ok(output.pos() - output_start_pos);
     }

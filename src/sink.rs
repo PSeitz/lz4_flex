@@ -357,7 +357,7 @@ mod tests {
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
     use crate::sink::VecSink;
 
-    use super::Sink;
+    use super::{Sink, Vec};
 
     #[test]
     fn test_sink_slice() {
