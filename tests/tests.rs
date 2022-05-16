@@ -548,8 +548,7 @@ mod frame {
     fn content_size() {
         let mut frame_info = lz4_flex::frame::FrameInfo::new();
         frame_info.content_size = Some(COMPRESSION1K.len() as u64);
-        let mut compressed =
-            lz4_flex_frame_compress_with(frame_info, COMPRESSION1K).unwrap();
+        let mut compressed = lz4_flex_frame_compress_with(frame_info, COMPRESSION1K).unwrap();
 
         // roundtrip
         let uncompressed = lz4_flex_frame_decompress(&compressed).unwrap();
@@ -560,8 +559,7 @@ mod frame {
             // We'll generate a valid FrameInfo and copy it to the test data
             let mut frame_info = lz4_flex::frame::FrameInfo::new();
             frame_info.content_size = Some(3);
-            let dummy_compressed =
-                lz4_flex_frame_compress_with(frame_info, b"123").unwrap();
+            let dummy_compressed = lz4_flex_frame_compress_with(frame_info, b"123").unwrap();
             // `15` (7 + 8) is the size of the header plus the content size in the compressed bytes
             compressed[..15].copy_from_slice(&dummy_compressed[..15]);
         }

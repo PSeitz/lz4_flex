@@ -152,7 +152,8 @@ fn bench_block_compression_throughput(c: &mut Criterion) {
             |b, i| b.iter(|| lz4_flex::compress(i)),
         );
         // an empty slice that the compiler can't infer the size
-        let empty_vec = std::env::args().nth(1000000)
+        let empty_vec = std::env::args()
+            .nth(1000000)
             .unwrap_or_default()
             .into_bytes();
         group.bench_with_input(
@@ -206,7 +207,8 @@ fn bench_block_decompression_throughput(c: &mut Criterion) {
             |b, i| b.iter(|| lz4_flex::decompress(i, input.len())),
         );
         // an empty slice that the compiler can't infer the size
-        let empty_vec = std::env::args().nth(1000000)
+        let empty_vec = std::env::args()
+            .nth(1000000)
             .unwrap_or_default()
             .into_bytes();
         group.bench_with_input(
