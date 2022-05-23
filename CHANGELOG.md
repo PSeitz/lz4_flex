@@ -1,3 +1,8 @@
+0.9.3 (2022-05-23) 
+==================
+Guard against usize overflows/underflows and raw pointer undefined behavior
+* https://github.com/PSeitz/lz4_flex/pull/50
+
 0.9.2 (2021-11-16) 
 ==================
 Fixes imports bug from 0.9.1 for no-default-features
