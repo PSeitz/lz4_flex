@@ -1,21 +1,18 @@
-/*!
-LZ4 Block Format
-
-As defined in <https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md>
-
-Currently for no_std support only the block format is supported.
-
-# Example: block format roundtrip
-```
-use lz4_flex::block::{compress_prepend_size, decompress_size_prepended};
-let input: &[u8] = b"Hello people, what's up?";
-let compressed = compress_prepend_size(input);
-let uncompressed = decompress_size_prepended(&compressed).unwrap();
-assert_eq!(input, uncompressed);
-
-```
-
-*/
+//! LZ4 Block Format
+//!
+//! As defined in <https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md>
+//!
+//! Currently for no_std support only the block format is supported.
+//!
+//! # Example: block format roundtrip
+//! ```
+//! use lz4_flex::block::{compress_prepend_size, decompress_size_prepended};
+//! let input: &[u8] = b"Hello people, what's up?";
+//! let compressed = compress_prepend_size(input);
+//! let uncompressed = decompress_size_prepended(&compressed).unwrap();
+//! assert_eq!(input, uncompressed);
+//! ```
+//!
 
 #[cfg_attr(feature = "safe-encode", forbid(unsafe_code))]
 pub(crate) mod compress;
@@ -39,20 +36,23 @@ use core::fmt;
 pub(crate) const WINDOW_SIZE: usize = 64 * 1024;
 
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
-/// The last match must start at least 12 bytes before the end of block. The last match is part of the penultimate sequence.
-/// It is followed by the last sequence, which contains only literals.
+/// The last match must start at least 12 bytes before the end of block. The last match is part of
+/// the penultimate sequence. It is followed by the last sequence, which contains only literals.
 ///
-/// Note that, as a consequence, an independent block < 13 bytes cannot be compressed, because the match must copy "something",
-/// so it needs at least one prior byte.
+/// Note that, as a consequence, an independent block < 13 bytes cannot be compressed, because the
+/// match must copy "something", so it needs at least one prior byte.
 ///
-/// When a block can reference data from another block, it can start immediately with a match and no literal, so a block of 12 bytes can be compressed.
+/// When a block can reference data from another block, it can start immediately with a match and no
+/// literal, so a block of 12 bytes can be compressed.
 const MFLIMIT: usize = 12;
 
-/// The last 5 bytes of input are always literals. Therefore, the last sequence contains at least 5 bytes.
+/// The last 5 bytes of input are always literals. Therefore, the last sequence contains at least 5
+/// bytes.
 const LAST_LITERALS: usize = 5;
 
-/// Due the way the compression loop is arrange we may read up to (register_size - 2) bytes from the current position.
-/// So we must end the matches 6 bytes before the end, 1 more than required by the spec.
+/// Due the way the compression loop is arrange we may read up to (register_size - 2) bytes from the
+/// current position. So we must end the matches 6 bytes before the end, 1 more than required by the
+/// spec.
 const END_OFFSET: usize = LAST_LITERALS + 1;
 
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
@@ -109,7 +109,8 @@ impl fmt::Display for DecompressError {
             DecompressError::OutputTooSmall { expected, actual } => {
                 write!(
                     f,
-                    "provided output is too small for the decompressed data, actual {}, expected {}",
+                    "provided output is too small for the decompressed data, actual {}, expected \
+                     {}",
                     actual, expected
                 )
             }
@@ -136,9 +137,10 @@ impl fmt::Display for DecompressError {
 impl fmt::Display for CompressError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            CompressError::OutputTooSmall => {
-                f.write_str("output is too small for the compressed data, use get_maximum_output_size to reserve enough space")
-            }
+            CompressError::OutputTooSmall => f.write_str(
+                "output is too small for the compressed data, use get_maximum_output_size to \
+                 reserve enough space",
+            ),
         }
     }
 }

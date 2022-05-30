@@ -2,13 +2,13 @@
 /// `val` can be maximum the size of the input in bytes.
 ///
 /// `pos` can have a maximum value of u16::MAX or 65535
-/// If the hashtable is smaller it needs to reduce the pos to its space, e.g. by right shifting.
+/// If the hashtable is smaller it needs to reduce the pos to its space, e.g. by right
+/// shifting.
 ///
 /// Duplication dictionary size.
 ///
 /// Every four bytes is assigned an entry. When this number is lower, fewer entries exists, and
 /// thus collisions are more likely, hurting the compression ratio.
-///
 use alloc::vec::Vec;
 
 /// hashes and right shifts to a maximum value of 16bit, 65535

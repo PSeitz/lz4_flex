@@ -14,24 +14,32 @@
 //     //     COMPRESSION66K
 //     //     COMPRESSION95K_VERY_GOOD_LOGO];
 
-//     println!("{}", bench_gen_env("COMPRESSION1K", COMPRESSION1K.len(),  || &COMPRESSION1K, |xs| lz4_flex::compress(&xs)));
-//     println!("{}", bench_gen_env("COMPRESSION34K", COMPRESSION34K.len(),  || &COMPRESSION34K, |xs| lz4_flex::compress(&xs)));
-//     println!("{}", bench_gen_env("COMPRESSION65K", COMPRESSION65K.len(),  || &COMPRESSION65K, |xs| lz4_flex::compress(&xs)));
-//     println!("{}", bench_gen_env("COMPRESSION66K", COMPRESSION66K.len(),  || &COMPRESSION66K, |xs| lz4_flex::compress(&xs)));
-//     println!("{}", bench_gen_env("COMPRESSION95K_VERY_GOOD_LOGO", COMPRESSION95K_VERY_GOOD_LOGO.len(),  || &COMPRESSION95K_VERY_GOOD_LOGO, |xs| lz4_flex::compress(&xs)));
+//     println!("{}", bench_gen_env("COMPRESSION1K", COMPRESSION1K.len(),  || &COMPRESSION1K, |xs|
+// lz4_flex::compress(&xs)));     println!("{}", bench_gen_env("COMPRESSION34K",
+// COMPRESSION34K.len(),  || &COMPRESSION34K, |xs| lz4_flex::compress(&xs)));     println!("{}",
+// bench_gen_env("COMPRESSION65K", COMPRESSION65K.len(),  || &COMPRESSION65K, |xs|
+// lz4_flex::compress(&xs)));     println!("{}", bench_gen_env("COMPRESSION66K",
+// COMPRESSION66K.len(),  || &COMPRESSION66K, |xs| lz4_flex::compress(&xs)));     println!("{}",
+// bench_gen_env("COMPRESSION95K_VERY_GOOD_LOGO", COMPRESSION95K_VERY_GOOD_LOGO.len(),  ||
+// &COMPRESSION95K_VERY_GOOD_LOGO, |xs| lz4_flex::compress(&xs)));
 
 //     let compression1_k_compressed = lz4_flex::compress_prepend_size(&COMPRESSION1K);
 //     let compression34_k_compressed = lz4_flex::compress_prepend_size(&COMPRESSION34K);
 //     let compression65_k_compressed = lz4_flex::compress_prepend_size(&COMPRESSION65K);
 //     let compression66_k_compressed = lz4_flex::compress_prepend_size(&COMPRESSION66K);
-//     let compression95_k_very_good_logo_compressed = lz4_flex::compress_prepend_size(&COMPRESSION95K_VERY_GOOD_LOGO);
+//     let compression95_k_very_good_logo_compressed =
+// lz4_flex::compress_prepend_size(&COMPRESSION95K_VERY_GOOD_LOGO);
 
-//     println!("{}", bench_gen_env("DECOMPRESSION1K", compression1_k_compressed.len(),  || &compression1_k_compressed, |xs| lz4_flex::decompress_size_prepended(&xs)));
-//     println!("{}", bench_gen_env("DECOMPRESSION34K", compression34_k_compressed.len(),  || &compression34_k_compressed, |xs| lz4_flex::decompress_size_prepended(&xs)));
-//     println!("{}", bench_gen_env("DECOMPRESSION65K", compression65_k_compressed.len(),  || &compression65_k_compressed, |xs| lz4_flex::decompress_size_prepended(&xs)));
-//     println!("{}", bench_gen_env("DECOMPRESSION66K", compression66_k_compressed.len(),  || &compression66_k_compressed, |xs| lz4_flex::decompress_size_prepended(&xs)));
-//     println!("{}", bench_gen_env("DECOMPRESSION95K_VERY_GOOD_LOGO", compression95_k_very_good_logo_compressed.len(),  || &compression95_k_very_good_logo_compressed, |xs| lz4_flex::decompress_size_prepended(&xs)));
-// }
+//     println!("{}", bench_gen_env("DECOMPRESSION1K", compression1_k_compressed.len(),  ||
+// &compression1_k_compressed, |xs| lz4_flex::decompress_size_prepended(&xs)));     println!("{}",
+// bench_gen_env("DECOMPRESSION34K", compression34_k_compressed.len(),  ||
+// &compression34_k_compressed, |xs| lz4_flex::decompress_size_prepended(&xs)));     println!("{}",
+// bench_gen_env("DECOMPRESSION65K", compression65_k_compressed.len(),  ||
+// &compression65_k_compressed, |xs| lz4_flex::decompress_size_prepended(&xs)));     println!("{}",
+// bench_gen_env("DECOMPRESSION66K", compression66_k_compressed.len(),  ||
+// &compression66_k_compressed, |xs| lz4_flex::decompress_size_prepended(&xs)));     println!("{}",
+// bench_gen_env("DECOMPRESSION95K_VERY_GOOD_LOGO", compression95_k_very_good_logo_compressed.len(),
+// || &compression95_k_very_good_logo_compressed, |xs| lz4_flex::decompress_size_prepended(&xs))); }
 
 // #![feature(test)]
 // extern crate test;

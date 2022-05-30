@@ -95,7 +95,7 @@ fn token_from_literal(lit_len: usize) -> u8 {
         (lit_len as u8) << 4
     } else {
         // We were unable to fit the literals into it, so we saturate to 0xF. We will later
-        // write the extensional value through LSIC encoding.
+        // write the extensional value through.
         0xF0
     }
 }
@@ -211,7 +211,7 @@ fn count_same_bytes(first: &[u8], mut second: &[u8], cur: &mut usize) -> usize {
     *cur - start
 }
 
-/// Write an integer to the output in LSIC format.
+/// Write an integer to the output.
 #[inline]
 fn write_integer(output: &mut Vec<u8>, mut n: usize) -> std::io::Result<()> {
     // Write the 0xFF bytes as long as the integer is higher than said value.
@@ -297,7 +297,7 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
 
     assert!(LZ4_MIN_LENGTH as usize > END_OFFSET);
     let end_pos_check = input_size - MFLIMIT as usize;
-    
+
     let mut cur = 0;
     let mut start = cur;
     cur += 1;
@@ -356,7 +356,6 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
             duplicate_length as u8
         } else {
             // We were unable to fit it in, so we default to 0xF, which will later be extended
-            // by LSIC encoding.
             0xF
         };
 
@@ -364,7 +363,7 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
         push_byte(output, token);
         // output.push(token);
         // If we were unable to fit the literals length into the token, write the extensional
-        // part through LSIC.
+        // part.
         if lit_len >= 0xF {
             write_integer(output, lit_len - 0xF)?;
         }
@@ -378,7 +377,7 @@ pub fn compress_into(input: &[u8], output: &mut Vec<u8>) -> std::io::Result<usiz
         output.extend_from_slice(&offset.to_le_bytes());
 
         // If we were unable to fit the duplicates length into the token, write the
-        // extensional part through LSIC.
+        // extensional part.
         if duplicate_length >= 0xF {
             write_integer(output, duplicate_length - 0xF)?;
         }

@@ -155,7 +155,8 @@ fn compare_compression() {
 fn test_minimum_compression_ratio() {
     let compressed = compress(COMPRESSION34K);
     let ratio = compressed.len() as f64 / COMPRESSION34K.len() as f64;
-    assert_lt!(ratio, 0.585); // TODO check why compression is not deterministic (fails in ci for 0.58)
+    assert_lt!(ratio, 0.585); // TODO check why compression is not deterministic (fails in ci for
+                              // 0.58)
 }
 
 use lz_fear::raw::compress2;
@@ -220,8 +221,8 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
 // fn test_ratio() {
 //     const COMPRESSION66K: &'static [u8] = include_bytes!("../benches/compression_65k.txt");
 //     let compressed = compress(COMPRESSION66K);
-//     println!("Compression Ratio 66K {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as f64);
-//     let _decompressed = decompress(&compressed).unwrap();
+//     println!("Compression Ratio 66K {:?}", compressed.len() as f64/ COMPRESSION66K.len()  as
+// f64);     let _decompressed = decompress(&compressed).unwrap();
 
 //     let mut vec = Vec::with_capacity(10 + (COMPRESSION66K.len() as f64 * 1.1) as usize);
 //     let input = COMPRESSION66K;
@@ -274,7 +275,8 @@ mod checked_decode {
 
 #[test]
 fn test_end_offset() {
-    // the last 5 bytes need to be literals, so the last match block is not allowed to match to the end
+    // the last 5 bytes need to be literals, so the last match block is not allowed to match to the
+    // end
     inverse("AAAAAAAAAAAAAAAAAAAAAAAAaAAAAAAAAAAAAAAAAAAAAAAAA");
     inverse("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAA");
 }
@@ -417,9 +419,10 @@ fn compression_works() {
 
 // #[test]
 // fn multi_compress() {
-//     let s1 = r#"An iterator that knows its exact length.performant implementation than the default, so overriding it in this case makes sense."#;
-//     let s2 = r#"An iterator that knows its exact length.performant implementation than the default, so overriding it in this case makes sense."#;
-//     let mut out = vec![];
+//     let s1 = r#"An iterator that knows its exact length.performant implementation than the
+// default, so overriding it in this case makes sense."#;     let s2 = r#"An iterator that knows its
+// exact length.performant implementation than the default, so overriding it in this case makes
+// sense."#;     let mut out = vec![];
 //     compress_into()
 //     inverse(s);
 //     assert!(compress(s.as_bytes()).len() < s.len());
@@ -494,7 +497,8 @@ mod frame {
             // roundtrip
             let uncompressed = lz4_flex_frame_decompress(&compressed).unwrap();
             assert_eq!(uncompressed, input);
-            // corrupt last block checksum, which is at 8th to 4th last bytes of the compressed output
+            // corrupt last block checksum, which is at 8th to 4th last bytes of the compressed
+            // output
             let compressed_len = compressed.len();
             compressed[compressed_len - 5] ^= 0xFF;
             match lz4_flex_frame_decompress(&compressed) {

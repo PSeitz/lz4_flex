@@ -1,6 +1,5 @@
 extern crate lz4_flex;
 
-
 use lz4_flex::block::DecompressError;
 
 const COMPRESSION10MB: &[u8] = include_bytes!("../../benches/dickens.txt");
@@ -39,7 +38,7 @@ fn duplicate_overlapping(output_ptr: &mut *mut u8, mut start: *const u8, match_l
     }
 }
 
-/// Read an integer LSIC (linear small integer code) encoded.
+/// Read an integer.
 ///
 /// In LZ4, we encode small integers in a way that we can have an arbitrary number of bytes. In
 /// particular, we add the bytes repeatedly until we hit a non-0xFF byte. When we do, we add
@@ -161,8 +160,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
         // Read the token. The token is the first byte in a block. It is divided into two 4-bit
         // subtokens, the higher and the lower.
         // This token contains to 4-bit "fields", a higher and a lower, representing the literals'
-        // length and the back reference's length, respectively. LSIC is used if either are their
-        // maximal values.
+        // length and the back reference's length, respectively.
         let token = unsafe { *input.get_unchecked(input_pos) };
         input_pos += 1;
 
@@ -312,7 +310,7 @@ pub fn decompress_into(input: &[u8], output: &mut Vec<u8>) -> Result<(), Decompr
 }
 
 use core::convert::TryInto;
-use core::{ptr};
+use core::ptr;
 
 /// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in litte endian.
 /// Can be used in conjuction with `compress_prepend_size`

@@ -140,7 +140,8 @@ impl<W: io::Write> FrameEncoder<W> {
         Ok(self.w)
     }
 
-    /// Attempt to finish this output stream, flushing internal buffer and writing stream terminator.
+    /// Attempt to finish this output stream, flushing internal buffer and writing stream
+    /// terminator.
     pub fn try_finish(&mut self) -> Result<(), Error> {
         match self.flush() {
             Ok(()) if self.is_frame_open => self.end_frame(),
@@ -303,7 +304,8 @@ impl<W: io::Write> FrameEncoder<W> {
             } else if self.src_start + self.ext_dict_len > WINDOW_SIZE {
                 // There's more than WINDOW_SIZE bytes of lookback adding the prefix and ext_dict.
                 // Since we have a limited buffer we must shrink ext_dict in favor of the prefix,
-                // so that we can fit up to max_block_size bytes between dst_start and ext_dict start.
+                // so that we can fit up to max_block_size bytes between dst_start and ext_dict
+                // start.
                 let delta = self
                     .ext_dict_len
                     .min(self.src_start + self.ext_dict_len - WINDOW_SIZE);

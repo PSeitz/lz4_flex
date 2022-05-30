@@ -63,7 +63,7 @@ fn token_from_literal(lit_len: usize) -> u8 {
         (lit_len as u8) << 4
     } else {
         // We were unable to fit the literals into it, so we saturate to 0xF. We will later
-        // write the extensional value through LSIC encoding.
+        // write the extensional value.
         0xF0
     }
 }
@@ -75,7 +75,7 @@ fn token_from_literal_and_match_length(lit_len: usize, duplicate_length: usize) 
         (lit_len as u8) << 4
     } else {
         // We were unable to fit the literals into it, so we saturate to 0xF. We will later
-        // write the extensional value through LSIC encoding.
+        // write the extensional value.
         0xF0
     };
 
@@ -83,8 +83,7 @@ fn token_from_literal_and_match_length(lit_len: usize, duplicate_length: usize) 
         // We could fit it in.
         duplicate_length as u8
     } else {
-        // We were unable to fit it in, so we default to 0xF, which will later be extended
-        // by LSIC encoding.
+        // We were unable to fit it in, so we default to 0xF, which will later be extended.
         0xF
     };
 
@@ -93,8 +92,8 @@ fn token_from_literal_and_match_length(lit_len: usize, duplicate_length: usize) 
 
 /// Counts the number of same bytes in two byte streams.
 /// `input` is the complete input
-/// `cur` is the current position in the input. it will be incremented by the number of matched bytes
-/// `source` either the same as input or an external slice
+/// `cur` is the current position in the input. it will be incremented by the number of matched
+/// bytes `source` either the same as input or an external slice
 /// `candidate` is the candidate position in `source`
 ///
 /// The function ignores the last END_OFFSET bytes in input as those should be literals.
@@ -142,8 +141,8 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
 
 /// Counts the number of same bytes in two byte streams.
 /// `input` is the complete input
-/// `cur` is the current position in the input. it will be incremented by the number of matched bytes
-/// `source` either the same as input OR an external slice
+/// `cur` is the current position in the input. it will be incremented by the number of matched
+/// bytes `source` either the same as input OR an external slice
 /// `candidate` is the candidate position in `source`
 ///
 /// The function ignores the last END_OFFSET bytes in input as those should be literals.
@@ -211,7 +210,11 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
     *cur - start
 }
 
-// Write an integer to the output in LSIC format.
+/// Write an integer to the output.
+///
+/// Each additional byte then represent a value from 0 to 255, which is added to the previous value
+/// to produce a total length. When the byte value is 255, another byte must read and added, and so
+/// on. There can be any number of bytes of value "255" following token
 #[inline]
 #[cfg(feature = "safe-encode")]
 fn write_integer(output: &mut impl Sink, mut n: usize) {
@@ -225,7 +228,11 @@ fn write_integer(output: &mut impl Sink, mut n: usize) {
     push_byte(output, n as u8);
 }
 
-/// Write an integer to the output in LSIC format.
+/// Write an integer to the output.
+///
+/// Each additional byte then represent a value from 0 to 255, which is added to the previous value
+/// to produce a total length. When the byte value is 255, another byte must read and added, and so
+/// on. There can be any number of bytes of value "255" following token
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
 fn write_integer(output: &mut impl Sink, mut n: usize) {
@@ -276,8 +283,9 @@ fn backtrack_match(
     candidate: &mut usize,
 ) {
     // Note: Even if iterator version of this loop has less branches inside the loop it has more
-    // branches before the loop. That in practice seems to make it slower than the while version bellow.
-    // TODO: It should be possible remove all bounds checks, since we are walking backwards
+    // branches before the loop. That in practice seems to make it slower than the while version
+    // bellow. TODO: It should be possible remove all bounds checks, since we are walking
+    // backwards
     while *candidate > 0 && *cur > literal_start && input[*cur - 1] == source[*candidate - 1] {
         *cur -= 1;
         *candidate -= 1;
@@ -285,7 +293,6 @@ fn backtrack_match(
 }
 
 /// Moves the cursors back as long as the bytes match, to find additional bytes in a duplicate
-///
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
 fn backtrack_match(
@@ -311,9 +318,9 @@ fn backtrack_match(
 /// This part is known as the compressor "prefix".
 /// Bytes in `ext_dict` logically precede the bytes in `input` and can also be used for lookback.
 ///
-/// `input_stream_offset` is the logical position of the first byte of `input`. This allows same `dict`
-/// to be used for many calls to `compress_internal` as we can "readdress" the first byte of `input`
-/// to be something other than 0.
+/// `input_stream_offset` is the logical position of the first byte of `input`. This allows same
+/// `dict` to be used for many calls to `compress_internal` as we can "readdress" the first byte of
+/// `input` to be something other than 0.
 ///
 /// `dict` is the dictionary of previously encoded sequences.
 ///
@@ -387,7 +394,8 @@ pub(crate) fn compress_internal<T: HashTable, SINK: Sink, const USE_DICT: bool>(
         // The number of bytes before our cursor, where the duplicate starts.
         let mut next_cur = cur;
 
-        // In this loop we search for duplicates via the hashtable. 4bytes or 8bytes are hashed and compared.
+        // In this loop we search for duplicates via the hashtable. 4bytes or 8bytes are hashed and
+        // compared.
         loop {
             step_size = non_match_count >> INCREASE_STEPSIZE_BITSHIFT;
             non_match_count += 1;
@@ -401,8 +409,9 @@ pub(crate) fn compress_internal<T: HashTable, SINK: Sink, const USE_DICT: bool>(
                 return Ok(output.pos() - output_start_pos);
             }
             // Find a candidate in the dictionary with the hash of the current four bytes.
-            // Unchecked is safe as long as the values from the hash function don't exceed the size of the table.
-            // This is ensured by right shifting the hash values (`dict_bitshift`) to fit them in the table
+            // Unchecked is safe as long as the values from the hash function don't exceed the size
+            // of the table. This is ensured by right shifting the hash values
+            // (`dict_bitshift`) to fit them in the table
             let hash = T::get_hash_at(input, cur);
             candidate = dict.get_at(hash);
             dict.put_at(hash, cur + input_stream_offset);
@@ -413,8 +422,8 @@ pub(crate) fn compress_internal<T: HashTable, SINK: Sink, const USE_DICT: bool>(
             // Two requirements to the candidate exists:
             // - We should not return a position which is merely a hash collision, so that the
             //   candidate actually matches what we search for.
-            // - We can address up to 16-bit offset, hence we are only able to address the candidate if
-            //   its offset is less than or equals to 0xFFFF.
+            // - We can address up to 16-bit offset, hence we are only able to address the candidate
+            //   if its offset is less than or equals to 0xFFFF.
             if input_stream_offset + cur - candidate > MAX_DISTANCE {
                 continue;
             }
@@ -465,7 +474,8 @@ pub(crate) fn compress_internal<T: HashTable, SINK: Sink, const USE_DICT: bool>(
         candidate += MINMATCH;
         let duplicate_length = count_same_bytes(input, &mut cur, candidate_source, candidate);
 
-        // Note: The `- 2` offset was copied from the reference implementation, it could be arbitrary.
+        // Note: The `- 2` offset was copied from the reference implementation, it could be
+        // arbitrary.
         let hash = T::get_hash_at(input, cur - 2);
         dict.put_at(hash, cur - 2 + input_stream_offset);
 
@@ -474,21 +484,22 @@ pub(crate) fn compress_internal<T: HashTable, SINK: Sink, const USE_DICT: bool>(
         // Push the token to the output stream.
         push_byte(output, token);
         // If we were unable to fit the literals length into the token, write the extensional
-        // part through LSIC.
+        // part.
         if lit_len >= 0xF {
             write_integer(output, lit_len - 0xF);
         }
 
         // Now, write the actual literals.
         //
-        // The unsafe version copies blocks of 8bytes, and therefore may copy up to 7bytes more than needed.
-        // This is safe, because the last 12 bytes (MF_LIMIT) are handled in handle_last_literals.
+        // The unsafe version copies blocks of 8bytes, and therefore may copy up to 7bytes more than
+        // needed. This is safe, because the last 12 bytes (MF_LIMIT) are handled in
+        // handle_last_literals.
         copy_literals_wild(output, input, literal_start, lit_len);
         // write the offset in little endian.
         push_u16(output, offset);
 
         // If we were unable to fit the duplicates length into the token, write the
-        // extensional part through LSIC.
+        // extensional part.
         if duplicate_length >= 0xF {
             write_integer(output, duplicate_length - 0xF);
         }
@@ -616,7 +627,8 @@ fn init_dict<T: HashTable>(dict: &mut T, dict_data: &mut &[u8]) {
     while i + core::mem::size_of::<usize>() <= dict_data.len() {
         let hash = T::get_hash_at(dict_data, i);
         dict.put_at(hash, i);
-        // Note: The 3 byte step was copied from the reference implementation, it could be arbitrary.
+        // Note: The 3 byte step was copied from the reference implementation, it could be
+        // arbitrary.
         i += 3;
     }
 }
@@ -629,8 +641,9 @@ pub fn get_maximum_output_size(input_len: usize) -> usize {
 }
 
 /// Compress all bytes of `input` into `output`.
-/// The method chooses an appropriate hashtable to lookup duplicates and calls `compress_into_with_table`.
-/// output should be preallocated with a size of `get_maximum_output_size`.
+/// The method chooses an appropriate hashtable to lookup duplicates and calls
+/// `compress_into_with_table`. output should be preallocated with a size of
+/// `get_maximum_output_size`.
 ///
 /// Returns the number of bytes written (compressed) into `output`.
 #[inline]
@@ -639,8 +652,9 @@ pub fn compress_into(input: &[u8], output: &mut [u8]) -> Result<usize, CompressE
 }
 
 /// Compress all bytes of `input` into `output`.
-/// The method chooses an appropriate hashtable to lookup duplicates and calls `compress_into_with_table`.
-/// output should be preallocated with a size of `get_maximum_output_size`.
+/// The method chooses an appropriate hashtable to lookup duplicates and calls
+/// `compress_into_with_table`. output should be preallocated with a size of
+/// `get_maximum_output_size`.
 ///
 /// Returns the number of bytes written (compressed) into `output`.
 #[inline]
@@ -652,8 +666,8 @@ pub fn compress_into_with_dict(
     compress_into_sink_with_dict(input, &mut SliceSink::new(output, 0), dict_data)
 }
 
-/// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as a little endian u32.
-/// Can be used in conjunction with `decompress_size_prepended`
+/// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as a little
+/// endian u32. Can be used in conjunction with `decompress_size_prepended`
 #[inline]
 pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
     let max_compressed_size = get_maximum_output_size(input.len());
@@ -697,8 +711,8 @@ pub fn compress_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
     compressed
 }
 
-/// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as a little endian u32.
-/// Can be used in conjunction with `decompress_size_prepended_with_dict`
+/// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as a little
+/// endian u32. Can be used in conjunction with `decompress_size_prepended_with_dict`
 #[inline]
 pub fn compress_prepend_size_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
     let max_compressed_size = get_maximum_output_size(input.len());
@@ -892,11 +906,12 @@ mod tests {
     fn test_conformant_last_block() {
         // From the spec:
         // The last match must start at least 12 bytes before the end of block.
-        // The last match is part of the penultimate sequence. It is followed by the last sequence, which contains only literals.
-        // Note that, as a consequence, an independent block < 13 bytes cannot be compressed, because the match must copy "something",
+        // The last match is part of the penultimate sequence. It is followed by the last sequence,
+        // which contains only literals. Note that, as a consequence, an independent block <
+        // 13 bytes cannot be compressed, because the match must copy "something",
         // so it needs at least one prior byte.
-        // When a block can reference data from another block, it can start immediately with a match and no literal,
-        // so a block of 12 bytes can be compressed.
+        // When a block can reference data from another block, it can start immediately with a match
+        // and no literal, so a block of 12 bytes can be compressed.
         let aaas: &[u8] = b"aaaaaaaaaaaaaaa";
 
         // uncompressible

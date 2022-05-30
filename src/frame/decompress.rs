@@ -190,7 +190,8 @@ impl<R: io::Read> FrameDecoder<R> {
             } else if self.dst_start + self.ext_dict_len > WINDOW_SIZE {
                 // There's more than WINDOW_SIZE bytes of lookback adding the prefix and ext_dict.
                 // Since we have a limited buffer we must shrink ext_dict in favor of the prefix,
-                // so that we can fit up to max_block_size bytes between dst_start and ext_dict start.
+                // so that we can fit up to max_block_size bytes between dst_start and ext_dict
+                // start.
                 let delta = self
                     .ext_dict_len
                     .min(self.dst_start + self.ext_dict_len - WINDOW_SIZE);
