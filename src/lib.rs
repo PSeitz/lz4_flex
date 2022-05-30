@@ -29,7 +29,7 @@
 //! let stdin = io::stdin();
 //! let stdout = io::stdout();
 //! let mut rdr = stdin.lock();
-//! Wrap the stdout writer in a LZ4 Frame writer.
+//! // Wrap the stdout writer in a LZ4 Frame writer.
 //! let mut wtr = lz4_flex::frame::FrameEncoder::new(stdout.lock());
 //! io::copy(&mut rdr, &mut wtr).expect("I/O operation failed");
 //! wtr.finish().unwrap();
@@ -41,7 +41,7 @@
 //! use std::io;
 //! let stdin = io::stdin();
 //! let stdout = io::stdout();
-//! Wrap the stdin reader in a LZ4 FrameDecoder.
+//! // Wrap the stdin reader in a LZ4 FrameDecoder.
 //! let mut rdr = lz4_flex::frame::FrameDecoder::new(stdin.lock());
 //! let mut wtr = stdout.lock();
 //! io::copy(&mut rdr, &mut wtr).expect("I/O operation failed");
