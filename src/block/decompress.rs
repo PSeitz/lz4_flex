@@ -92,7 +92,7 @@ unsafe fn copy_from_dict(
     dict_match_length
 }
 
-/// Read an integer LSIC (linear small integer code) encoded.
+/// Read an integer.
 ///
 /// In LZ4, we encode small integers in a way that we can have an arbitrary number of bytes. In
 /// particular, we add the bytes repeatedly until we hit a non-0xFF byte. When we do, we add
@@ -166,8 +166,9 @@ fn check_token() {
     assert_eq!(does_token_fit(0b10110000), true);
 }
 
-/// The token consists of two parts, the literal length (upper 4 bits) and match_length (lower 4 bits)
-/// if the literal length and match_length are both below 15, we don't need to read additional data, so the token does fit the metadata in a single u8.
+/// The token consists of two parts, the literal length (upper 4 bits) and match_length (lower 4
+/// bits) if the literal length and match_length are both below 15, we don't need to read additional
+/// data, so the token does fit the metadata in a single u8.
 #[inline]
 fn does_token_fit(token: u8) -> bool {
     !((token & FIT_TOKEN_MASK_LITERAL) == FIT_TOKEN_MASK_LITERAL
@@ -215,7 +216,8 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
         )
     };
 
-    // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer is empty.
+    // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer is
+    // empty.
     loop {
         #[cfg(feature = "checked-decode")]
         {
@@ -227,17 +229,17 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
         // Read the token. The token is the first byte in a block. It is divided into two 4-bit
         // subtokens, the higher and the lower.
         // This token contains to 4-bit "fields", a higher and a lower, representing the literals'
-        // length and the back reference's length, respectively. LSIC is used if either are their
-        // maximal values.
+        // length and the back reference's length, respectively.
         let token = unsafe { *input.get_unchecked(input_pos) };
         input_pos += 1;
 
         // Checking for hot-loop.
-        // In most cases the metadata does fit in a single 1byte token (statistically) and we are in a safe-distance to the end.
-        // This enables some optimized handling.
+        // In most cases the metadata does fit in a single 1byte token (statistically) and we are in
+        // a safe-distance to the end. This enables some optimized handling.
         //
-        // Ideally we want to check for safe output pos like: output.pos() <= safe_output_pos; But that doesn't work when the
-        // safe_output_ptr is == output_ptr due to insufficient capacity. So we use `<` instead of `<=`, which covers that case.
+        // Ideally we want to check for safe output pos like: output.pos() <= safe_output_pos; But
+        // that doesn't work when the safe_output_ptr is == output_ptr due to insufficient
+        // capacity. So we use `<` instead of `<=`, which covers that case.
         if does_token_fit(token) && input_pos <= safe_input_pos && output_ptr < safe_output_ptr {
             let literal_length = (token >> 4) as usize;
             let mut match_length = MINMATCH + (token & 0xF) as usize;
@@ -291,8 +293,9 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
                 match_length -= copied;
             }
 
-            // Calculate the start of this duplicate segment. At this point offset was already checked to be in bounds
-            // and the external dictionary copy, if any, was already copied and subtracted from match_length.
+            // Calculate the start of this duplicate segment. At this point offset was already
+            // checked to be in bounds and the external dictionary copy, if any, was
+            // already copied and subtracted from match_length.
             let start_ptr = unsafe { output_ptr.sub(offset) };
             debug_assert!(start_ptr >= output_base);
             debug_assert!(start_ptr < output_end);
@@ -318,18 +321,20 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
 
         // Now, we read the literals section.
         // Literal Section
-        // If the initial value is 15, it is indicated that another byte will be read and added to it
+        // If the initial value is 15, it is indicated that another byte will be read and added to
+        // it
         let mut literal_length = (token >> 4) as usize;
         if literal_length != 0 {
             if literal_length == 15 {
-                // The literal_length length took the maximal value, indicating that there is more than 15
-                // literal_length bytes. We read the extra integer.
+                // The literal_length length took the maximal value, indicating that there is more
+                // than 15 literal_length bytes. We read the extra integer.
                 literal_length += read_integer(input, &mut input_pos)? as usize;
             }
 
             #[cfg(feature = "checked-decode")]
             {
-                // Check if literal is out of bounds for the input, and if there is enough space on the output
+                // Check if literal is out of bounds for the input, and if there is enough space on
+                // the output
                 if literal_length > input.len() - input_pos {
                     return Err(DecompressError::LiteralOutOfBounds);
                 }
@@ -410,8 +415,9 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
             match_length -= copied;
         }
 
-        // Calculate the start of this duplicate segment. At this point offset was already checked to be in bounds
-        // and the external dictionary copy, if any, was already copied and subtracted from match_length.
+        // Calculate the start of this duplicate segment. At this point offset was already checked
+        // to be in bounds and the external dictionary copy, if any, was already copied and
+        // subtracted from match_length.
         let start_ptr = unsafe { output_ptr.sub(offset) };
         debug_assert!(start_ptr >= output_base);
         debug_assert!(start_ptr < output_end);
@@ -445,8 +451,8 @@ pub fn decompress_into_with_dict(
     decompress_internal::<_, true>(input, &mut SliceSink::new(output, 0), ext_dict)
 }
 
-/// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in little endian.
-/// Can be used in conjunction with `compress_prepend_size`
+/// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in
+/// little endian. Can be used in conjunction with `compress_prepend_size`
 #[inline]
 pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressError> {
     let (uncompressed_size, input) = super::uncompressed_size(input)?;
@@ -469,8 +475,8 @@ pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, Dec
     Ok(vec)
 }
 
-/// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in little endian.
-/// Can be used in conjunction with `compress_prepend_size_with_dict`
+/// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in
+/// little endian. Can be used in conjunction with `compress_prepend_size_with_dict`
 #[inline]
 pub fn decompress_size_prepended_with_dict(
     input: &[u8],

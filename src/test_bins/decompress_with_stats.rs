@@ -46,8 +46,7 @@ struct Decoder<'a> {
     /// The current block's "token".
     ///
     /// This token contains to 4-bit "fields", a higher and a lower, representing the literals'
-    /// length and the back reference's length, respectively. LSIC is used if either are their
-    /// maximal values.
+    /// length and the back reference's length, respectively.
     token: u8,
     // match_usage: Vec<&'static str>,
     match_unused: u32,
@@ -128,7 +127,7 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    /// Read an integer LSIC (linear small integer code) encoded.
+    /// Read an integer.
     ///
     /// In LZ4, we encode small integers in a way that we can have an arbitrary number of bytes. In
     /// particular, we add the bytes repeatedly until we hit a non-0xFF byte. When we do, we add
@@ -180,7 +179,7 @@ impl<'a> Decoder<'a> {
     ///
     /// It consists of two parts:
     ///
-    /// 1. An LSIC integer extension to the literals length as defined by the first part of the
+    /// 1. An integer extension to the literals length as defined by the first part of the
     ///    token, if it takes the highest value (15).
     /// 2. The literals themself.
     // #[inline(never)]
@@ -220,7 +219,7 @@ impl<'a> Decoder<'a> {
     ///
     /// 1. A 16-bit little-endian integer defining the "offset", i.e. how long back we need to go
     ///    in the decoded buffer and copy.
-    /// 2. An LSIC integer extension to the duplicate length as defined by the first part of the
+    /// 2. An integer extension to the duplicate length as defined by the first part of the
     ///    token, if it takes the highest value (15).
     // #[inline(never)]
     fn read_duplicate_section(&mut self) -> Result<(), Error> {
@@ -262,7 +261,6 @@ impl<'a> Decoder<'a> {
         // We'll do a bound check to avoid panicking.
         if start < self.output.len() {
             if self.output.len() < start + match_length {
-
                 // dbg!(self.offset_length_1);
                 // dbg!(self.offset_length_2);
                 // dbg!(self.offset_length_3);
@@ -274,17 +272,16 @@ impl<'a> Decoder<'a> {
                 // dbg!(self.offset_length_other);
 
                 match offset {
-                    1 => self.offset_length_1+=1,
-                    2 => self.offset_length_2+=1,
-                    3 => self.offset_length_3+=1,
-                    4 => self.offset_length_4+=1,
-                    5 => self.offset_length_5+=1,
-                    6 => self.offset_length_6+=1,
-                    7 => self.offset_length_7+=1,
-                    8 => self.offset_length_8+=1,
-                    _ => self.offset_length_other+=1,
+                    1 => self.offset_length_1 += 1,
+                    2 => self.offset_length_2 += 1,
+                    3 => self.offset_length_3 += 1,
+                    4 => self.offset_length_4 += 1,
+                    5 => self.offset_length_5 += 1,
+                    6 => self.offset_length_6 += 1,
+                    7 => self.offset_length_7 += 1,
+                    8 => self.offset_length_8 += 1,
+                    _ => self.offset_length_other += 1,
                 };
-
             }
             // Write the duplicate segment to the output buffer.
             self.duplicate(start, match_length);

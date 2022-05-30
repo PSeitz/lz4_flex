@@ -53,7 +53,8 @@ pub fn vec_sink_for_decompression(
     };
 }
 
-/// Sink is used as target to de/compress data into a preallocated and possibly uninitialized memory space.
+/// Sink is used as target to de/compress data into a preallocated and possibly uninitialized memory
+/// space.
 ///
 /// # Handling of Capacity
 /// Extend methods will panic if there's insufficient capacity left in the Sink.

@@ -74,43 +74,41 @@ impl Default for BlockMode {
     }
 }
 
-/*
-From: https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md
-
-General Structure of LZ4 Frame format
--------------------------------------
-
-| MagicNb | F. Descriptor | Block | (...) | EndMark | C. Checksum |
-|:-------:|:-------------:| ----- | ----- | ------- | ----------- |
-| 4 bytes |  3-15 bytes   |       |       | 4 bytes | 0-4 bytes   |
-
-Frame Descriptor
-----------------
-
-| FLG     | BD      | (Content Size) | (Dictionary ID) | HC      |
-| ------- | ------- |:--------------:|:---------------:| ------- |
-| 1 byte  | 1 byte  |  0 - 8 bytes   |   0 - 4 bytes   | 1 byte  |
-
-__FLG byte__
-
-|  BitNb  |  7-6  |   5   |    4     |  3   |    2     |    1     |   0  |
-| ------- |-------|-------|----------|------|----------|----------|------|
-|FieldName|Version|B.Indep|B.Checksum|C.Size|C.Checksum|*Reserved*|DictID|
-
-__BD byte__
-
-|  BitNb  |     7    |     6-5-4     |  3-2-1-0 |
-| ------- | -------- | ------------- | -------- |
-|FieldName|*Reserved*| Block MaxSize |*Reserved*|
-
-Data Blocks
------------
-
-| Block Size |  data  | (Block Checksum) |
-|:----------:| ------ |:----------------:|
-|  4 bytes   |        |   0 - 4 bytes    |
-
-*/
+// From: https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md
+//
+// General Structure of LZ4 Frame format
+// -------------------------------------
+//
+// | MagicNb | F. Descriptor | Block | (...) | EndMark | C. Checksum |
+// |:-------:|:-------------:| ----- | ----- | ------- | ----------- |
+// | 4 bytes |  3-15 bytes   |       |       | 4 bytes | 0-4 bytes   |
+//
+// Frame Descriptor
+// ----------------
+//
+// | FLG     | BD      | (Content Size) | (Dictionary ID) | HC      |
+// | ------- | ------- |:--------------:|:---------------:| ------- |
+// | 1 byte  | 1 byte  |  0 - 8 bytes   |   0 - 4 bytes   | 1 byte  |
+//
+// __FLG byte__
+//
+// |  BitNb  |  7-6  |   5   |    4     |  3   |    2     |    1     |   0  |
+// | ------- |-------|-------|----------|------|----------|----------|------|
+// |FieldName|Version|B.Indep|B.Checksum|C.Size|C.Checksum|*Reserved*|DictID|
+//
+// __BD byte__
+//
+// |  BitNb  |     7    |     6-5-4     |  3-2-1-0 |
+// | ------- | -------- | ------------- | -------- |
+// |FieldName|*Reserved*| Block MaxSize |*Reserved*|
+//
+// Data Blocks
+// -----------
+//
+// | Block Size |  data  | (Block Checksum) |
+// |:----------:| ------ |:----------------:|
+// |  4 bytes   |        |   0 - 4 bytes    |
+//
 #[derive(Debug, Clone)]
 pub struct FrameInfo {
     /// If set, includes the total uncompressed size of data in the frame.
@@ -126,7 +124,8 @@ pub struct FrameInfo {
     pub block_mode: BlockMode,
     /// If set, includes a checksum for each data block in the frame.
     pub block_checksums: bool,
-    /// If set, includes a content checksum to verify that the full frame contents have been decoded correctly.
+    /// If set, includes a content checksum to verify that the full frame contents have been
+    /// decoded correctly.
     pub content_checksum: bool,
 }
 
