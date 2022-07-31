@@ -151,8 +151,11 @@ impl std::error::Error for DecompressError {}
 #[cfg(feature = "std")]
 impl std::error::Error for CompressError {}
 
+/// This can be used in conjunction with `decompress_size_prepended`.
+/// It will read the first 4 bytes as little-endian encoded length, and return
+/// the rest of the bytes after the length encoding.
 #[inline]
-fn uncompressed_size(input: &[u8]) -> Result<(usize, &[u8]), DecompressError> {
+pub fn uncompressed_size(input: &[u8]) -> Result<(usize, &[u8]), DecompressError> {
     let size = input.get(..4).ok_or(DecompressError::ExpectedAnotherByte)?;
     let size: &[u8; 4] = size.try_into().unwrap();
     let uncompressed_size = u32::from_le_bytes(*size) as usize;

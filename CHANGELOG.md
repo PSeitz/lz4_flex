@@ -1,3 +1,7 @@
+0.9.4 (2022-07-31) 
+==================
+Change uncompressed_size visibility to pub
+
 0.9.3 (2022-05-23) 
 ==================
 Guard against usize overflows/underflows and raw pointer undefined behavior
