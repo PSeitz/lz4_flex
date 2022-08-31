@@ -102,6 +102,11 @@ impl<R: io::Read> FrameDecoder<R> {
         &mut self.r
     }
 
+    /// Consumes the FrameDecoder and returns the underlying reader.
+    pub fn into_inner(self) -> R {
+        self.r
+    }
+
     fn read_frame_info(&mut self) -> Result<usize, io::Error> {
         let mut buffer = [0u8; MAX_FRAME_INFO_SIZE];
         match self.r.read(&mut buffer[..MIN_FRAME_INFO_SIZE])? {
