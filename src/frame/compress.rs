@@ -151,7 +151,7 @@ impl<W: io::Write> FrameEncoder<W> {
     }
 
     /// Returns the underlying writer _without_ flushing the stream.
-    /// This may lave the output in an unfinished state.
+    /// This may leave the output in an unfinished state.
     pub fn into_inner(self) -> W {
         self.w
     }
