@@ -1,3 +1,8 @@
+0.9.5 (2022-09-03)
+==================
+Add into_inner() to FrameDecoder
+* https://github.com/PSeitz/lz4_flex/pull/56
+
 0.9.4 (2022-07-31) 
 ==================
 Change uncompressed_size visibility to pub
