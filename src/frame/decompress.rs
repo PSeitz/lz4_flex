@@ -1,12 +1,16 @@
 use std::{
+    convert::TryInto,
     fmt,
     hash::Hasher,
-    io::{self, BufRead},
+    io::{self, BufRead, ErrorKind},
     mem::size_of,
 };
 use twox_hash::XxHash32;
 
-use super::header::{BlockInfo, BlockMode, FrameInfo, MAX_FRAME_INFO_SIZE, MIN_FRAME_INFO_SIZE};
+use super::header::{
+    BlockInfo, BlockMode, FrameInfo, LZ4F_LEGACY_MAGIC_NUMBER, MAGIC_NUMBER_SIZE,
+    MAX_FRAME_INFO_SIZE, MIN_FRAME_INFO_SIZE,
+};
 use super::Error;
 use crate::{
     block::WINDOW_SIZE,
@@ -109,16 +113,33 @@ impl<R: io::Read> FrameDecoder<R> {
 
     fn read_frame_info(&mut self) -> Result<usize, io::Error> {
         let mut buffer = [0u8; MAX_FRAME_INFO_SIZE];
-        match self.r.read(&mut buffer[..MIN_FRAME_INFO_SIZE])? {
+
+        match self.r.read(&mut buffer[..MAGIC_NUMBER_SIZE])? {
             0 => return Ok(0),
-            MIN_FRAME_INFO_SIZE => (),
-            read => self.r.read_exact(&mut buffer[read..MIN_FRAME_INFO_SIZE])?,
+            MAGIC_NUMBER_SIZE => (),
+            read => self.r.read_exact(&mut buffer[read..MAGIC_NUMBER_SIZE])?,
+        }
+
+        if u32::from_le_bytes(buffer[0..MAGIC_NUMBER_SIZE].try_into().unwrap())
+            != LZ4F_LEGACY_MAGIC_NUMBER
+        {
+            match self
+                .r
+                .read(&mut buffer[MAGIC_NUMBER_SIZE..MIN_FRAME_INFO_SIZE])?
+            {
+                0 => return Ok(0),
+                MIN_FRAME_INFO_SIZE => (),
+                read => self
+                    .r
+                    .read_exact(&mut buffer[MAGIC_NUMBER_SIZE + read..MIN_FRAME_INFO_SIZE])?,
+            }
         }
         let required = FrameInfo::read_size(&buffer[..MIN_FRAME_INFO_SIZE])?;
-        if required != MIN_FRAME_INFO_SIZE {
+        if required != MIN_FRAME_INFO_SIZE && required != MAGIC_NUMBER_SIZE {
             self.r
                 .read_exact(&mut buffer[MIN_FRAME_INFO_SIZE..required])?;
         }
+
         let frame_info = FrameInfo::read(&buffer[..required])?;
         if frame_info.dict_id.is_some() {
             // Unsupported right now so it must be None
@@ -214,7 +235,13 @@ impl<R: io::Read> FrameDecoder<R> {
         // Read and decompress block
         let block_info = {
             let mut buffer = [0u8; 4];
-            self.r.read_exact(&mut buffer)?;
+            if let Err(err) = self.r.read_exact(&mut buffer) {
+                if err.kind() == ErrorKind::UnexpectedEof {
+                    return Ok(0);
+                } else {
+                    return Err(err);
+                }
+            }
             BlockInfo::read(&buffer)?
         };
         match block_info {
