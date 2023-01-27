@@ -32,7 +32,7 @@ jobs:
     - name: Ensure no_std compiles for safe-encode
       run: cargo build --no-default-features --features safe-encode
     - name: Ensure no_std compiles for safe-encode and safe-decode
-      run: cargo build --no-default-features --features safe-encode --features --features safe-decode
+      run: cargo build --no-default-features --features safe-encode --features safe-decode
     - name: Run fuzz tests (safe)
       run: for fuzz_test in `cargo fuzz list`; do cargo fuzz run $fuzz_test -- -max_total_time=30 || exit 1; done
     - name: Run fuzz tests (unsafe)
