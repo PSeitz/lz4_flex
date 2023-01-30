@@ -17,11 +17,11 @@ const COMPRESSION10MB: &[u8] = include_bytes!("dickens.txt");
 const COMPRESSION95K_VERY_GOOD_LOGO: &[u8] = include_bytes!("../logo.jpg");
 
 const ALL: &[&[u8]] = &[
-    COMPRESSION1K as &[u8],
-    COMPRESSION34K as &[u8],
-    COMPRESSION65K as &[u8],
-    COMPRESSION66K as &[u8],
-    // COMPRESSION10MB as &[u8],
+    //COMPRESSION1K as &[u8],
+    //COMPRESSION34K as &[u8],
+    //COMPRESSION65K as &[u8],
+    //COMPRESSION66K as &[u8],
+    COMPRESSION10MB as &[u8],
     // COMPRESSION95K_VERY_GOOD_LOGO as &[u8],
 ];
 
@@ -152,20 +152,15 @@ fn bench_block_compression_throughput(c: &mut Criterion) {
             |b, i| b.iter(|| lz4_flex::compress(i)),
         );
         // an empty slice that the compiler can't infer the size
-        let empty_vec = std::env::args()
-            .nth(1000000)
-            .unwrap_or_default()
-            .into_bytes();
-        group.bench_with_input(
-            BenchmarkId::new("lz4_flex_rust_with_dict", input_bytes),
-            &input,
-            |b, i| b.iter(|| lz4_flex::block::compress_with_dict(i, &empty_vec)),
-        );
-        // group.bench_with_input(
-        //     BenchmarkId::new("lz4_flex_rust_master", input_bytes),
-        //     &input,
-        //     |b, i| b.iter(|| lz4_flex_master::compress(&i)),
-        // );
+        //let empty_vec = std::env::args()
+        //.nth(1000000)
+        //.unwrap_or_default()
+        //.into_bytes();
+        //group.bench_with_input(
+        //BenchmarkId::new("lz4_flex_rust_with_dict", input_bytes),
+        //&input,
+        //|b, i| b.iter(|| lz4_flex::block::compress_with_dict(i, &empty_vec)),
+        //);
         group.bench_with_input(
             BenchmarkId::new("lz4_redox_rust", input_bytes),
             &input,
@@ -207,20 +202,15 @@ fn bench_block_decompression_throughput(c: &mut Criterion) {
             |b, i| b.iter(|| lz4_flex::decompress(i, input.len())),
         );
         // an empty slice that the compiler can't infer the size
-        let empty_vec = std::env::args()
-            .nth(1000000)
-            .unwrap_or_default()
-            .into_bytes();
-        group.bench_with_input(
-            BenchmarkId::new("lz4_flex_rust_with_dict", input_bytes),
-            &comp_lz4,
-            |b, i| b.iter(|| lz4_flex::block::decompress_with_dict(i, input.len(), &empty_vec)),
-        );
-        // group.bench_with_input(
-        //     BenchmarkId::new("lz4_flex_rust_master", input_bytes),
-        //     &comp_lz4,
-        //     |b, i| b.iter(|| lz4_flex_master::decompress(&i, input.len())),
-        // );
+        //let empty_vec = std::env::args()
+        //.nth(1000000)
+        //.unwrap_or_default()
+        //.into_bytes();
+        //group.bench_with_input(
+        //BenchmarkId::new("lz4_flex_rust_with_dict", input_bytes),
+        //&comp_lz4,
+        //|b, i| b.iter(|| lz4_flex::block::decompress_with_dict(i, input.len(), &empty_vec)),
+        //);
         group.bench_with_input(
             BenchmarkId::new("lz4_redox_rust", input_bytes),
             &comp_lz4,

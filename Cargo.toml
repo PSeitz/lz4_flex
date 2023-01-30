@@ -17,12 +17,12 @@ name = "crit_bench"
 path = "benches/crit_bench.rs"
 
 [dev-dependencies]
-criterion = "0.3.5"
-lzzzz = "1.0.2"
+criterion = "0.4.0"
+lzzzz = "1.0.4"
 lz4-compress = "0.1.1"
-more-asserts = "0.2.2"
-snap = "1.0.5"
-serde_json = "1.0.79"
+more-asserts = "0.3.1"
+snap = "1.1.0"
+serde_json = "1.0.91"
 
 [dev-dependencies.lz-fear]
 git = "https://github.com/main--/rust-lz-fear"
@@ -44,7 +44,7 @@ frame = ["std", "dep:twox-hash"]
 std = []
 
 [dependencies]
-twox-hash = { version = "1.6.2", default-features = false, optional = true }
+twox-hash = { version = "1.6.3", default-features = false, optional = true }
 
 [profile.bench]
 codegen-units = 1
