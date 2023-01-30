@@ -1,7 +1,12 @@
+0.10.0 (2023-01-30)
+==================
+Add support of decoding legacy frames, used by linux kernel (thanks to @yestyle)
+* https://github.com/PSeitz/lz4_flex/pull/66
+
 0.9.5 (2022-09-03)
 ==================
 Add into_inner() to FrameDecoder
-* https://github.com/PSeitz/lz4_flex/pull/56
+* https://github.com/PSeitz/lz4_flex/pull/56 (thanks to @james-rms)
 
 0.9.4 (2022-07-31) 
 ==================
