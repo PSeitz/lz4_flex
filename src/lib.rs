@@ -70,7 +70,7 @@
 //! For no_std support only the [`block format`](block/index.html) is supported.
 //!
 //!
-
+#![deny(warnings)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 #[cfg_attr(test, macro_use)]

@@ -161,16 +161,16 @@ fn bench_block_compression_throughput(c: &mut Criterion) {
         //&input,
         //|b, i| b.iter(|| lz4_flex::block::compress_with_dict(i, &empty_vec)),
         //);
-        group.bench_with_input(
-            BenchmarkId::new("lz4_redox_rust", input_bytes),
-            &input,
-            |b, i| b.iter(|| lz4_compress::compress(i)),
-        );
-        group.bench_with_input(
-            BenchmarkId::new("lz4_fear_rust", input_bytes),
-            &input,
-            |b, i| b.iter(|| compress_lz4_fear(i)),
-        );
+        //group.bench_with_input(
+        //BenchmarkId::new("lz4_redox_rust", input_bytes),
+        //&input,
+        //|b, i| b.iter(|| lz4_compress::compress(i)),
+        //);
+        //group.bench_with_input(
+        //BenchmarkId::new("lz4_fear_rust", input_bytes),
+        //&input,
+        //|b, i| b.iter(|| compress_lz4_fear(i)),
+        //);
 
         group.bench_with_input(BenchmarkId::new("lz4_cpp", input_bytes), &input, |b, i| {
             b.iter(|| lz4_cpp_block_compress(i))
