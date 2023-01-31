@@ -17,14 +17,14 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test
-    - name: Run tests --features safe-encode
-      run: cargo test --features safe-encode --verbose
+    - name: Run tests safe-encode
+      run: cargo test --features safe-encode
     - name: Run tests safe-decode
-      run: cargo test --verbose --features safe-decode
-    - name: Run tests no-default-features (no safe-decode)
-      run: cargo test --verbose --no-default-features --features frame
-    - name: Ensure no_std compiles for checked-decode
-      run: cargo build --no-default-features --features checked-decode
+      run: cargo test --features safe-decode
+    - name: Run tests --no-default-features (no safe-decode) with frame
+      run: cargo test --no-default-features --features frame
+    - name: Run tests unsafe with checked-decode and frame
+      run: cargo test --no-default-features --features checked-decode --features frame
     - name: Ensure no_std compiles
       run: cargo build --no-default-features
     - name: Ensure no_std compiles for safe-decode

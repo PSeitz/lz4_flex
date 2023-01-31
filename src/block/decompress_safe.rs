@@ -4,7 +4,6 @@ use core::convert::TryInto;
 
 use crate::block::DecompressError;
 use crate::block::MINMATCH;
-use crate::sink::Sink;
 use crate::sink::SliceSink;
 use alloc::vec::Vec;
 
@@ -83,9 +82,9 @@ fn does_token_fit(token: u8) -> bool {
 ///
 /// Returns the number of bytes written (decompressed) into `output`.
 #[inline(always)] // (always) necessary to get the best performance in non LTO builds
-pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
+pub(crate) fn decompress_internal<const USE_DICT: bool>(
     input: &[u8],
-    output: &mut SINK,
+    output: &mut SliceSink,
     ext_dict: &[u8],
 ) -> Result<usize, DecompressError> {
     let mut input_pos = 0;
@@ -152,7 +151,7 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
                 return Err(DecompressError::OffsetOutOfBounds);
             }
             if offset >= match_length {
-                output.extend_from_within_wild(start, 18, match_length);
+                output.extend_from_within(start, 18, match_length);
             } else {
                 output.extend_from_within_overlapping(start, match_length)
             }
@@ -233,7 +232,7 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
 
 #[inline]
 fn copy_from_dict(
-    output: &mut impl Sink,
+    output: &mut SliceSink,
     ext_dict: &[u8],
     offset: usize,
     match_length: usize,
@@ -254,7 +253,7 @@ fn copy_from_dict(
 /// Extends output by self-referential copies
 #[inline(always)] // (always) necessary otherwise compiler fails to inline it
 fn duplicate_slice(
-    output: &mut impl Sink,
+    output: &mut SliceSink,
     offset: usize,
     match_length: usize,
 ) -> Result<(), DecompressError> {
@@ -268,12 +267,12 @@ fn duplicate_slice(
         }
         match match_length {
             0..=32 if output.pos() + 32 <= output.capacity() => {
-                output.extend_from_within_wild(start, 32, match_length)
+                output.extend_from_within(start, 32, match_length)
             }
             33..=64 if output.pos() + 64 <= output.capacity() => {
-                output.extend_from_within_wild(start, 64, match_length)
+                output.extend_from_within(start, 64, match_length)
             }
-            _ => output.extend_from_within(start, match_length),
+            _ => output.extend_from_within(start, match_length, match_length),
         }
     }
     Ok(())
@@ -283,7 +282,7 @@ fn duplicate_slice(
 /// into output
 #[inline]
 fn duplicate_overlapping_slice(
-    sink: &mut impl Sink,
+    sink: &mut SliceSink,
     offset: usize,
     match_length: usize,
 ) -> Result<(), DecompressError> {
@@ -305,7 +304,7 @@ fn duplicate_overlapping_slice(
 /// `output` should be preallocated with a size of of the uncompressed data.
 #[inline]
 pub fn decompress_into(input: &[u8], output: &mut [u8]) -> Result<usize, DecompressError> {
-    decompress_internal::<_, false>(input, &mut SliceSink::new(output, 0), b"")
+    decompress_internal::<false>(input, &mut SliceSink::new(output, 0), b"")
 }
 
 /// Decompress all bytes of `input` into `output`.
@@ -317,7 +316,7 @@ pub fn decompress_into_with_dict(
     output: &mut [u8],
     ext_dict: &[u8],
 ) -> Result<usize, DecompressError> {
-    decompress_internal::<_, true>(input, &mut SliceSink::new(output, 0), ext_dict)
+    decompress_internal::<true>(input, &mut SliceSink::new(output, 0), ext_dict)
 }
 
 /// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in
@@ -334,7 +333,7 @@ pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, Dec
     let mut decompressed: Vec<u8> = Vec::with_capacity(uncompressed_size);
     decompressed.resize(uncompressed_size, 0);
     let decomp_len =
-        decompress_internal::<_, false>(input, &mut SliceSink::new(&mut decompressed, 0), b"")?;
+        decompress_internal::<false>(input, &mut SliceSink::new(&mut decompressed, 0), b"")?;
     if decomp_len != uncompressed_size {
         return Err(DecompressError::UncompressedSizeDiffers {
             expected: uncompressed_size,
@@ -365,7 +364,7 @@ pub fn decompress_with_dict(
     let mut decompressed: Vec<u8> = Vec::with_capacity(uncompressed_size);
     decompressed.resize(uncompressed_size, 0);
     let decomp_len =
-        decompress_internal::<_, true>(input, &mut SliceSink::new(&mut decompressed, 0), ext_dict)?;
+        decompress_internal::<true>(input, &mut SliceSink::new(&mut decompressed, 0), ext_dict)?;
     if decomp_len != uncompressed_size {
         return Err(DecompressError::UncompressedSizeDiffers {
             expected: uncompressed_size,

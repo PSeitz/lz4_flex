@@ -1,7 +1,15 @@
 //! The decompression algorithm.
 use crate::block::{DecompressError, MINMATCH};
-use crate::sink::{Sink, SliceSink, VecSink};
+use crate::sink::SliceSink;
 use alloc::vec::Vec;
+
+pub(crate) fn get_vec_with_size(size: usize) -> Vec<u8> {
+    let mut compressed = Vec::with_capacity(size);
+    unsafe {
+        compressed.set_len(size);
+    }
+    compressed
+}
 
 /// Copies data to output_ptr by self-referential copy from start and match_length
 #[inline]
@@ -181,9 +189,9 @@ fn does_token_fit(token: u8) -> bool {
 ///
 /// Returns the number of bytes written (decompressed) into `output`.
 #[inline]
-pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
+pub(crate) fn decompress_internal<const USE_DICT: bool>(
     input: &[u8],
-    output: &mut SINK,
+    output: &mut SliceSink,
     ext_dict: &[u8],
 ) -> Result<usize, DecompressError> {
     #[cfg(not(feature = "checked-decode"))]
@@ -438,7 +446,7 @@ pub(crate) fn decompress_internal<SINK: Sink, const USE_DICT: bool>(
 /// `output` should be preallocated with a size of of the uncompressed data.
 #[inline]
 pub fn decompress_into(input: &[u8], output: &mut [u8]) -> Result<usize, DecompressError> {
-    decompress_internal::<_, false>(input, &mut SliceSink::new(output, 0), b"")
+    decompress_internal::<false>(input, &mut SliceSink::new(output, 0), b"")
 }
 
 /// Decompress all bytes of `input` into `output`.
@@ -450,7 +458,26 @@ pub fn decompress_into_with_dict(
     output: &mut [u8],
     ext_dict: &[u8],
 ) -> Result<usize, DecompressError> {
-    decompress_internal::<_, true>(input, &mut SliceSink::new(output, 0), ext_dict)
+    decompress_internal::<true>(input, &mut SliceSink::new(output, 0), ext_dict)
+}
+
+/// Decompress all bytes of `input` into a new vec.
+#[inline]
+pub fn decompress_with_dict(
+    input: &[u8],
+    uncompressed_size: usize,
+    ext_dict: &[u8],
+) -> Result<Vec<u8>, DecompressError> {
+    // Allocate a vector to contain the decompressed stream.
+    let mut vec = get_vec_with_size(uncompressed_size);
+    let decomp_len = decompress_into_with_dict(input, &mut vec[..], ext_dict)?;
+    if decomp_len != uncompressed_size {
+        return Err(DecompressError::UncompressedSizeDiffers {
+            expected: uncompressed_size,
+            actual: decomp_len,
+        });
+    }
+    Ok(vec)
 }
 
 /// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in
@@ -465,9 +492,8 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
 #[inline]
 pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
     // Allocate a vector to contain the decompressed stream.
-    let mut vec: Vec<u8> = Vec::with_capacity(uncompressed_size);
-    let decomp_len =
-        decompress_internal::<_, false>(input, &mut VecSink::new(&mut vec, 0, 0), b"")?;
+    let mut vec = get_vec_with_size(uncompressed_size);
+    let decomp_len = decompress_into(input, &mut vec[..])?;
     if decomp_len != uncompressed_size {
         return Err(DecompressError::UncompressedSizeDiffers {
             expected: uncompressed_size,
@@ -486,26 +512,6 @@ pub fn decompress_size_prepended_with_dict(
 ) -> Result<Vec<u8>, DecompressError> {
     let (uncompressed_size, input) = super::uncompressed_size(input)?;
     decompress_with_dict(input, uncompressed_size, ext_dict)
-}
-
-/// Decompress all bytes of `input` into a new vec.
-#[inline]
-pub fn decompress_with_dict(
-    input: &[u8],
-    uncompressed_size: usize,
-    ext_dict: &[u8],
-) -> Result<Vec<u8>, DecompressError> {
-    // Allocate a vector to contain the decompressed stream.
-    let mut vec: Vec<u8> = Vec::with_capacity(uncompressed_size);
-    let decomp_len =
-        decompress_internal::<_, true>(input, &mut VecSink::new(&mut vec, 0, 0), ext_dict)?;
-    if decomp_len != uncompressed_size {
-        return Err(DecompressError::UncompressedSizeDiffers {
-            expected: uncompressed_size,
-            actual: decomp_len,
-        });
-    }
-    Ok(vec)
 }
 
 #[cfg(test)]

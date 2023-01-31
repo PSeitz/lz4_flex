@@ -290,7 +290,7 @@ impl<R: io::Read> FrameDecoder<R> {
                     let ext_dict = &tail[..self.ext_dict_len];
 
                     debug_assert!(head.len() - self.dst_start >= max_block_size);
-                    crate::block::decompress::decompress_internal::<_, true>(
+                    crate::block::decompress::decompress_internal::<true>(
                         &self.src[..len],
                         &mut SliceSink::new(head, self.dst_start),
                         ext_dict,
@@ -298,7 +298,7 @@ impl<R: io::Read> FrameDecoder<R> {
                 } else {
                     // Independent blocks OR linked blocks with only prefix data
                     debug_assert!(self.dst.capacity() - self.dst_start >= max_block_size);
-                    crate::block::decompress::decompress_internal::<_, false>(
+                    crate::block::decompress::decompress_internal::<false>(
                         &self.src[..len],
                         &mut vec_sink_for_decompression(
                             &mut self.dst,
@@ -444,7 +444,6 @@ impl<R: fmt::Debug + io::Read> fmt::Debug for FrameDecoder<R> {
 }
 
 /// Similar to `v.get_mut(start..end) but will adjust the len if needed.
-/// Panics if there's not enough capacity.
 #[inline]
 fn vec_resize_and_get_mut(v: &mut Vec<u8>, start: usize, end: usize) -> &mut [u8] {
     if end > v.len() {
