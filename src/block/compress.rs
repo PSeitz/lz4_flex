@@ -12,13 +12,19 @@ use crate::block::LZ4_MIN_LENGTH;
 use crate::block::MAX_DISTANCE;
 use crate::block::MFLIMIT;
 use crate::block::MINMATCH;
-use crate::sink::{vec_sink_for_compression, Sink, SliceSink};
+use crate::sink::SliceSink;
 use alloc::vec::Vec;
 
 #[cfg(feature = "safe-encode")]
 use core::convert::TryInto;
 
 use super::{CompressError, WINDOW_SIZE};
+
+pub(crate) fn get_vec_with_size(size: usize) -> Vec<u8> {
+    let mut compressed = Vec::with_capacity(size);
+    compressed.resize(size, 0);
+    compressed
+}
 
 /// Increase step size after 1<<INCREASE_STEPSIZE_BITSHIFT non matches
 const INCREASE_STEPSIZE_BITSHIFT: usize = 5;
@@ -217,7 +223,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
 /// on. There can be any number of bytes of value "255" following token
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn write_integer(output: &mut impl Sink, mut n: usize) {
+fn write_integer(output: &mut SliceSink, mut n: usize) {
     // Note: Since `n` is usually < 0xFF and writing multiple bytes to the output
     // requires 2 branches of bound check (due to the possibility of add overflows)
     // the simple byte at a time implementation bellow is faster in most cases.
@@ -235,7 +241,7 @@ fn write_integer(output: &mut impl Sink, mut n: usize) {
 /// on. There can be any number of bytes of value "255" following token
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn write_integer(output: &mut impl Sink, mut n: usize) {
+fn write_integer(output: &mut SliceSink, mut n: usize) {
     // Write the 0xFF bytes as long as the integer is higher than said value.
     if n >= 4 * 0xFF {
         // In this unlikelly branch we use a fill instead of a loop,
@@ -260,7 +266,7 @@ fn write_integer(output: &mut impl Sink, mut n: usize) {
 
 /// Handle the last bytes from the input as literals
 #[cold]
-fn handle_last_literals(output: &mut impl Sink, input: &[u8], start: usize) {
+fn handle_last_literals(output: &mut SliceSink, input: &[u8], start: usize) {
     let lit_len = input.len() - start;
 
     let token = token_from_literal(lit_len);
@@ -341,10 +347,10 @@ fn backtrack_match(
 // Intentionally avoid inlining.
 // Empirical tests revealed it to be rarely better but often significantly detrimental.
 #[inline(never)]
-pub(crate) fn compress_internal<T: HashTable, SINK: Sink, const USE_DICT: bool>(
+pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
     input: &[u8],
     input_pos: usize,
-    output: &mut SINK,
+    output: &mut SliceSink,
     dict: &mut T,
     ext_dict: &[u8],
     input_stream_offset: usize,
@@ -509,13 +515,13 @@ pub(crate) fn compress_internal<T: HashTable, SINK: Sink, const USE_DICT: bool>(
 
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn push_byte(output: &mut impl Sink, el: u8) {
+fn push_byte(output: &mut SliceSink, el: u8) {
     output.push(el);
 }
 
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn push_byte(output: &mut impl Sink, el: u8) {
+fn push_byte(output: &mut SliceSink, el: u8) {
     unsafe {
         core::ptr::write(output.pos_mut_ptr(), el);
         output.set_pos(output.pos() + 1);
@@ -524,13 +530,13 @@ fn push_byte(output: &mut impl Sink, el: u8) {
 
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn push_u16(output: &mut impl Sink, el: u16) {
+fn push_u16(output: &mut SliceSink, el: u16) {
     output.extend_from_slice(&el.to_le_bytes());
 }
 
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn push_u16(output: &mut impl Sink, el: u16) {
+fn push_u16(output: &mut SliceSink, el: u16) {
     unsafe {
         core::ptr::copy_nonoverlapping(el.to_le_bytes().as_ptr(), output.pos_mut_ptr(), 2);
         output.set_pos(output.pos() + 2);
@@ -539,7 +545,7 @@ fn push_u16(output: &mut impl Sink, el: u16) {
 
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn push_u32(output: &mut impl Sink, el: u32) {
+fn push_u32(output: &mut SliceSink, el: u32) {
     unsafe {
         core::ptr::copy_nonoverlapping(el.to_le_bytes().as_ptr(), output.pos_mut_ptr(), 4);
         output.set_pos(output.pos() + 4);
@@ -548,7 +554,7 @@ fn push_u32(output: &mut impl Sink, el: u32) {
 
 #[inline(always)] // (always) necessary otherwise compiler fails to inline it
 #[cfg(feature = "safe-encode")]
-fn copy_literals_wild(output: &mut impl Sink, input: &[u8], input_start: usize, len: usize) {
+fn copy_literals_wild(output: &mut SliceSink, input: &[u8], input_start: usize, len: usize) {
     match len {
         0..=8 => output.extend_from_slice_wild(&input[input_start..input_start + 8], len),
         9..=16 => output.extend_from_slice_wild(&input[input_start..input_start + 16], len),
@@ -559,7 +565,7 @@ fn copy_literals_wild(output: &mut impl Sink, input: &[u8], input_start: usize, 
 
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn copy_literals_wild(output: &mut impl Sink, input: &[u8], input_start: usize, len: usize) {
+fn copy_literals_wild(output: &mut SliceSink, input: &[u8], input_start: usize, len: usize) {
     debug_assert!(input_start + len / 8 * 8 + ((len % 8) != 0) as usize * 8 <= input.len());
     debug_assert!(output.pos() + len / 8 * 8 + ((len % 8) != 0) as usize * 8 <= output.capacity());
     unsafe {
@@ -580,18 +586,18 @@ fn copy_literals_wild(output: &mut impl Sink, input: &[u8], input_start: usize, 
 #[inline]
 pub(crate) fn compress_into_sink(
     input: &[u8],
-    output: &mut impl Sink,
+    output: &mut SliceSink,
 ) -> Result<usize, CompressError> {
     let (dict_size, dict_bitshift) = get_table_size(input.len());
     if input.len() < u16::MAX as usize {
         let mut dict = HashTableU16::new(dict_size, dict_bitshift);
-        compress_internal::<_, _, false>(input, 0, output, &mut dict, b"", 0)
+        compress_internal::<_, false>(input, 0, output, &mut dict, b"", 0)
     } else if input.len() < u32::MAX as usize {
         let mut dict = HashTableU32::new(dict_size, dict_bitshift);
-        compress_internal::<_, _, false>(input, 0, output, &mut dict, b"", 0)
+        compress_internal::<_, false>(input, 0, output, &mut dict, b"", 0)
     } else {
         let mut dict = HashTableUsize::new(dict_size, dict_bitshift);
-        compress_internal::<_, _, false>(input, 0, output, &mut dict, b"", 0)
+        compress_internal::<_, false>(input, 0, output, &mut dict, b"", 0)
     }
 }
 
@@ -599,22 +605,22 @@ pub(crate) fn compress_into_sink(
 #[inline]
 pub(crate) fn compress_into_sink_with_dict(
     input: &[u8],
-    output: &mut impl Sink,
+    output: &mut SliceSink,
     mut dict_data: &[u8],
 ) -> Result<usize, CompressError> {
     let (dict_size, dict_bitshift) = get_table_size(input.len());
     if dict_data.len() + input.len() < u16::MAX as usize {
         let mut dict = HashTableU16::new(dict_size, dict_bitshift);
         init_dict(&mut dict, &mut dict_data);
-        compress_internal::<_, _, true>(input, 0, output, &mut dict, dict_data, dict_data.len())
+        compress_internal::<_, true>(input, 0, output, &mut dict, dict_data, dict_data.len())
     } else if dict_data.len() + input.len() < u32::MAX as usize {
         let mut dict = HashTableU32::new(dict_size, dict_bitshift);
         init_dict(&mut dict, &mut dict_data);
-        compress_internal::<_, _, true>(input, 0, output, &mut dict, dict_data, dict_data.len())
+        compress_internal::<_, true>(input, 0, output, &mut dict, dict_data, dict_data.len())
     } else {
         let mut dict = HashTableUsize::new(dict_size, dict_bitshift);
         init_dict(&mut dict, &mut dict_data);
-        compress_internal::<_, _, true>(input, 0, output, &mut dict, dict_data, dict_data.len())
+        compress_internal::<_, true>(input, 0, output, &mut dict, dict_data, dict_data.len())
     }
 }
 
@@ -671,13 +677,10 @@ pub fn compress_into_with_dict(
 #[inline]
 pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
     let max_compressed_size = get_maximum_output_size(input.len());
-    let mut compressed = Vec::with_capacity(4 + max_compressed_size);
-    compressed.extend_from_slice(&(input.len() as u32).to_le_bytes());
-    let compressed_len = compress_into_sink(
-        input,
-        &mut vec_sink_for_compression(&mut compressed, 4, 0, max_compressed_size),
-    )
-    .unwrap();
+    let mut compressed = get_vec_with_size(4 + max_compressed_size);
+    compressed[..4].copy_from_slice(&(input.len() as u32).to_le_bytes());
+    let compressed_len = compress_into(input, &mut compressed[4..]).unwrap();
+
     compressed.truncate(4 + compressed_len);
     compressed
 }
@@ -686,12 +689,8 @@ pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
 #[inline]
 pub fn compress(input: &[u8]) -> Vec<u8> {
     let max_compressed_size = get_maximum_output_size(input.len());
-    let mut compressed = Vec::with_capacity(max_compressed_size);
-    let compressed_len = compress_into_sink(
-        input,
-        &mut vec_sink_for_compression(&mut compressed, 0, 0, max_compressed_size),
-    )
-    .unwrap();
+    let mut compressed = get_vec_with_size(max_compressed_size);
+    let compressed_len = compress_into(input, &mut compressed[..]).unwrap();
     compressed.truncate(compressed_len);
     compressed
 }
@@ -700,13 +699,8 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
 #[inline]
 pub fn compress_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
     let max_compressed_size = get_maximum_output_size(input.len());
-    let mut compressed = Vec::with_capacity(max_compressed_size);
-    let compressed_len = compress_into_sink_with_dict(
-        input,
-        &mut vec_sink_for_compression(&mut compressed, 0, 0, max_compressed_size),
-        ext_dict,
-    )
-    .unwrap();
+    let mut compressed = get_vec_with_size(max_compressed_size);
+    let compressed_len = compress_into_with_dict(input, &mut compressed[..], ext_dict).unwrap();
     compressed.truncate(compressed_len);
     compressed
 }
@@ -716,14 +710,11 @@ pub fn compress_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
 #[inline]
 pub fn compress_prepend_size_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
     let max_compressed_size = get_maximum_output_size(input.len());
-    let mut compressed = Vec::with_capacity(4 + max_compressed_size);
-    compressed.extend_from_slice(&(input.len() as u32).to_le_bytes());
-    let compressed_len = compress_into_sink_with_dict(
-        input,
-        &mut vec_sink_for_compression(&mut compressed, 4, 0, max_compressed_size),
-        ext_dict,
-    )
-    .unwrap();
+
+    let mut compressed = get_vec_with_size(4 + max_compressed_size);
+    compressed[..4].copy_from_slice(&(input.len() as u32).to_le_bytes());
+    let compressed_len = compress_into_with_dict(input, &mut compressed[4..], ext_dict).unwrap();
+
     compressed.truncate(4 + compressed_len);
     compressed
 }
@@ -888,7 +879,7 @@ mod tests {
         uncompressed[..output_start].copy_from_slice(&dict[dict_cutoff..]);
         let uncomp_len = {
             let mut sink = SliceSink::new(&mut uncompressed[..], output_start);
-            crate::block::decompress::decompress_internal::<_, true>(
+            crate::block::decompress::decompress_internal::<true>(
                 &compressed,
                 &mut sink,
                 &dict[..dict_cutoff],
