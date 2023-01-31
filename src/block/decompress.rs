@@ -33,8 +33,8 @@ unsafe fn duplicate(
 
 #[inline]
 fn wild_copy_from_src_16(mut source: *const u8, mut dst_ptr: *mut u8, num_items: usize) {
-    // Note: if the compiler transforms this into a call to memcpy it'll hurt performance!
-    // It doesn't seem to be the case though, probably due to the 16 byte stride length.
+    // Note: if the compiler auto-vectorizes this it'll hurt performance!
+    // It's not the case for 16 bytes stepsize, but for 8 bytes.
     unsafe {
         let dst_ptr_end = dst_ptr.add(num_items);
         while (dst_ptr as usize) < dst_ptr_end as usize {

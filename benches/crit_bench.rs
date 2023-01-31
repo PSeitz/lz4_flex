@@ -211,16 +211,16 @@ fn bench_block_decompression_throughput(c: &mut Criterion) {
         //&comp_lz4,
         //|b, i| b.iter(|| lz4_flex::block::decompress_with_dict(i, input.len(), &empty_vec)),
         //);
-        group.bench_with_input(
-            BenchmarkId::new("lz4_redox_rust", input_bytes),
-            &comp_lz4,
-            |b, i| b.iter(|| lz4_compress::decompress(i)),
-        );
-        group.bench_with_input(
-            BenchmarkId::new("lz4_fear_rust", input_bytes),
-            &comp_lz4,
-            |b, i| b.iter(|| decompress_lz4_fear(i)),
-        );
+        //group.bench_with_input(
+        //BenchmarkId::new("lz4_redox_rust", input_bytes),
+        //&comp_lz4,
+        //|b, i| b.iter(|| lz4_compress::decompress(i)),
+        //);
+        //group.bench_with_input(
+        //BenchmarkId::new("lz4_fear_rust", input_bytes),
+        //&comp_lz4,
+        //|b, i| b.iter(|| decompress_lz4_fear(i)),
+        //);
 
         group.bench_with_input(
             BenchmarkId::new("lz4_cpp", input_bytes),
@@ -228,10 +228,10 @@ fn bench_block_decompression_throughput(c: &mut Criterion) {
             |b, i| b.iter(|| lz4_cpp_block_decompress(i, input.len())),
         );
 
-        let comp_snap = compress_snap(input);
-        group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
-            b.iter(|| decompress_snap(i))
-        });
+        //let comp_snap = compress_snap(input);
+        //group.bench_with_input(BenchmarkId::new("snap", input_bytes), &comp_snap, |b, i| {
+        //b.iter(|| decompress_snap(i))
+        //});
     }
 
     group.finish();
