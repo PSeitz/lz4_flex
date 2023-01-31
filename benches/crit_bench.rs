@@ -17,12 +17,12 @@ const COMPRESSION10MB: &[u8] = include_bytes!("dickens.txt");
 const COMPRESSION95K_VERY_GOOD_LOGO: &[u8] = include_bytes!("../logo.jpg");
 
 const ALL: &[&[u8]] = &[
-    //COMPRESSION1K as &[u8],
-    //COMPRESSION34K as &[u8],
-    //COMPRESSION65K as &[u8],
-    //COMPRESSION66K as &[u8],
+    COMPRESSION1K as &[u8],
+    COMPRESSION34K as &[u8],
+    COMPRESSION65K as &[u8],
+    COMPRESSION66K as &[u8],
     COMPRESSION10MB as &[u8],
-    // COMPRESSION95K_VERY_GOOD_LOGO as &[u8],
+    COMPRESSION95K_VERY_GOOD_LOGO as &[u8],
 ];
 
 fn compress_lz4_fear(input: &[u8]) -> Vec<u8> {
