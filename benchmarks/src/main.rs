@@ -1,36 +1,51 @@
 use glob::glob;
+use std::os::unix::prelude::MetadataExt;
 use std::time::Duration;
+use std::{env, fs};
 use std::{io, time::Instant};
 
 fn main() {
+    let bench_type = env::args().skip(1).next().unwrap_or("".to_string());
     for entry in glob("bench_files/*").expect("Failed to read glob pattern") {
         let file_name = entry.unwrap().to_str().unwrap().to_string();
-        bench_file(&file_name).unwrap();
+        let fs = fs::metadata(&file_name).unwrap().size();
+        let break_condition = BreakCondition::Loops((3_000_000_000 / fs) as u32);
+
+        bench_file(&file_name, &bench_type, break_condition).unwrap();
     }
 }
 
-fn bench_file(file: &str) -> io::Result<()> {
-    bench_compression(file)?;
-    bench_decompression(file)?;
+fn bench_file(file: &str, bench_type: &str, break_condition: BreakCondition) -> io::Result<()> {
+    if bench_type.is_empty() || bench_type == "compression" {
+        bench_compression(file, break_condition)?;
+    }
+    if bench_type.is_empty() || bench_type == "decompression" {
+        bench_decompression(file, break_condition)?;
+    }
     Ok(())
 }
 
-fn bench_compression(file: &str) -> io::Result<()> {
+fn bench_compression(file: &str, break_condition: BreakCondition) -> io::Result<()> {
     let file_content = std::fs::read(file)?;
     let mb = file_content.len() as f32 / 1_000_000 as f32;
 
     let mut out = Vec::new();
     let print_info = format!("{file} - Compression");
 
-    bench(mb, &print_info, || {
-        out.clear();
-        compress(&file_content, &mut out);
-    });
+    bench(
+        mb,
+        &print_info,
+        || {
+            out.clear();
+            compress(&file_content, &mut out);
+        },
+        break_condition,
+    );
 
     Ok(())
 }
 
-fn bench_decompression(file: &str) -> io::Result<()> {
+fn bench_decompression(file: &str, break_condition: BreakCondition) -> io::Result<()> {
     let file_content = std::fs::read(file)?;
     let mb = file_content.len() as f32 / 1_000_000 as f32;
 
@@ -40,10 +55,15 @@ fn bench_decompression(file: &str) -> io::Result<()> {
     let mut out = Vec::new();
     let print_info = format!("{file} - Decompression");
 
-    bench(mb, &print_info, || {
-        out.clear();
-        decompress(&compressed, &mut out);
-    });
+    bench(
+        mb,
+        &print_info,
+        || {
+            out.clear();
+            decompress(&compressed, &mut out);
+        },
+        break_condition,
+    );
 
     Ok(())
 }
@@ -60,7 +80,31 @@ fn compress(input: &[u8], out: &mut Vec<u8>) {
     wtr.finish().unwrap();
 }
 
-fn bench<F>(mb: f32, print_info: &str, mut do_stuff: F)
+#[derive(Copy, Clone)]
+enum BreakCondition {
+    AfterSecs(f32),
+    Loops(u32),
+}
+
+impl BreakCondition {
+    fn should_break(&self, secs_since_start: f32, loops: u32) -> bool {
+        match self {
+            BreakCondition::AfterSecs(max_secs) => {
+                if secs_since_start > *max_secs {
+                    return true;
+                }
+            }
+            BreakCondition::Loops(max_loops) => {
+                if loops >= *max_loops {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+}
+
+fn bench<F>(mb: f32, print_info: &str, mut do_stuff: F, break_condition: BreakCondition)
 where
     F: FnMut(),
 {
@@ -85,7 +129,8 @@ where
 
         loops += 1;
         let secs_since_start = (Instant::now() - start).as_secs_f32();
-        if secs_since_start > 5.0 || loops > 1000 {
+
+        if break_condition.should_break(secs_since_start, loops) {
             break;
         }
     }
