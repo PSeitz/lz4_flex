@@ -57,12 +57,14 @@ unsafe fn duplicate_overlapping(
     // To prevent that we write a dummy zero to output, which will zero out output in such cases.
     // This is the same strategy used by the reference C implementation https://github.com/lz4/lz4/pull/772
     output_ptr.write(0u8);
-    // Note: this looks like a harmless loop but is unrolled/auto-vectorized by the compiler
-    for _ in 0..match_length {
-        let curr = start.read();
-        output_ptr.write(curr);
-        *output_ptr = output_ptr.add(1);
+    let dst_ptr_end = output_ptr.add(match_length);
+    while (*output_ptr as usize) < dst_ptr_end as usize {
+        // Note that we copy 4 bytes, instead of one.
+        // Without that the compiler will unroll/auto-vectorize the copy with a lot of branches.
+        // This is not what we want, as large overlapping copies are not that common.
+        core::ptr::copy(start, *output_ptr, 4);
         start = start.add(1);
+        *output_ptr = output_ptr.add(1);
     }
 }
 
