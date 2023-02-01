@@ -119,17 +119,18 @@ pub(crate) fn decompress_internal<const USE_DICT: bool>(
         if does_token_fit(token) && input_pos <= safe_input_pos && output.pos() < safe_output_pos {
             let literal_length = (token >> 4) as usize;
 
-            if literal_length > input.len() - input_pos {
-                return Err(DecompressError::LiteralOutOfBounds);
-            }
+            // casting to [u8;u16] doesn't seem to make a difference vs &[u8] (same assembly)
+            let input: &[u8; 16] = input[input_pos..input_pos + 16].try_into().unwrap();
 
             // Copy the literal
             // The literal is at max 14 bytes, and the is_safe_distance check assures
             // that we are far away enough from the end so we can safely copy 16 bytes
-            output.extend_from_slice_wild(&input[input_pos..input_pos + 16], literal_length);
+            output.extend_from_slice_wild(input, literal_length);
             input_pos += literal_length;
 
-            let offset = read_u16(input, &mut input_pos)? as usize;
+            // clone as we don't want to mutate
+            let offset = read_u16(input, &mut literal_length.clone())? as usize;
+            input_pos += 2;
 
             let mut match_length = MINMATCH + (token & 0xF) as usize;
 
@@ -146,10 +147,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool>(
             // In this branch we know that match_length is at most 18 (14 + MINMATCH).
             // But the blocks can overlap, so make sure they are at least 18 bytes apart
             // to enable an optimized copy of 18 bytes.
-            let (start, did_overflow) = output.pos().overflowing_sub(offset);
-            if did_overflow {
-                return Err(DecompressError::OffsetOutOfBounds);
-            }
+            let start = output.pos() - offset;
             if offset >= match_length {
                 output.extend_from_within(start, 18, match_length);
             } else {
@@ -289,7 +287,7 @@ fn duplicate_overlapping_slice(
         return Err(DecompressError::OffsetOutOfBounds);
     }
     if offset == 1 {
-        let val = sink.filled_slice()[start];
+        let val = sink.output[start];
         sink.extend_with_fill(val, match_length);
     } else {
         sink.extend_from_within_overlapping(start, match_length);
