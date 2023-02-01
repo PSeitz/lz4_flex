@@ -52,9 +52,9 @@ pub fn vec_sink_for_decompression(
 ///   - Bytes `[..pos()]` are always initialized.
 pub struct SliceSink<'a> {
     /// The working slice, which may contain uninitialized bytes
-    output: &'a mut [u8],
+    pub output: &'a mut [u8],
     /// Number of bytes in start of `output` guaranteed to be initialized
-    pos: usize,
+    pub pos: usize,
 }
 
 impl<'a> SliceSink<'a> {
@@ -89,12 +89,6 @@ impl<'a> SliceSink<'a> {
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
     pub(crate) unsafe fn base_mut_ptr(&mut self) -> *mut u8 {
         self.output.as_mut_ptr()
-    }
-
-    #[inline]
-    #[cfg(any(feature = "safe-decode"))]
-    pub(crate) fn filled_slice(&self) -> &[u8] {
-        &self.output[..self.pos]
     }
 
     #[inline]
@@ -165,12 +159,8 @@ mod tests {
         use crate::sink::SliceSink;
         let mut data = Vec::new();
         data.resize(5, 0);
-        let mut sink = SliceSink::new(&mut data, 1);
+        let sink = SliceSink::new(&mut data, 1);
         assert_eq!(sink.pos(), 1);
         assert_eq!(sink.capacity(), 5);
-        assert_eq!(sink.filled_slice(), &[0]);
-        sink.extend_from_slice(&[1, 2, 3]);
-        assert_eq!(sink.pos(), 4);
-        assert_eq!(sink.filled_slice(), &[0, 1, 2, 3]);
     }
 }
