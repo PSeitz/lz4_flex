@@ -138,16 +138,14 @@ impl<'a> SliceSink<'a> {
     /// # Panics
     /// Panics if `start` >= `pos`.
     #[inline]
-    #[cfg(any(feature = "safe-decode"))]
+    #[cfg(feature = "safe-decode")]
     pub(crate) fn extend_from_within(&mut self, start: usize, wild_len: usize, copy_len: usize) {
-        assert!(copy_len <= wild_len);
-        assert!(start + copy_len <= self.pos);
         self.output.copy_within(start..start + wild_len, self.pos);
         self.pos += copy_len;
     }
 
     #[inline]
-    #[cfg(any(feature = "safe-decode"))]
+    #[cfg(feature = "safe-decode")]
     pub(crate) fn extend_from_within_overlapping(&mut self, start: usize, num_bytes: usize) {
         let offset = self.pos - start;
         for i in start + offset..start + offset + num_bytes {
