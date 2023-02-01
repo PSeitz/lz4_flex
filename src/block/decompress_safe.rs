@@ -261,10 +261,7 @@ fn duplicate_slice(
     if match_length > offset {
         duplicate_overlapping_slice(output, offset, match_length)?;
     } else {
-        let (start, did_overflow_1) = output.pos().overflowing_sub(offset);
-        if did_overflow_1 {
-            return Err(DecompressError::OffsetOutOfBounds);
-        }
+        let start = output.pos() - offset;
         match match_length {
             0..=32 if output.pos() + 32 <= output.capacity() => {
                 output.extend_from_within(start, 32, match_length)
