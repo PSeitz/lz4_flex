@@ -148,16 +148,12 @@ impl<'a> SliceSink<'a> {
 
     #[inline]
     #[cfg(any(feature = "safe-decode"))]
-    pub(crate) fn extend_from_within_overlapping(&mut self, start: usize, len: usize) {
-        // Sink safety invariant guarantees that the first `pos` items are always initialized.
-        assert!(start <= self.pos);
+    pub(crate) fn extend_from_within_overlapping(&mut self, start: usize, num_bytes: usize) {
         let offset = self.pos - start;
-        let out = &mut self.output[start..self.pos + len];
-        out[offset] = 0; // ensures that a copy w/ start == pos becomes a zero fill
-        for i in offset..out.len() {
-            out[i] = out[i - offset];
+        for i in start + offset..start + offset + num_bytes {
+            self.output[i] = self.output[i - offset];
         }
-        self.pos += len;
+        self.pos += num_bytes;
     }
 }
 
