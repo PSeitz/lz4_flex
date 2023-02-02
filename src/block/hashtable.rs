@@ -1,3 +1,8 @@
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+#[cfg(feature = "frame")]
+use core::convert::TryInto;
+
 /// The Hashtable trait used by the compression to store hashed bytes to their position.
 /// `val` can be maximum the size of the input in bytes.
 ///
@@ -9,7 +14,6 @@
 ///
 /// Every four bytes is assigned an entry. When this number is lower, fewer entries exists, and
 /// thus collisions are more likely, hurting the compression ratio.
-use alloc::vec::Vec;
 
 /// hashes and right shifts to a maximum value of 16bit, 65535
 /// The right shift is done in order to not exceed, the hashtables capacity
@@ -94,6 +98,48 @@ impl HashTable for HashTableUsize {
     }
 }
 
+const FIXED_SIZE_HASHTABLE_SIZE: usize = 4 * 1024;
+const FIXED_SIZE_BIT_SHIFT: usize = 4;
+
+#[derive(Debug)]
+#[repr(align(64))]
+pub struct FixedSizeHashTable {
+    dict: Box<[u32; FIXED_SIZE_HASHTABLE_SIZE]>,
+}
+impl FixedSizeHashTable {
+    #[inline]
+    #[cfg(feature = "frame")]
+    pub fn new() -> Self {
+        let dict = alloc::vec![0; FIXED_SIZE_HASHTABLE_SIZE]
+            .into_boxed_slice()
+            .try_into()
+            .unwrap();
+        Self { dict }
+    }
+
+    #[cfg(feature = "frame")]
+    #[cold]
+    pub fn reposition(&mut self, offset: u32) {
+        for i in self.dict.iter_mut() {
+            *i = i.saturating_sub(offset);
+        }
+    }
+}
+impl HashTable for FixedSizeHashTable {
+    #[inline]
+    fn get_at(&self, hash: usize) -> usize {
+        self.dict[hash >> FIXED_SIZE_BIT_SHIFT] as usize
+    }
+    #[inline]
+    fn put_at(&mut self, hash: usize, val: usize) {
+        self.dict[hash >> FIXED_SIZE_BIT_SHIFT] = val as u32;
+    }
+    #[inline]
+    fn clear(&mut self) {
+        self.dict.fill(0);
+    }
+}
+
 #[derive(Debug)]
 #[repr(align(64))]
 pub struct HashTableU32 {
@@ -108,14 +154,6 @@ impl HashTableU32 {
         Self {
             dict,
             dict_bitshift,
-        }
-    }
-
-    #[cfg(feature = "frame")]
-    #[cold]
-    pub fn reposition(&mut self, offset: u32) {
-        for i in &mut self.dict {
-            *i = i.saturating_sub(offset);
         }
     }
 }

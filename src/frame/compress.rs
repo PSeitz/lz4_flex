@@ -8,7 +8,7 @@ use twox_hash::XxHash32;
 use crate::{
     block::{
         compress::compress_internal,
-        hashtable::{HashTable, HashTableU32},
+        hashtable::{FixedSizeHashTable, HashTable},
     },
     sink::vec_sink_for_compression,
 };
@@ -67,7 +67,7 @@ pub struct FrameEncoder<W: io::Write> {
     /// _Not_ the same as `content_len` as this is reset every to 2GB.
     src_stream_offset: usize,
     /// Encoder table
-    compression_table: HashTableU32,
+    compression_table: FixedSizeHashTable,
     /// The underlying writer.
     w: W,
     /// Xxhash32 used when content checksum is enabled.
@@ -105,12 +105,12 @@ impl<W: io::Write> FrameEncoder<W> {
         ));
 
         // 16 KB hash table for matches, same as the reference implementation.
-        let (dict_size, dict_bitshift) = (4 * 1024, 4);
+        //let (dict_size, dict_bitshift) = (4 * 1024, 4);
 
         FrameEncoder {
             src,
             w: wtr,
-            compression_table: HashTableU32::new(dict_size, dict_bitshift),
+            compression_table: FixedSizeHashTable::new(),
             content_hasher: XxHash32::with_seed(0),
             content_len: 0,
             dst,
