@@ -98,19 +98,19 @@ impl HashTable for HashTableUsize {
     }
 }
 
-const FIXED_SIZE_HASHTABLE_SIZE: usize = 4 * 1024;
-const FIXED_SIZE_BIT_SHIFT: usize = 4;
+const HASHTABLE_SIZE_4K: usize = 4 * 1024;
+const HASHTABLE_BIT_SHIFT_4K: usize = 4;
 
 #[derive(Debug)]
 #[repr(align(64))]
-pub struct FixedSizeHashTable {
-    dict: Box<[u32; FIXED_SIZE_HASHTABLE_SIZE]>,
+pub struct HashTable4K {
+    dict: Box<[u32; HASHTABLE_SIZE_4K]>,
 }
-impl FixedSizeHashTable {
+impl HashTable4K {
     #[inline]
     #[cfg(feature = "frame")]
     pub fn new() -> Self {
-        let dict = alloc::vec![0; FIXED_SIZE_HASHTABLE_SIZE]
+        let dict = alloc::vec![0; HASHTABLE_SIZE_4K]
             .into_boxed_slice()
             .try_into()
             .unwrap();
@@ -125,14 +125,14 @@ impl FixedSizeHashTable {
         }
     }
 }
-impl HashTable for FixedSizeHashTable {
+impl HashTable for HashTable4K {
     #[inline]
     fn get_at(&self, hash: usize) -> usize {
-        self.dict[hash >> FIXED_SIZE_BIT_SHIFT] as usize
+        self.dict[hash >> HASHTABLE_BIT_SHIFT_4K] as usize
     }
     #[inline]
     fn put_at(&mut self, hash: usize, val: usize) {
-        self.dict[hash >> FIXED_SIZE_BIT_SHIFT] = val as u32;
+        self.dict[hash >> HASHTABLE_BIT_SHIFT_4K] = val as u32;
     }
     #[inline]
     fn clear(&mut self) {

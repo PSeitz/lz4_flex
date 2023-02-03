@@ -583,27 +583,15 @@ fn copy_literals_wild(output: &mut SliceSink, input: &[u8], input_start: usize, 
     }
 }
 
-#[inline]
-pub(crate) fn compress_into_sink(
-    input: &[u8],
-    output: &mut SliceSink,
-) -> Result<usize, CompressError> {
-    let (dict_size, dict_bitshift) = get_table_size(input.len());
-    if input.len() < u16::MAX as usize {
-        let mut dict = HashTableU16::new(dict_size, dict_bitshift);
-        compress_internal::<_, false>(input, 0, output, &mut dict, b"", 0)
-    } else if input.len() < u32::MAX as usize {
-        let mut dict = HashTableU32::new(dict_size, dict_bitshift);
-        compress_internal::<_, false>(input, 0, output, &mut dict, b"", 0)
-    } else {
-        let mut dict = HashTableUsize::new(dict_size, dict_bitshift);
-        compress_internal::<_, false>(input, 0, output, &mut dict, b"", 0)
-    }
-}
+/// Compress all bytes of `input` into `output`.
+/// The method chooses an appropriate hashtable to lookup duplicates.
+/// output should be preallocated with a size of
+/// `get_maximum_output_size`.
+///
+/// Returns the number of bytes written (compressed) into `output`.
 
-/// Same as compress_into_sink but with supports external dictionary
 #[inline]
-pub(crate) fn compress_into_sink_with_dict(
+pub(crate) fn compress_into_sink_with_dict<const USE_DICT: bool>(
     input: &[u8],
     output: &mut SliceSink,
     mut dict_data: &[u8],
@@ -612,15 +600,15 @@ pub(crate) fn compress_into_sink_with_dict(
     if dict_data.len() + input.len() < u16::MAX as usize {
         let mut dict = HashTableU16::new(dict_size, dict_bitshift);
         init_dict(&mut dict, &mut dict_data);
-        compress_internal::<_, true>(input, 0, output, &mut dict, dict_data, dict_data.len())
+        compress_internal::<_, USE_DICT>(input, 0, output, &mut dict, dict_data, dict_data.len())
     } else if dict_data.len() + input.len() < u32::MAX as usize {
         let mut dict = HashTableU32::new(dict_size, dict_bitshift);
         init_dict(&mut dict, &mut dict_data);
-        compress_internal::<_, true>(input, 0, output, &mut dict, dict_data, dict_data.len())
+        compress_internal::<_, USE_DICT>(input, 0, output, &mut dict, dict_data, dict_data.len())
     } else {
         let mut dict = HashTableUsize::new(dict_size, dict_bitshift);
         init_dict(&mut dict, &mut dict_data);
-        compress_internal::<_, true>(input, 0, output, &mut dict, dict_data, dict_data.len())
+        compress_internal::<_, USE_DICT>(input, 0, output, &mut dict, dict_data, dict_data.len())
     }
 }
 
@@ -647,19 +635,19 @@ pub fn get_maximum_output_size(input_len: usize) -> usize {
 }
 
 /// Compress all bytes of `input` into `output`.
-/// The method chooses an appropriate hashtable to lookup duplicates and calls
-/// `compress_into_with_table`. output should be preallocated with a size of
+/// The method chooses an appropriate hashtable to lookup duplicates.
+/// output should be preallocated with a size of
 /// `get_maximum_output_size`.
 ///
 /// Returns the number of bytes written (compressed) into `output`.
 #[inline]
 pub fn compress_into(input: &[u8], output: &mut [u8]) -> Result<usize, CompressError> {
-    compress_into_sink(input, &mut SliceSink::new(output, 0))
+    compress_into_sink_with_dict::<false>(input, &mut SliceSink::new(output, 0), b"")
 }
 
 /// Compress all bytes of `input` into `output`.
-/// The method chooses an appropriate hashtable to lookup duplicates and calls
-/// `compress_into_with_table`. output should be preallocated with a size of
+/// The method chooses an appropriate hashtable to lookup duplicates.
+/// output should be preallocated with a size of
 /// `get_maximum_output_size`.
 ///
 /// Returns the number of bytes written (compressed) into `output`.
@@ -669,7 +657,7 @@ pub fn compress_into_with_dict(
     output: &mut [u8],
     dict_data: &[u8],
 ) -> Result<usize, CompressError> {
-    compress_into_sink_with_dict(input, &mut SliceSink::new(output, 0), dict_data)
+    compress_into_sink_with_dict::<true>(input, &mut SliceSink::new(output, 0), dict_data)
 }
 
 /// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as a little
