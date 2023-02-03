@@ -71,7 +71,7 @@ pub fn lz4_flex_frame_decompress(input: &[u8]) -> Result<Vec<u8>, lz4_flex::fram
 }
 
 /// Test that the compressed string decompresses to the original string.
-fn inverse(bytes: impl AsRef<[u8]>) {
+fn test_roundtrip(bytes: impl AsRef<[u8]>) {
     let bytes = bytes.as_ref();
     // compress with rust, decompress with rust
     let compressed_flex = compress(bytes);
@@ -278,79 +278,79 @@ mod checked_decode {
 fn test_end_offset() {
     // the last 5 bytes need to be literals, so the last match block is not allowed to match to the
     // end
-    inverse("AAAAAAAAAAAAAAAAAAAAAAAAaAAAAAAAAAAAAAAAAAAAAAAAA");
-    inverse("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAA");
+    test_roundtrip("AAAAAAAAAAAAAAAAAAAAAAAAaAAAAAAAAAAAAAAAAAAAAAAAA");
+    test_roundtrip("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAA");
 }
 #[test]
 fn small_compressible_1() {
-    inverse("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBa");
+    test_roundtrip("AAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBaAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBa");
 }
 #[test]
 fn small_compressible_2() {
-    inverse("AAAAAAAAAAAZZZZZZZZAAAAAAAA");
+    test_roundtrip("AAAAAAAAAAAZZZZZZZZAAAAAAAA");
 }
 
 #[test]
 fn small_compressible_3() {
-    inverse("AAAAAAAAAAAZZZZZZZZAAAAAAAA");
+    test_roundtrip("AAAAAAAAAAAZZZZZZZZAAAAAAAA");
 }
 
 #[test]
 fn shakespear1() {
-    inverse("to live or not to live");
+    test_roundtrip("to live or not to live");
 }
 #[test]
 fn shakespear2() {
-    inverse("Love is a wonderful terrible thing");
+    test_roundtrip("Love is a wonderful terrible thing");
 }
 #[test]
 fn shakespear3() {
-    inverse("There is nothing either good or bad, but thinking makes it so.");
+    test_roundtrip("There is nothing either good or bad, but thinking makes it so.");
 }
 #[test]
 fn shakespear4() {
-    inverse("I burn, I pine, I perish.");
+    test_roundtrip("I burn, I pine, I perish.");
 }
 
 #[test]
 fn text_text() {
-    inverse("Save water, it doesn't grow on trees.");
-    inverse("The panda bear has an amazing black-and-white fur.");
-    inverse("The average panda eats as much as 9 to 14 kg of bamboo shoots a day.");
-    inverse("You are 60% water. Save 60% of yourself!");
-    inverse("To cute to die! Save the red panda!");
+    test_roundtrip("Save water, it doesn't grow on trees.");
+    test_roundtrip("The panda bear has an amazing black-and-white fur.");
+    test_roundtrip("The average panda eats as much as 9 to 14 kg of bamboo shoots a day.");
+    test_roundtrip("You are 60% water. Save 60% of yourself!");
+    test_roundtrip("To cute to die! Save the red panda!");
 }
 
 #[test]
 fn not_compressible() {
-    inverse("as6yhol.;jrew5tyuikbfewedfyjltre22459ba");
-    inverse("jhflkdjshaf9p8u89ybkvjsdbfkhvg4ut08yfrr");
+    test_roundtrip("as6yhol.;jrew5tyuikbfewedfyjltre22459ba");
+    test_roundtrip("jhflkdjshaf9p8u89ybkvjsdbfkhvg4ut08yfrr");
 }
 #[test]
 fn short_1() {
-    inverse("ahhd");
-    inverse("ahd");
-    inverse("x-29");
-    inverse("x");
-    inverse("k");
-    inverse(".");
-    inverse("ajsdh");
-    inverse("aaaaaa");
+    test_roundtrip("ahhd");
+    test_roundtrip("ahd");
+    test_roundtrip("x-29");
+    test_roundtrip("x");
+    test_roundtrip("k");
+    test_roundtrip(".");
+    test_roundtrip("ajsdh");
+    test_roundtrip("aaaaaa");
 }
 
 #[test]
 fn short_2() {
-    inverse("aaaaaabcbcbcbc");
+    test_roundtrip("aaaaaabcbcbcbc");
 }
 
 #[test]
 fn empty_string() {
-    inverse("");
+    test_roundtrip("");
 }
 
 #[test]
 fn nulls() {
-    inverse("\0\0\0\0\0\0\0\0\0\0\0\0\0");
+    test_roundtrip("\0\0\0\0\0\0\0\0\0\0\0\0\0");
 }
 
 #[test]
@@ -367,7 +367,7 @@ fn bug_fuzz() {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 46, 0, 0, 8, 0, 138,
     ];
-    inverse(data);
+    test_roundtrip(data);
 }
 #[test]
 fn bug_fuzz_2() {
@@ -377,7 +377,7 @@ fn bug_fuzz_2() {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 65, 0, 0, 128, 10, 1, 10, 1, 0, 122,
     ];
-    inverse(data);
+    test_roundtrip(data);
 }
 #[test]
 fn bug_fuzz_3() {
@@ -390,12 +390,12 @@ fn bug_fuzz_3() {
         15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 61, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 0,
         48, 45, 0, 1, 0, 0, 1, 0,
     ];
-    inverse(data);
+    test_roundtrip(data);
 }
 #[test]
 fn bug_fuzz_4() {
     let data = &[147];
-    inverse(data);
+    test_roundtrip(data);
 }
 #[test]
 fn buf_fuzz_5() {
@@ -404,7 +404,7 @@ fn buf_fuzz_5() {
         255, 255, 255, 253, 235, 156, 140, 8, 61, 255, 255, 255, 255, 65, 239, 254,
     ];
 
-    inverse(data);
+    test_roundtrip(data);
 }
 
 #[test]
@@ -414,7 +414,7 @@ fn compression_works() {
         When implementing an ExactSizeIterator, you must also implement Iterator. When doing so, the implementation of size_hint must return the exact size of the iterator.
         The len method has a default implementation, so you usually shouldn't implement it. However, you may be able to provide a more performant implementation than the default, so overriding it in this case makes sense."#;
 
-    inverse(s);
+    test_roundtrip(s);
     assert!(compress(s.as_bytes()).len() < s.len());
 }
 
@@ -438,30 +438,61 @@ fn big_compression() {
         s.push((n as u8).wrapping_mul(0xA).wrapping_add(33) ^ 0xA2);
     }
 
-    inverse(s);
+    test_roundtrip(s);
 }
 
 #[test]
 #[cfg_attr(miri, ignore)]
 fn test_text_10mb() {
-    inverse(COMPRESSION10MB);
+    test_roundtrip(COMPRESSION10MB);
 }
 #[test]
 fn test_json_66k() {
-    inverse(COMPRESSION66JSON);
+    test_roundtrip(COMPRESSION66JSON);
 }
 #[test]
 fn test_text_65k() {
-    inverse(COMPRESSION65);
+    test_roundtrip(COMPRESSION65);
 }
 #[test]
 fn test_text_34k() {
-    inverse(COMPRESSION34K);
+    test_roundtrip(COMPRESSION34K);
 }
 
 #[test]
 fn test_text_1k() {
-    inverse(COMPRESSION1K);
+    test_roundtrip(COMPRESSION1K);
+}
+
+use proptest::{prelude::*, test_runner::FileFailurePersistence};
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        failure_persistence: Some(Box::new(FileFailurePersistence::WithSource("regressions"))),
+        ..Default::default()
+    })]
+    #[test]
+    fn proptest_roundtrip(v in vec_of_vec()) {
+        let data: Vec<u8>  = v.iter().flat_map(|v|v.into_iter()).cloned().collect::<Vec<_>>();
+        test_roundtrip(&data);  // sum of the sum of all vectors.
+    }
+}
+
+fn vec_of_vec() -> impl Strategy<Value = Vec<Vec<u8>>> {
+    const N: u8 = 200;
+
+    let length = 0..N;
+    length.prop_flat_map(vec_from_length)
+}
+
+fn vec_from_length(length: u8) -> impl Strategy<Value = Vec<Vec<u8>>> {
+    const K: usize = u8::MAX as usize;
+    let mut result = vec![];
+    for index in 1..length {
+        let inner = proptest::collection::vec(0..index, 0..K);
+        result.push(inner);
+    }
+    result
 }
 
 #[cfg(feature = "frame")]
