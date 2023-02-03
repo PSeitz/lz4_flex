@@ -3,6 +3,8 @@
 #[macro_use]
 extern crate more_asserts;
 
+use std::iter;
+
 use lz4_compress::compress as lz4_rust_compress;
 #[cfg(feature = "frame")]
 use lz4_flex::frame::BlockMode;
@@ -158,6 +160,13 @@ fn test_minimum_compression_ratio() {
     let ratio = compressed.len() as f64 / COMPRESSION34K.len() as f64;
     assert_lt!(ratio, 0.585); // TODO check why compression is not deterministic (fails in ci for
                               // 0.58)
+    let compressed = compress(COMPRESSION65);
+    let ratio = compressed.len() as f64 / COMPRESSION65.len() as f64;
+    assert_lt!(ratio, 0.574);
+
+    let compressed = compress(COMPRESSION66JSON);
+    let ratio = compressed.len() as f64 / COMPRESSION66JSON.len() as f64;
+    assert_lt!(ratio, 0.229);
 }
 
 use lz_fear::raw::compress2;
@@ -408,6 +417,12 @@ fn buf_fuzz_5() {
 }
 
 #[test]
+fn test_so_many_zeros() {
+    let data: Vec<u8> = iter::repeat(0).take(30_000).collect();
+    test_roundtrip(data);
+}
+
+#[test]
 fn compression_works() {
     let s = r#"An iterator that knows its exact length.
         Many Iterators don't know how many times they will iterate, but some do. If an iterator knows how many times it can iterate, providing access to that information can be useful. For example, if you want to iterate backwards, a good start is to know where the end is.
@@ -432,9 +447,9 @@ fn compression_works() {
 #[ignore]
 #[test]
 fn big_compression() {
-    let mut s = Vec::with_capacity(80_000000);
+    let mut s = Vec::with_capacity(80_000_000);
 
-    for n in 0..80_000000 {
+    for n in 0..80_000_000 {
         s.push((n as u8).wrapping_mul(0xA).wrapping_add(33) ^ 0xA2);
     }
 
