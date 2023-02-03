@@ -4,9 +4,7 @@
 //! high performance. It has fixed memory usage, which contrary to other approachs, makes it less
 //! memory hungry.
 
-use crate::block::hashtable::get_table_size;
 use crate::block::hashtable::HashTable;
-use crate::block::hashtable::{HashTableU16, HashTableU32, HashTableUsize};
 use crate::block::END_OFFSET;
 use crate::block::LZ4_MIN_LENGTH;
 use crate::block::MAX_DISTANCE;
@@ -18,6 +16,8 @@ use alloc::vec::Vec;
 #[cfg(feature = "safe-encode")]
 use core::convert::TryInto;
 
+use super::hashtable::HashTable4KU16;
+use super::hashtable::HashTable8K;
 use super::{CompressError, WINDOW_SIZE};
 
 pub(crate) fn get_vec_with_size(size: usize) -> Vec<u8> {
@@ -346,7 +346,7 @@ fn backtrack_match(
 /// show significant improvement though.
 // Intentionally avoid inlining.
 // Empirical tests revealed it to be rarely better but often significantly detrimental.
-#[inline(never)]
+#[inline]
 pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
     input: &[u8],
     input_pos: usize,
@@ -596,17 +596,13 @@ pub(crate) fn compress_into_sink_with_dict<const USE_DICT: bool>(
     output: &mut SliceSink,
     mut dict_data: &[u8],
 ) -> Result<usize, CompressError> {
-    let (dict_size, dict_bitshift) = get_table_size(input.len());
     if dict_data.len() + input.len() < u16::MAX as usize {
-        let mut dict = HashTableU16::new(dict_size, dict_bitshift);
-        init_dict(&mut dict, &mut dict_data);
-        compress_internal::<_, USE_DICT>(input, 0, output, &mut dict, dict_data, dict_data.len())
-    } else if dict_data.len() + input.len() < u32::MAX as usize {
-        let mut dict = HashTableU32::new(dict_size, dict_bitshift);
+        let mut dict = HashTable4KU16::new();
         init_dict(&mut dict, &mut dict_data);
         compress_internal::<_, USE_DICT>(input, 0, output, &mut dict, dict_data, dict_data.len())
     } else {
-        let mut dict = HashTableUsize::new(dict_size, dict_bitshift);
+        // For some reason using a 4K hashtable causes a performance regression (memory layout?)
+        let mut dict = HashTable8K::new();
         init_dict(&mut dict, &mut dict_data);
         compress_internal::<_, USE_DICT>(input, 0, output, &mut dict, dict_data, dict_data.len())
     }
