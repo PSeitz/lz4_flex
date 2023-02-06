@@ -31,6 +31,7 @@ pub use header::{BlockMode, BlockSize, FrameInfo};
 
 #[derive(Debug)]
 #[non_exhaustive]
+/// Errors that can occur when de/compressing lz4.
 pub enum Error {
     /// Compression error.
     CompressionError(crate::block::CompressError),
@@ -62,7 +63,12 @@ pub enum Error {
     /// External dictionaries are not supported.
     DictionaryNotSupported,
     /// Content length differs.
-    ContentLengthError { expected: u64, actual: u64 },
+    ContentLengthError {
+        /// Expected content length.
+        expected: u64,
+        /// Actual content lenght.
+        actual: u64,
+    },
 }
 
 impl From<Error> for io::Error {

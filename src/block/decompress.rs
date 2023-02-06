@@ -462,21 +462,22 @@ pub fn decompress_into_with_dict(
 }
 
 /// Decompress all bytes of `input` into a new vec.
+/// The passed parameter `min_uncompressed_size` needs to be equal or larger than the uncompressed size.
+///
+/// # Panics
+/// May panic if the parameter `min_uncompressed_size` is smaller than the
+/// uncompressed data.
+
 #[inline]
 pub fn decompress_with_dict(
     input: &[u8],
-    uncompressed_size: usize,
+    min_uncompressed_size: usize,
     ext_dict: &[u8],
 ) -> Result<Vec<u8>, DecompressError> {
     // Allocate a vector to contain the decompressed stream.
-    let mut vec = get_vec_with_size(uncompressed_size);
+    let mut vec = get_vec_with_size(min_uncompressed_size);
     let decomp_len = decompress_into_with_dict(input, &mut vec[..], ext_dict)?;
-    if decomp_len != uncompressed_size {
-        return Err(DecompressError::UncompressedSizeDiffers {
-            expected: uncompressed_size,
-            actual: decomp_len,
-        });
-    }
+    vec.truncate(decomp_len);
     Ok(vec)
 }
 
@@ -489,17 +490,17 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
 }
 
 /// Decompress all bytes of `input` into a new vec.
+/// The passed parameter `min_uncompressed_size` needs to be equal or larger than the uncompressed size.
+///
+/// # Panics
+/// May panic if the parameter `min_uncompressed_size` is smaller than the
+/// uncompressed data.
 #[inline]
-pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
+pub fn decompress(input: &[u8], min_uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
     // Allocate a vector to contain the decompressed stream.
-    let mut vec = get_vec_with_size(uncompressed_size);
+    let mut vec = get_vec_with_size(min_uncompressed_size);
     let decomp_len = decompress_into(input, &mut vec[..])?;
-    if decomp_len != uncompressed_size {
-        return Err(DecompressError::UncompressedSizeDiffers {
-            expected: uncompressed_size,
-            actual: decomp_len,
-        });
-    }
+    vec.truncate(decomp_len);
     Ok(vec)
 }
 
