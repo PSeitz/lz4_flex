@@ -5,6 +5,7 @@ use core::convert::TryInto;
 use crate::block::DecompressError;
 use crate::block::MINMATCH;
 use crate::sink::SliceSink;
+use alloc::vec;
 use alloc::vec::Vec;
 
 /// Read an integer.
@@ -323,18 +324,18 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
 }
 
 /// Decompress all bytes of `input` into a new vec.
+/// The passed parameter `min_uncompressed_size` needs to be equal or larger than the uncompressed size.
+///
+/// # Panics
+/// May panic if the parameter `min_uncompressed_size` is smaller than the
+/// uncompressed data.
 #[inline]
-pub fn decompress(input: &[u8], uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
-    let mut decompressed: Vec<u8> = Vec::with_capacity(uncompressed_size);
-    decompressed.resize(uncompressed_size, 0);
+pub fn decompress(input: &[u8], min_uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
+    let mut decompressed: Vec<u8> = Vec::with_capacity(min_uncompressed_size);
+    decompressed.resize(min_uncompressed_size, 0);
     let decomp_len =
         decompress_internal::<false>(input, &mut SliceSink::new(&mut decompressed, 0), b"")?;
-    if decomp_len != uncompressed_size {
-        return Err(DecompressError::UncompressedSizeDiffers {
-            expected: uncompressed_size,
-            actual: decomp_len,
-        });
-    }
+    decompressed.truncate(decomp_len);
     Ok(decompressed)
 }
 
@@ -350,22 +351,21 @@ pub fn decompress_size_prepended_with_dict(
 }
 
 /// Decompress all bytes of `input` into a new vec.
+/// The passed parameter `min_uncompressed_size` needs to be equal or larger than the uncompressed size.
+///
+/// # Panics
+/// May panic if the parameter `min_uncompressed_size` is smaller than the
+/// uncompressed data.
 #[inline]
 pub fn decompress_with_dict(
     input: &[u8],
-    uncompressed_size: usize,
+    min_uncompressed_size: usize,
     ext_dict: &[u8],
 ) -> Result<Vec<u8>, DecompressError> {
-    let mut decompressed: Vec<u8> = Vec::with_capacity(uncompressed_size);
-    decompressed.resize(uncompressed_size, 0);
+    let mut decompressed: Vec<u8> = vec![0; min_uncompressed_size];
     let decomp_len =
         decompress_internal::<true>(input, &mut SliceSink::new(&mut decompressed, 0), ext_dict)?;
-    if decomp_len != uncompressed_size {
-        return Err(DecompressError::UncompressedSizeDiffers {
-            expected: uncompressed_size,
-            actual: decomp_len,
-        });
-    }
+    decompressed.truncate(decomp_len);
     Ok(decompressed)
 }
 

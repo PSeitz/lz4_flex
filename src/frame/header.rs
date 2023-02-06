@@ -35,12 +35,17 @@ pub(crate) const MAX_FRAME_INFO_SIZE: usize = 19;
 pub(crate) const BLOCK_INFO_SIZE: usize = 4;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
+/// Different predefines blocksizes to choose when compressing data.
 pub enum BlockSize {
     /// The default block size.
     Max64KB = 4,
+    /// 256KB block size.
     Max256KB = 5,
+    /// 1MB block size.
     Max1MB = 6,
+    /// 4MB block size.
     Max4MB = 7,
+    /// 8MB block size.
     Max8MB = 8,
 }
 
@@ -51,7 +56,7 @@ impl Default for BlockSize {
 }
 
 impl BlockSize {
-    pub fn get_size(&self) -> usize {
+    pub(crate) fn get_size(&self) -> usize {
         match self {
             BlockSize::Max64KB => 64 * 1024,
             BlockSize::Max256KB => 256 * 1024,
@@ -63,6 +68,7 @@ impl BlockSize {
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
+/// The two `BlockMode` operations that can be set on (`FrameInfo`)[FrameInfo]
 pub enum BlockMode {
     /// Every block is compressed independently. The default.
     Independent,
@@ -114,6 +120,7 @@ impl Default for BlockMode {
 // |  4 bytes   |        |   0 - 4 bytes    |
 //
 #[derive(Debug, Clone)]
+/// The metadata for de/compressing with lz4 frame format.
 pub struct FrameInfo {
     /// If set, includes the total uncompressed size of data in the frame.
     pub content_size: Option<u64>,
@@ -142,6 +149,7 @@ impl Default for FrameInfo {
 }
 
 impl FrameInfo {
+    /// Create a new `FrameInfo`.
     pub fn new() -> Self {
         Self {
             content_size: None,

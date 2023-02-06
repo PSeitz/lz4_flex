@@ -89,10 +89,6 @@ impl<R: io::Read> FrameDecoder<R> {
         }
     }
 
-    pub fn frame_info(&mut self) -> Option<&FrameInfo> {
-        self.current_frame_info.as_ref()
-    }
-
     /// Gets a reference to the underlying reader in this decoder.
     pub fn get_ref(&self) -> &R {
         &self.r

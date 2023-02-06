@@ -81,12 +81,11 @@ static LZ4_64KLIMIT: usize = (64 * 1024) + (MFLIMIT - 1);
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum DecompressError {
+    /// The provided output is too small
     OutputTooSmall {
+        /// Minimum expected output size
         expected: usize,
-        actual: usize,
-    },
-    UncompressedSizeDiffers {
-        expected: usize,
+        /// Actual size of output
         actual: usize,
     },
     /// Literal is out of bounds of the input
@@ -99,7 +98,9 @@ pub enum DecompressError {
 
 #[derive(Debug)]
 #[non_exhaustive]
+/// Errors that can happen during compression.
 pub enum CompressError {
+    /// The provided output is too small.
     OutputTooSmall,
 }
 
@@ -122,13 +123,6 @@ impl fmt::Display for DecompressError {
             }
             DecompressError::OffsetOutOfBounds => {
                 f.write_str("the offset to copy is not contained in the decompressed buffer")
-            }
-            DecompressError::UncompressedSizeDiffers { actual, expected } => {
-                write!(
-                    f,
-                    "the expected decompressed size differs, actual {}, expected {}",
-                    actual, expected
-                )
             }
         }
     }
