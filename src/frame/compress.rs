@@ -385,14 +385,14 @@ impl<W: fmt::Debug + io::Write> fmt::Debug for FrameEncoder<W> {
     }
 }
 
-/// Copy `src` into `v` starting from the `start` index, overwriting existing data if any.
+/// Copy `src` into `target` starting from the `start` index, overwriting existing data if any.
 #[inline]
-fn vec_copy_overwriting(v: &mut Vec<u8>, start: usize, src: &[u8]) {
-    debug_assert!(start + src.len() <= v.capacity());
+fn vec_copy_overwriting(target: &mut Vec<u8>, target_start: usize, src: &[u8]) {
+    debug_assert!(target_start + src.len() <= target.capacity());
 
     // By combining overwriting (copy_from_slice) and extending (extend_from_slice)
     // we can fill the ring buffer without initializing it (eg. filling with 0).
-    let overwrite_len = (v.len() - start).min(src.len());
-    v[start..start + overwrite_len].copy_from_slice(&src[..overwrite_len]);
-    v.extend_from_slice(&src[overwrite_len..]);
+    let overwrite_len = (target.len() - target_start).min(src.len());
+    target[target_start..target_start + overwrite_len].copy_from_slice(&src[..overwrite_len]);
+    target.extend_from_slice(&src[overwrite_len..]);
 }

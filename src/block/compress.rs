@@ -346,7 +346,7 @@ fn backtrack_match(
 /// show significant improvement though.
 // Intentionally avoid inlining.
 // Empirical tests revealed it to be rarely better but often significantly detrimental.
-#[inline]
+#[inline(never)]
 pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
     input: &[u8],
     input_pos: usize,
