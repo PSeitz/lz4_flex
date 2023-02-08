@@ -9,14 +9,14 @@
 Fastest LZ4 implementation in Rust. Originally based on [redox-os' lz4 compression](https://crates.io/crates/lz4-compress), but now a complete rewrite.
 The results in the table are from a benchmark in this project (66Kb JSON) with the block format. 
 
-AMD Ryzen 7 5800H, rustc 1.57.0-nightly (5ecc8ad84 2021-09-19), Linux Mint.
+AMD Ryzen 7 5900HX, rustc 1.67.0 (fc594f156 2023-01-24), Manjaro.
 
 |    Compressor        | Compression | Decompression | Ratio		 |
 |----------------------|-------------|---------------|---------------|
-| lz4_flex unsafe      | 1897 MiB/s   | 7123 MiB/s    | 0.2289   	 |
-| lz4_flex unsafe w. checked_decode      | 1897 MiB/s   | 6637 MiB/s    | 0.2289   	 |
-| lz4_flex safe        | 1591 MiB/s   | 5163 MiB/s    | 0.2289   	 |
-| lzzz (lz4 1.9.3)     | 2235 MiB/s   | 7001 MiB/s    | 0.2283   	 |
+| lz4_flex unsafe      | 2169 MiB/s   | 8266 MiB/s    | 0.2289   	 |
+| lz4_flex unsafe w. checked_decode      | 2169 MiB/s   | 7019 MiB/s    | 0.2289   	 |
+| lz4_flex safe        | 1730 MiB/s   | 5925 MiB/s    | 0.2289   	 |
+| lzzz (lz4 1.9.3)     | 2292 MiB/s   | 7196 MiB/s    | 0.2283   	 |
 | lz4_fear             | 886 MiB/s   | 1359 MiB/s     | 0.2283	     |
 | snap                 | 1886 MiB/s   | 1649 MiB/s     | 0.2242      |
 

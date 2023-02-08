@@ -13,8 +13,11 @@ use crate::{
     sink::vec_sink_for_compression,
 };
 
-use super::header::{BlockInfo, BlockMode, FrameInfo, BLOCK_INFO_SIZE, MAX_FRAME_INFO_SIZE};
 use super::Error;
+use super::{
+    header::{BlockInfo, BlockMode, FrameInfo, BLOCK_INFO_SIZE, MAX_FRAME_INFO_SIZE},
+    BlockSize,
+};
 use crate::block::WINDOW_SIZE;
 
 /// A writer for compressing a LZ4 stream.
@@ -84,10 +87,9 @@ pub struct FrameEncoder<W: io::Write> {
 }
 
 impl<W: io::Write> FrameEncoder<W> {
-    /// Creates a new Encoder with the specified FrameInfo.
-    pub fn with_frame_info(frame_info: FrameInfo, wtr: W) -> Self {
-        let max_block_size = frame_info.block_size.get_size();
-        let src_size = if frame_info.block_mode == BlockMode::Linked {
+    fn init(&mut self) {
+        let max_block_size = self.frame_info.block_size.get_size();
+        let src_size = if self.frame_info.block_mode == BlockMode::Linked {
             // In linked mode we consume the input (bumping src_start) but leave the
             // beginning of src to be used as a prefix in subsequent blocks.
             // That is at least until we have at least `max_block_size + WINDOW_SIZE`
@@ -99,21 +101,26 @@ impl<W: io::Write> FrameEncoder<W> {
         } else {
             max_block_size
         };
-        let src = Vec::with_capacity(src_size);
-        let dst = Vec::with_capacity(crate::block::compress::get_maximum_output_size(
-            max_block_size,
-        ));
+        // Since this method is called potentially multiple times, don't reserve _additional_
+        // capacity if not required.
+        self.src
+            .reserve(src_size.saturating_sub(self.src.capacity()));
+        self.dst.reserve(
+            crate::block::compress::get_maximum_output_size(max_block_size)
+                .saturating_sub(self.dst.capacity()),
+        );
+    }
 
-        // 16 KB hash table for matches, same as the reference implementation.
-        //let (dict_size, dict_bitshift) = (4 * 1024, 4);
-
+    /// Creates a new Encoder with the specified FrameInfo.
+    pub fn with_frame_info(frame_info: FrameInfo, wtr: W) -> Self {
         FrameEncoder {
-            src,
+            src: Vec::new(),
             w: wtr,
+            // 16 KB hash table for matches, same as the reference implementation.
             compression_table: HashTable4K::new(),
             content_hasher: XxHash32::with_seed(0),
             content_len: 0,
-            dst,
+            dst: Vec::new(),
             is_frame_open: false,
             frame_info,
             src_start: 0,
@@ -195,8 +202,12 @@ impl<W: io::Write> FrameEncoder<W> {
 
     /// Begin the frame by writing the frame header.
     /// It'll also setup the encoder for compressing blocks for the the new frame.
-    fn begin_frame(&mut self) -> io::Result<()> {
+    fn begin_frame(&mut self, buf_len: usize) -> io::Result<()> {
         self.is_frame_open = true;
+        if self.frame_info.block_size == BlockSize::Auto {
+            self.frame_info.block_size = BlockSize::from_buf_length(buf_len);
+        }
+        self.init();
         let mut frame_info_buffer = [0u8; MAX_FRAME_INFO_SIZE];
         let size = self.frame_info.write(&mut frame_info_buffer)?;
         self.w.write_all(&frame_info_buffer[..size])?;
@@ -336,13 +347,12 @@ impl<W: io::Write> FrameEncoder<W> {
 impl<W: io::Write> io::Write for FrameEncoder<W> {
     fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
         if !self.is_frame_open && !buf.is_empty() {
-            self.begin_frame()?;
+            self.begin_frame(buf.len())?;
         }
         let buf_len = buf.len();
-        let max_block_size = self.frame_info.block_size.get_size();
         while !buf.is_empty() {
             let src_filled = self.src_end - self.src_start;
-            let max_fill_len = max_block_size - src_filled;
+            let max_fill_len = self.frame_info.block_size.get_size() - src_filled;
             if max_fill_len == 0 {
                 // make space by writing next block
                 self.write_block()?;

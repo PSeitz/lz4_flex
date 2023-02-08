@@ -10,7 +10,7 @@ use lz4_compress::compress as lz4_rust_compress;
 use lz4_flex::frame::BlockMode;
 use lz4_flex::{
     block::{compress_prepend_size, decompress_size_prepended},
-    compress, decompress,
+    compress as compress_block, decompress,
 };
 
 const COMPRESSION1K: &[u8] = include_bytes!("../benches/compression_1k.txt");
@@ -76,7 +76,7 @@ pub fn lz4_flex_frame_decompress(input: &[u8]) -> Result<Vec<u8>, lz4_flex::fram
 fn test_roundtrip(bytes: impl AsRef<[u8]>) {
     let bytes = bytes.as_ref();
     // compress with rust, decompress with rust
-    let compressed_flex = compress(bytes);
+    let compressed_flex = compress_block(bytes);
     let decompressed = decompress(&compressed_flex, bytes.len()).unwrap();
     assert_eq!(decompressed, bytes);
 
@@ -115,7 +115,7 @@ fn lz4_cpp_compatibility(bytes: &[u8]) {
     }
 
     // compress with rust, decompress with lz4 cpp
-    let compressed_flex = compress(bytes);
+    let compressed_flex = compress_block(bytes);
     let decompressed = lz4_cpp_block_decompress(&compressed_flex, bytes.len()).unwrap();
     assert_eq!(decompressed, bytes);
 
@@ -155,18 +155,40 @@ fn compare_compression() {
 }
 
 #[test]
-fn test_minimum_compression_ratio() {
-    let compressed = compress(COMPRESSION34K);
+fn test_minimum_compression_ratio_block() {
+    let compressed = compress_block(COMPRESSION34K);
     let ratio = compressed.len() as f64 / COMPRESSION34K.len() as f64;
     assert_lt!(ratio, 0.585); // TODO check why compression is not deterministic (fails in ci for
                               // 0.58)
-    let compressed = compress(COMPRESSION65);
+    let compressed = compress_block(COMPRESSION65);
     let ratio = compressed.len() as f64 / COMPRESSION65.len() as f64;
     assert_lt!(ratio, 0.574);
 
-    let compressed = compress(COMPRESSION66JSON);
+    let compressed = compress_block(COMPRESSION66JSON);
     let ratio = compressed.len() as f64 / COMPRESSION66JSON.len() as f64;
     assert_lt!(ratio, 0.229);
+}
+
+#[cfg(feature = "frame")]
+#[test]
+fn test_minimum_compression_ratio_frame() {
+    use lz4_flex::frame::FrameInfo;
+
+    let get_ratio = |input| {
+        let compressed = lz4_flex_frame_compress_with(FrameInfo::new(), input).unwrap();
+
+        let ratio = compressed.len() as f64 / input.len() as f64;
+        ratio
+    };
+
+    let ratio = get_ratio(COMPRESSION34K);
+    assert_lt!(ratio, 0.585);
+
+    let ratio = get_ratio(COMPRESSION65);
+    assert_lt!(ratio, 0.574);
+
+    let ratio = get_ratio(COMPRESSION66JSON);
+    assert_lt!(ratio, 0.235);
 }
 
 use lz_fear::raw::compress2;
@@ -184,10 +206,12 @@ fn compress_lz4_fear(input: &[u8]) -> Vec<u8> {
 }
 
 fn print_compression_ration(input: &'static [u8], name: &str) {
-    let compressed = compress(input);
+    println!("\nComparing for {}", name);
+    let name = "";
+    let compressed = compress_block(input);
     // println!("{:?}", compressed);
     println!(
-        "lz4_flex Compression Ratio {:?} {:?}",
+        "lz4_flex block Compression Ratio {:?} {:?}",
         name,
         compressed.len() as f64 / input.len() as f64
     );
@@ -197,7 +221,7 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
     let compressed = lz4_cpp_block_compress(input).unwrap();
     // println!("{:?}", compressed);
     println!(
-        "Lz4 Cpp Compression Ratio {:?} {:?}",
+        "Lz4 Cpp block Compression Ratio {:?} {:?}",
         name,
         compressed.len() as f64 / input.len() as f64
     );
@@ -206,7 +230,7 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
     assert_eq!(decompressed, input);
     let compressed = lz4_rust_compress(input);
     println!(
-        "lz4_rust_compress Compression Ratio {:?} {:?}",
+        "lz4_rust_compress block Compression Ratio {:?} {:?}",
         name,
         compressed.len() as f64 / input.len() as f64
     );
@@ -214,7 +238,7 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
     assert_eq!(decompressed, input);
     let compressed = compress_lz4_fear(input);
     println!(
-        "lz4_fear_compress Compression Ratio {:?} {:?}",
+        "lz4_fear_compress block Compression Ratio {:?} {:?}",
         name,
         compressed.len() as f64 / input.len() as f64
     );
@@ -225,6 +249,42 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
         name,
         compressed.len() as f64 / input.len() as f64
     );
+
+    #[cfg(feature = "frame")]
+    {
+        let mut frame_info = lz4_flex::frame::FrameInfo::new();
+        frame_info.block_mode = BlockMode::Independent;
+        //frame_info.block_size = lz4_flex::frame::BlockSize::Max4MB;
+        let compressed = lz4_flex_frame_compress_with(frame_info, input).unwrap();
+        println!(
+            "lz4_flex frame indep Compression Ratio {:?} {:?}",
+            name,
+            compressed.len() as f64 / input.len() as f64
+        );
+
+        let mut frame_info = lz4_flex::frame::FrameInfo::new();
+        frame_info.block_mode = BlockMode::Linked;
+        let compressed = lz4_flex_frame_compress_with(frame_info, input).unwrap();
+        println!(
+            "lz4_flex frame linked Compression Ratio {:?} {:?}",
+            name,
+            compressed.len() as f64 / input.len() as f64
+        );
+
+        let compressed = lz4_cpp_frame_compress(input, true).unwrap();
+        println!(
+            "lz4 cpp frame indep Compression Ratio {:?} {:?}",
+            name,
+            compressed.len() as f64 / input.len() as f64
+        );
+
+        let compressed = lz4_cpp_frame_compress(input, false).unwrap();
+        println!(
+            "lz4 cpp frame linked Compression Ratio {:?} {:?}",
+            name,
+            compressed.len() as f64 / input.len() as f64
+        );
+    }
 }
 
 // #[test]
@@ -430,7 +490,7 @@ fn compression_works() {
         The len method has a default implementation, so you usually shouldn't implement it. However, you may be able to provide a more performant implementation than the default, so overriding it in this case makes sense."#;
 
     test_roundtrip(s);
-    assert!(compress(s.as_bytes()).len() < s.len());
+    assert!(compress_block(s.as_bytes()).len() < s.len());
 }
 
 // #[test]
@@ -649,12 +709,12 @@ mod test_compression {
         print_ratio(
             "Ratio 1k flex",
             COMPRESSION1K.len(),
-            compress(COMPRESSION1K).len(),
+            compress_block(COMPRESSION1K).len(),
         );
         print_ratio(
             "Ratio 34k flex",
             COMPRESSION34K.len(),
-            compress(COMPRESSION34K).len(),
+            compress_block(COMPRESSION34K).len(),
         );
     }
 
