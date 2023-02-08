@@ -37,6 +37,8 @@ pub(crate) const BLOCK_INFO_SIZE: usize = 4;
 #[derive(Clone, Copy, PartialEq, Debug)]
 /// Different predefines blocksizes to choose when compressing data.
 pub enum BlockSize {
+    /// Will detect optimal frame size based on the size of the first write call
+    Auto = 0,
     /// The default block size.
     Max64KB = 4,
     /// 256KB block size.
@@ -51,13 +53,26 @@ pub enum BlockSize {
 
 impl Default for BlockSize {
     fn default() -> Self {
-        BlockSize::Max64KB
+        BlockSize::Auto
     }
 }
 
 impl BlockSize {
+    /// Try to find optimal size based on passed buffer length.
+    pub(crate) fn from_buf_length(buf_len: usize) -> Self {
+        let mut blocksize = BlockSize::Max4MB;
+
+        for candidate in [BlockSize::Max256KB, BlockSize::Max64KB] {
+            if buf_len > candidate.get_size() {
+                return blocksize;
+            }
+            blocksize = candidate;
+        }
+        return BlockSize::Max64KB;
+    }
     pub(crate) fn get_size(&self) -> usize {
         match self {
+            BlockSize::Auto => unreachable!(),
             BlockSize::Max64KB => 64 * 1024,
             BlockSize::Max256KB => 256 * 1024,
             BlockSize::Max1MB => 1024 * 1024,
