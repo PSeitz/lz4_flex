@@ -7,19 +7,19 @@
 
 ### Features
 
-- Feat: allow to pass buffer larger than size, warn on missing docs
+- Feat: allow to pass buffer larger than size, warn on missing docs [#78](https://github.com/PSeitz/lz4_flex/pull/78)
 
 ### Performance
 
 - Perf: faster duplicate_overlapping [#69](https://github.com/PSeitz/lz4_flex/pull/69)
-
+```
 improve duplicate_overlapping unsafe version. The compiler generates unfavourable assembly for the simple version.
 Now we copy 4 bytes, instead of one in every iteration.
 Without that the compiler will unroll/auto-vectorize the copy with a lot of branches.
 This is not what we want, as large overlapping copies are not that common.
-
+```
 - Perf: simplify extend_from_within_overlapping [#72](https://github.com/PSeitz/lz4_flex/pull/72)
-
+```
 extend_from_within_overlapping is used in safe decompression when
 overlapping data has been detected. The prev version had unnecessary
 assertions/safe guard, since this method is only used in safe code.
@@ -34,13 +34,13 @@ uiCA Cycles 28.71 	30.67 		28.71 		27.57
 Simplified
 Tool 	    Skylake	IceLake 	TigerLake 	Rocket Lake
 uiCA Cycles 13.00 	15.00 		13.00 		11.00
-
+```
 - Perf: remove unnecessary assertions
-
+```
 those assertions are only used in safe code and therefore unnecessary
-
+```
 - Perf: improve safe decompression performance 8-18% [#73](https://github.com/PSeitz/lz4_flex/pull/73)
-
+```
 Improve safe decompression speed by 8-18%
 
 Reduce multiple slice fetches. every slice access, also nested ones
@@ -55,9 +55,9 @@ The strategy to identify improvements was by counting the lines of
 assembly. A rough heuristic, but seems effective.
 cargo asm --release --example decompress_block decompress_block::main |
 wc -l
-
+```
 - Perf: improve safe frame compression performance 7-15% [#74](https://github.com/PSeitz/lz4_flex/pull/74)
-
+```
 The frame encoding uses a fixed size hashtable.
 By creating a special hashtable with a Box<[u32; 4096]> size,
 in combination with the bit shift of 4, which is also moved into a constant,
@@ -66,20 +66,20 @@ For that to happen, the compiler also needs to recognize the `>> 48` right
 shift from the hash algorithm (u64 >> 52 <= 4096), which is the case. Yey
 
 It also means we can use less `unsafe` for the unsafe version
-
+```
 - Perf: switch to use only 3 kinds of hashtable [#77](https://github.com/PSeitz/lz4_flex/pull/77)
-
+```
 use only hashtables with fixed sizes and bit shifts, that allow to
 remove bounds checks.
-
+```
 
 ### Refactor
 
 - Refactor: remove VecSink [#71](https://github.com/PSeitz/lz4_flex/pull/71)
-
+```
 remove VecSink since it can be fully replaced with a slice
 this will reduce code bloat from generics
-
+```
 ### Testing
 
 - Tests: add proptest roundtrip [#69](https://github.com/PSeitz/lz4_flex/pull/69)
