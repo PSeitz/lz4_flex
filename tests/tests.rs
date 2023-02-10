@@ -3,7 +3,7 @@
 #[macro_use]
 extern crate more_asserts;
 
-use std::iter;
+use std::{convert::TryInto, iter};
 
 use lz4_compress::compress as lz4_rust_compress;
 #[cfg(feature = "frame")]
@@ -551,6 +551,7 @@ proptest! {
         let data: Vec<u8>  = v.iter().flat_map(|v|v.into_iter()).cloned().collect::<Vec<_>>();
         test_roundtrip(&data);  // sum of the sum of all vectors.
     }
+
 }
 
 fn vec_of_vec() -> impl Strategy<Value = Vec<Vec<u8>>> {
@@ -632,6 +633,7 @@ mod frame {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn block_size() {
         let mut last_compressed_len = usize::MAX;
         for block_size in &[
@@ -684,6 +686,7 @@ mod frame {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn legacy_frame() {
         let uncompressed = lz4_flex_frame_decompress(DECOMPRESSION10MB).unwrap();
         assert_eq!(uncompressed, COMPRESSION10MB);

@@ -116,9 +116,11 @@ unsafe fn copy_from_dict(
 ///
 /// is encoded to _255 + 255 + 255 + 4 = 769_. The bytes after the first 4 is ignored, because
 /// 4 is the first non-0xFF byte.
-// #[inline(never)]
 #[inline]
-fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, DecompressError> {
+fn read_integer_ptr(
+    input_ptr: &mut *const u8,
+    _input_ptr_end: *const u8,
+) -> Result<u32, DecompressError> {
     // We start at zero and count upwards.
     let mut n: u32 = 0;
     // If this byte takes value 255 (the maximum value it can take), another byte is read
@@ -128,12 +130,12 @@ fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, DecompressEr
 
         #[cfg(feature = "checked-decode")]
         {
-            if *input_pos >= input.len() {
+            if *input_ptr >= _input_ptr_end {
                 return Err(DecompressError::ExpectedAnotherByte);
             }
         }
-        let extra = *unsafe { input.get_unchecked(*input_pos) };
-        *input_pos += 1;
+        let extra = unsafe { input_ptr.read() };
+        *input_ptr = unsafe { input_ptr.add(1) };
         n += extra as u32;
 
         // We continue if we got 255, break otherwise.
@@ -150,17 +152,13 @@ fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, DecompressEr
 
 /// Read a little-endian 16-bit integer from the input stream.
 #[inline]
-fn read_u16(input: &[u8], input_pos: &mut usize) -> u16 {
+fn read_u16_ptr(input_ptr: &mut *const u8) -> u16 {
     let mut num: u16 = 0;
     unsafe {
-        core::ptr::copy_nonoverlapping(
-            input.as_ptr().add(*input_pos),
-            &mut num as *mut u16 as *mut u8,
-            2,
-        );
+        core::ptr::copy_nonoverlapping(*input_ptr, &mut num as *mut u16 as *mut u8, 2);
+        *input_ptr = input_ptr.add(2);
     }
 
-    *input_pos += 2;
     u16::from_le(num)
 }
 
@@ -213,11 +211,12 @@ pub(crate) fn decompress_internal<const USE_DICT: bool>(
     let output_end = unsafe { output_base.add(output.capacity()) };
     let output_start_pos_ptr = unsafe { output.pos_mut_ptr() };
     let mut output_ptr = output_start_pos_ptr;
-    let mut input_pos = 0;
 
-    let safe_input_pos = input
-        .len()
-        .saturating_sub(16 /* literal copy */ +  2 /* u16 match offset */);
+    let mut input_ptr = input.as_ptr();
+    let input_ptr_end = unsafe { input.as_ptr().add(input.len()) };
+    let safe_distance_from_end =  (16 /* literal copy */ +  2 /* u16 match offset */ + 1 /* The next token to read (we can skip the check) */).min(input.len()) ;
+    let input_ptr_safe = unsafe { input_ptr_end.sub(safe_distance_from_end) };
+
     let safe_output_ptr = unsafe {
         output_base.add(
             output
@@ -229,19 +228,12 @@ pub(crate) fn decompress_internal<const USE_DICT: bool>(
     // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer is
     // empty.
     loop {
-        #[cfg(feature = "checked-decode")]
-        {
-            if input_pos >= input.len() {
-                return Err(DecompressError::ExpectedAnotherByte);
-            }
-        }
-
         // Read the token. The token is the first byte in a block. It is divided into two 4-bit
         // subtokens, the higher and the lower.
         // This token contains to 4-bit "fields", a higher and a lower, representing the literals'
         // length and the back reference's length, respectively.
-        let token = unsafe { *input.get_unchecked(input_pos) };
-        input_pos += 1;
+        let token = unsafe { input_ptr.read() };
+        input_ptr = unsafe { input_ptr.add(1) };
 
         // Checking for hot-loop.
         // In most cases the metadata does fit in a single 1byte token (statistically) and we are in
@@ -250,7 +242,10 @@ pub(crate) fn decompress_internal<const USE_DICT: bool>(
         // Ideally we want to check for safe output pos like: output.pos() <= safe_output_pos; But
         // that doesn't work when the safe_output_ptr is == output_ptr due to insufficient
         // capacity. So we use `<` instead of `<=`, which covers that case.
-        if does_token_fit(token) && input_pos <= safe_input_pos && output_ptr < safe_output_ptr {
+        if does_token_fit(token)
+            && (input_ptr as usize) <= input_ptr_safe as usize
+            && output_ptr < safe_output_ptr
+        {
             let literal_length = (token >> 4) as usize;
             let mut match_length = MINMATCH + (token & 0xF) as usize;
 
@@ -260,28 +255,21 @@ pub(crate) fn decompress_internal<const USE_DICT: bool>(
                 "{} wont fit ",
                 literal_length + match_length
             );
-            #[cfg(feature = "checked-decode")]
-            {
-                // Check if literal is out of bounds for the input
-                if literal_length > input.len() - input_pos {
-                    return Err(DecompressError::OffsetOutOfBounds);
-                }
-            }
 
             // Copy the literal
-            // The literal is at max 14 bytes, and the is_safe_distance check assures
+            // The literal is at max 16 bytes, and the is_safe_distance check assures
             // that we are far away enough from the end so we can safely copy 16 bytes
             unsafe {
-                core::ptr::copy_nonoverlapping(input.as_ptr().add(input_pos), output_ptr, 16);
+                core::ptr::copy_nonoverlapping(input_ptr, output_ptr, 16);
             }
-            input_pos += literal_length;
             unsafe {
+                input_ptr = input_ptr.add(literal_length);
                 output_ptr = output_ptr.add(literal_length);
             }
 
-            // input_pos <= safe_input_pos should guarantee we have enough space in input
-            debug_assert!(input.len() - input_pos >= 2);
-            let offset = read_u16(input, &mut input_pos) as usize;
+            // input_ptr <= input_ptr_safe should guarantee we have enough space in input
+            debug_assert!(input_ptr_end as usize - input_ptr as usize >= 2);
+            let offset = read_u16_ptr(&mut input_ptr) as usize;
 
             let output_len = unsafe { output_ptr.offset_from(output_base) as usize };
             #[cfg(feature = "checked-decode")]
@@ -316,7 +304,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool>(
             // to enable an optimized copy of 18 bytes.
             if offset >= match_length {
                 unsafe {
-                    // _copy_, not copy_non_overlaping, as it may overlap. That's ok.
+                    // _copy_, not copy_non_overlaping, as it may overlap.
                     core::ptr::copy(start_ptr, output_ptr, 18);
                     output_ptr = output_ptr.add(match_length);
                 }
@@ -338,14 +326,14 @@ pub(crate) fn decompress_internal<const USE_DICT: bool>(
             if literal_length == 15 {
                 // The literal_length length took the maximal value, indicating that there is more
                 // than 15 literal_length bytes. We read the extra integer.
-                literal_length += read_integer(input, &mut input_pos)? as usize;
+                literal_length += read_integer_ptr(&mut input_ptr, input_ptr_end)? as usize;
             }
 
             #[cfg(feature = "checked-decode")]
             {
                 // Check if literal is out of bounds for the input, and if there is enough space on
                 // the output
-                if literal_length > input.len() - input_pos {
+                if literal_length > input_ptr_end as usize - input_ptr as usize {
                     return Err(DecompressError::LiteralOutOfBounds);
                 }
                 if literal_length > unsafe { output_end.offset_from(output_ptr) as usize } {
@@ -357,30 +345,26 @@ pub(crate) fn decompress_internal<const USE_DICT: bool>(
                 }
             }
             unsafe {
-                core::ptr::copy_nonoverlapping(
-                    input.as_ptr().add(input_pos),
-                    output_ptr,
-                    literal_length,
-                );
+                core::ptr::copy_nonoverlapping(input_ptr, output_ptr, literal_length);
                 output_ptr = output_ptr.add(literal_length);
+                input_ptr = input_ptr.add(literal_length);
             }
-            input_pos += literal_length;
         }
 
         // If the input stream is emptied, we break out of the loop. This is only the case
         // in the end of the stream, since the block is intact otherwise.
-        if input_pos >= input.len() {
+        if input_ptr >= input_ptr_end {
             break;
         }
 
         // Read duplicate section
         #[cfg(feature = "checked-decode")]
         {
-            if input.len() - input_pos < 2 {
+            if (input_ptr_end as usize) - (input_ptr as usize) < 2 {
                 return Err(DecompressError::ExpectedAnotherByte);
             }
         }
-        let offset = read_u16(input, &mut input_pos) as usize;
+        let offset = read_u16_ptr(&mut input_ptr) as usize;
         // Obtain the initial match length. The match length is the length of the duplicate segment
         // which will later be copied from data previously decompressed into the output buffer. The
         // initial length is derived from the second part of the token (the lower nibble), we read
@@ -393,7 +377,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool>(
         if match_length == MINMATCH + 15 {
             // The match length took the maximal value, indicating that there is more bytes. We
             // read the extra integer.
-            match_length += read_integer(input, &mut input_pos)? as usize;
+            match_length += read_integer_ptr(&mut input_ptr, input_ptr_end)? as usize;
         }
 
         // We now copy from the already decompressed buffer. This allows us for storing duplicates
@@ -419,6 +403,13 @@ pub(crate) fn decompress_internal<const USE_DICT: bool>(
                 copy_from_dict(output_base, &mut output_ptr, ext_dict, offset, match_length)
             };
             if copied == match_length {
+                #[cfg(feature = "checked-decode")]
+                {
+                    if input_ptr >= input_ptr_end {
+                        return Err(DecompressError::ExpectedAnotherByte);
+                    }
+                }
+
                 continue;
             }
             // match crosses ext_dict and output
@@ -434,6 +425,12 @@ pub(crate) fn decompress_internal<const USE_DICT: bool>(
         debug_assert!(unsafe { output_end.offset_from(start_ptr) as usize } >= match_length);
         unsafe {
             duplicate(&mut output_ptr, output_end, start_ptr, match_length);
+        }
+        #[cfg(feature = "checked-decode")]
+        {
+            if input_ptr >= input_ptr_end {
+                return Err(DecompressError::ExpectedAnotherByte);
+            }
         }
     }
     unsafe {
