@@ -1,4 +1,4 @@
-//! The decompression algorithm.
+//! The block decompression algorithm.
 use crate::block::{DecompressError, MINMATCH};
 use crate::sink::SliceSink;
 use alloc::vec::Vec;
@@ -6,6 +6,20 @@ use alloc::vec::Vec;
 pub(crate) fn get_vec_with_size(size: usize) -> Vec<u8> {
     let mut compressed = Vec::with_capacity(size);
     unsafe {
+        // SAFETY: We are using this to avoid having to zero out the memory.
+        // This is safe because we are only going to write to the buffer.
+        // This is also safe because we are going to truncate the buffer up
+        // to written bytes before returning it. The buffer is wrapped into
+        // `SliceSink`, to uphold that invariant.
+        //
+        // Reading uninitialized memory can cause undefined behaviour:
+        // https://www.ralfj.de/blog/2019/07/14/uninit.html
+        // I couldn't find any example where _writing_ into uninitialized &[u8] causes undefined
+        // behaviour. There's even an example in the rust docs that does this: https://doc.rust-lang.org/alloc/vec/struct.Vec.html#method.as_mut_ptr
+        //
+        // I also couldn't find or reproduce any example where _reading_ unitialized &[u8] causes
+        // undefined behaviour. Since for that to happen, the compilers state machine would need to
+        // keep track which bytes in the vec are initialized and which are not.
         compressed.set_len(size);
     }
     compressed

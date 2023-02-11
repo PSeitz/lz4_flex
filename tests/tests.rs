@@ -546,7 +546,9 @@ proptest! {
         failure_persistence: Some(Box::new(FileFailurePersistence::WithSource("regressions"))),
         ..Default::default()
     })]
+
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn proptest_roundtrip(v in vec_of_vec()) {
         let data: Vec<u8>  = v.iter().flat_map(|v|v.into_iter()).cloned().collect::<Vec<_>>();
         test_roundtrip(&data);  // sum of the sum of all vectors.
