@@ -1,7 +1,5 @@
 #[cfg(any(feature = "frame"))]
 use alloc::vec::Vec;
-//#[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
-//use core::mem::MaybeUninit;
 
 /// Returns a Sink implementation appropriate for outputing up to `required_capacity`
 /// bytes at `vec[offset..offset+required_capacity]`.
@@ -64,7 +62,7 @@ impl<'a> SliceSink<'a> {
     /// Panics if `pos` is out of bounds.
     #[inline]
     pub fn new(output: &'a mut [u8], pos: usize) -> Self {
-        // SAFETY: Caller guarantees that all elements of `output` are initialized.
+        // SAFETY: Caller guarantees that all elements of `output[..pos]` are initialized.
         let _ = &mut output[..pos]; // bounds check pos
         SliceSink { output, pos }
     }

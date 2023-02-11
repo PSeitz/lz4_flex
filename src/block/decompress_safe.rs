@@ -1,4 +1,4 @@
-//! The decompression algorithm.
+//! The block decompression algorithm.
 
 use core::convert::TryInto;
 
