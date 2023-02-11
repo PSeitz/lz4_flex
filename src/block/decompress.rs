@@ -206,12 +206,9 @@ pub(crate) fn decompress_internal<const USE_DICT: bool>(
     output: &mut SliceSink,
     ext_dict: &[u8],
 ) -> Result<usize, DecompressError> {
-    #[cfg(not(feature = "checked-decode"))]
-    {
-        // Prevent segfault for empty input even if checked-decode isn't enabled
-        if input.is_empty() {
-            return Err(DecompressError::ExpectedAnotherByte);
-        }
+    // Prevent segfault for empty input
+    if input.is_empty() {
+        return Err(DecompressError::ExpectedAnotherByte);
     }
 
     let ext_dict = if USE_DICT {
