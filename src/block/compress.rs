@@ -179,40 +179,6 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
         }
     }
 
-    // compare 4 bytes block
-    #[cfg(target_pointer_width = "64")]
-    {
-        if input_end - *cur >= 4 {
-            let diff = read_u32_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u32_ptr(source_ptr);
-
-            if diff == 0 {
-                *cur += 4;
-                unsafe {
-                    source_ptr = source_ptr.add(4);
-                }
-            } else {
-                *cur += (diff.to_le().trailing_zeros() / 8) as usize;
-                return *cur - start;
-            }
-        }
-    }
-
-    // compare 2 bytes block
-    if input_end - *cur >= 2
-        && unsafe { read_u16_ptr(input.as_ptr().add(*cur)) == read_u16_ptr(source_ptr) }
-    {
-        *cur += 2;
-        unsafe {
-            source_ptr = source_ptr.add(2);
-        }
-    }
-
-    if *cur < input_end
-        && unsafe { input.as_ptr().add(*cur).read() } == unsafe { source_ptr.read() }
-    {
-        *cur += 1;
-    }
-
     *cur - start
 }
 
@@ -226,7 +192,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
 fn write_integer(output: &mut SliceSink, mut n: usize) {
     // Note: Since `n` is usually < 0xFF and writing multiple bytes to the output
     // requires 2 branches of bound check (due to the possibility of add overflows)
-    // the simple byte at a time implementation bellow is faster in most cases.
+    // the simple byte at a time implementation below is faster in most cases.
     while n >= 0xFF {
         n -= 0xFF;
         push_byte(output, 0xFF);
@@ -727,16 +693,6 @@ fn read_usize_ptr(input: *const u8) -> usize {
     num
 }
 
-#[inline]
-#[cfg(not(feature = "safe-encode"))]
-fn read_u16_ptr(input: *const u8) -> u16 {
-    let mut num: u16 = 0;
-    unsafe {
-        core::ptr::copy_nonoverlapping(input, &mut num as *mut u16 as *mut u8, 2);
-    }
-    num
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -807,8 +763,8 @@ mod tests {
         ];
         assert_eq!(count_same_bytes(first, &mut 0, second, 0), 21);
 
-        for diff_idx in 0..100 {
-            let first: Vec<u8> = (0u8..255).cycle().take(100 + END_OFFSET).collect();
+        for diff_idx in 8..100 {
+            let first: Vec<u8> = (0u8..255).cycle().take(100 + 12).collect();
             let mut second = first.clone();
             second[diff_idx] = 255;
             for start in 0..=diff_idx {
