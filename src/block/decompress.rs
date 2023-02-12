@@ -7,7 +7,7 @@ pub(crate) fn get_vec_with_size(size: usize) -> Vec<u8> {
     let mut compressed = Vec::with_capacity(size);
     unsafe {
         // SAFETY: We are using this to avoid having to zero out the memory.
-        // This is safe because we are only going to write to the buffer.
+        // This is safe because we are _only_ going to write to the buffer.
         // This is also safe because we are going to truncate the buffer up
         // to written bytes before returning it. The buffer is wrapped into
         // `SliceSink`, to uphold that invariant.
@@ -272,8 +272,6 @@ pub(crate) fn decompress_internal<const USE_DICT: bool>(
             // that we are far away enough from the end so we can safely copy 16 bytes
             unsafe {
                 core::ptr::copy_nonoverlapping(input_ptr, output_ptr, 16);
-            }
-            unsafe {
                 input_ptr = input_ptr.add(literal_length);
                 output_ptr = output_ptr.add(literal_length);
             }
