@@ -41,8 +41,7 @@ pub(super) fn get_batch(input: &[u8], n: usize) -> u32 {
 #[inline]
 #[cfg(feature = "safe-encode")]
 pub(super) fn get_batch(input: &[u8], n: usize) -> u32 {
-    let arr: &[u8; 4] = input[n..n + 4].try_into().unwrap();
-    u32::from_ne_bytes(*arr)
+    u32::from_ne_bytes(input[n..n + 4].try_into().unwrap())
 }
 
 /// Read an usize sized "batch" from some position.
@@ -384,6 +383,8 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
             // Unchecked is safe as long as the values from the hash function don't exceed the size
             // of the table. This is ensured by right shifting the hash values
             // (`dict_bitshift`) to fit them in the table
+
+            // [Bounds Check]: Can be elided due to `end_pos_check` above
             let hash = T::get_hash_at(input, cur);
             candidate = dict.get_at(hash);
             dict.put_at(hash, cur + input_stream_offset);
@@ -423,8 +424,13 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool>(
                 debug_assert!(input_pos == 0, "Lost history in prefix mode");
                 continue;
             }
+            // [Bounds Check]: Candidate is coming from the Hashmap. It can't be out of bounds, but
+            // impossible to prove for the compiler and remove the bounds checks.
+            let cand_bytes: u32 = get_batch(candidate_source, candidate);
+            // [Bounds Check]: Should be able to be elided due to `end_pos_check`.
+            let curr_bytes: u32 = get_batch(input, cur);
 
-            if get_batch(candidate_source, candidate) == get_batch(input, cur) {
+            if cand_bytes == curr_bytes {
                 break;
             }
         }
