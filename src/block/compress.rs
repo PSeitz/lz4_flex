@@ -48,12 +48,14 @@ pub(super) fn get_batch(input: &[u8], n: usize) -> u32 {
 ///
 /// This will read a native-endian usize from some position.
 #[inline]
+#[allow(dead_code)]
 #[cfg(not(feature = "safe-encode"))]
 pub(super) fn get_batch_arch(input: &[u8], n: usize) -> usize {
     unsafe { read_usize_ptr(input.as_ptr().add(n)) }
 }
 
 #[inline]
+#[allow(dead_code)]
 #[cfg(feature = "safe-encode")]
 pub(super) fn get_batch_arch(input: &[u8], n: usize) -> usize {
     const USIZE_SIZE: usize = core::mem::size_of::<usize>();
