@@ -1,6 +1,8 @@
 import * as wasm from "lz4-wasm";
 // import * as JSZip from "jszip";
 var lz4js = require('lz4/lib/binding')
+
+
 import * as fflate from 'fflate/esm/browser.js';
 
 import test_input_66k_JSON from '../../benches/compression_66k_JSON.txt';
@@ -13,7 +15,7 @@ function addText(text) {
     var div = document.createElement("div");
     div.innerHTML = text;
 
-    div.style["font-size"] = "40px";
+    div.style["font-size"] = "30px";
 
     document.getElementById("body").appendChild(div);
 }
