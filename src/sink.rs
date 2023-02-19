@@ -274,9 +274,8 @@ impl Sink for PtrSink {
 
     #[inline]
     #[cfg(any(feature = "safe-decode"))]
-    fn extend_with_fill(&mut self, byte: u8, len: usize) {
-        self.output[self.pos..self.pos + len].fill(byte);
-        self.pos += len;
+    fn extend_with_fill(&mut self, _byte: u8, _len: usize) {
+        unreachable!();
     }
 
     /// Extends the Sink with `data`.
@@ -299,19 +298,14 @@ impl Sink for PtrSink {
     /// Panics if `start` >= `pos`.
     #[inline]
     #[cfg(feature = "safe-decode")]
-    fn extend_from_within(&mut self, start: usize, wild_len: usize, copy_len: usize) {
-        self.output.copy_within(start..start + wild_len, self.pos);
-        self.pos += copy_len;
+    fn extend_from_within(&mut self, _start: usize, _wild_len: usize, _copy_len: usize) {
+        unreachable!();
     }
 
     #[inline]
     #[cfg(feature = "safe-decode")]
-    fn extend_from_within_overlapping(&mut self, start: usize, num_bytes: usize) {
-        let offset = self.pos - start;
-        for i in start + offset..start + offset + num_bytes {
-            self.output[i] = self.output[i - offset];
-        }
-        self.pos += num_bytes;
+    fn extend_from_within_overlapping(&mut self, _start: usize, _num_bytes: usize) {
+        unreachable!();
     }
 }
 
