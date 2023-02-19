@@ -86,16 +86,20 @@ fn lz4_cpp_frame_compress(input: &[u8], independent: bool) -> Result<Vec<u8>, lz
         })
         .block_size(lzzzz::lz4f::BlockSize::Max64KB)
         .build();
-    let mut out = Vec::new();
-    lzzzz::lz4f::compress_to_vec(input, &mut out, &pref).unwrap();
+    let mut comp = lzzzz::lz4f::WriteCompressor::new(Vec::new(), pref).unwrap();
+    comp.write_all(input).unwrap();
+    let out = comp.into_inner();
+
     Ok(out)
 }
 
 #[cfg(feature = "frame")]
-fn lz4_cpp_frame_decompress(input: &[u8]) -> Result<Vec<u8>, lzzzz::lz4f::Error> {
-    let mut out = Vec::new();
-    lzzzz::lz4f::decompress_to_vec(input, &mut out)?;
-    Ok(out)
+fn lz4_cpp_frame_decompress(mut input: &[u8]) -> Result<Vec<u8>, lzzzz::lz4f::Error> {
+    let mut r = lzzzz::lz4f::ReadDecompressor::new(&mut input)?;
+    let mut buf = Vec::new();
+    r.read_to_end(&mut buf).unwrap();
+
+    Ok(buf)
 }
 
 #[cfg(feature = "frame")]
