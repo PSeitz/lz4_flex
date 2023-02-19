@@ -288,7 +288,7 @@ fn duplicate_overlapping_slice(
         return Err(DecompressError::OffsetOutOfBounds);
     }
     if offset == 1 {
-        let val = sink.output[start];
+        let val = sink.byte_at(start);
         sink.extend_with_fill(val, match_length);
     } else {
         sink.extend_from_within_overlapping(start, match_length);
