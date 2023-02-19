@@ -1,29 +1,8 @@
 //! The block decompression algorithm.
 use crate::block::{DecompressError, MINMATCH};
 use crate::sink::SliceSink;
+use crate::sink::{PtrSink, Sink};
 use alloc::vec::Vec;
-
-pub(crate) fn get_vec_with_size(size: usize) -> Vec<u8> {
-    let mut compressed = Vec::with_capacity(size);
-    unsafe {
-        // SAFETY: We are using this to avoid having to zero out the memory.
-        // This is safe because we are _only_ going to write to the buffer.
-        // This is also safe because we are going to truncate the buffer up
-        // to written bytes before returning it. The buffer is wrapped into
-        // `SliceSink`, to uphold that invariant.
-        //
-        // Reading uninitialized memory can cause undefined behaviour:
-        // https://www.ralfj.de/blog/2019/07/14/uninit.html
-        // I couldn't find any example where _writing_ into uninitialized &[u8] causes undefined
-        // behaviour. There's even an example in the rust docs that does this: https://doc.rust-lang.org/alloc/vec/struct.Vec.html#method.as_mut_ptr
-        //
-        // I also couldn't find or reproduce any example where _reading_ unitialized &[u8] causes
-        // undefined behaviour. Since for that to happen, the compilers state machine would need to
-        // keep track which bytes in the vec are initialized and which are not.
-        compressed.set_len(size);
-    }
-    compressed
-}
 
 /// Copies data to output_ptr by self-referential copy from start and match_length
 #[inline]
@@ -201,9 +180,9 @@ fn does_token_fit(token: u8) -> bool {
 ///
 /// Returns the number of bytes written (decompressed) into `output`.
 #[inline]
-pub(crate) fn decompress_internal<const USE_DICT: bool>(
+pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
     input: &[u8],
-    output: &mut SliceSink,
+    output: &mut S,
     ext_dict: &[u8],
 ) -> Result<usize, DecompressError> {
     // Prevent segfault for empty input
@@ -220,7 +199,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool>(
     };
     let output_base = unsafe { output.base_mut_ptr() };
     let output_end = unsafe { output_base.add(output.capacity()) };
-    let output_start_pos_ptr = unsafe { output.pos_mut_ptr() };
+    let output_start_pos_ptr = unsafe { output.base_mut_ptr().add(output.pos()) as *mut u8 };
     let mut output_ptr = output_start_pos_ptr;
 
     let mut input_ptr = input.as_ptr();
@@ -452,7 +431,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool>(
 /// `output` should be preallocated with a size of of the uncompressed data.
 #[inline]
 pub fn decompress_into(input: &[u8], output: &mut [u8]) -> Result<usize, DecompressError> {
-    decompress_internal::<false>(input, &mut SliceSink::new(output, 0), b"")
+    decompress_internal::<false, _>(input, &mut SliceSink::new(output, 0), b"")
 }
 
 /// Decompress all bytes of `input` into `output`.
@@ -464,7 +443,7 @@ pub fn decompress_into_with_dict(
     output: &mut [u8],
     ext_dict: &[u8],
 ) -> Result<usize, DecompressError> {
-    decompress_internal::<true>(input, &mut SliceSink::new(output, 0), ext_dict)
+    decompress_internal::<true, _>(input, &mut SliceSink::new(output, 0), ext_dict)
 }
 
 /// Decompress all bytes of `input` into a new vec.
@@ -481,9 +460,12 @@ pub fn decompress_with_dict(
     ext_dict: &[u8],
 ) -> Result<Vec<u8>, DecompressError> {
     // Allocate a vector to contain the decompressed stream.
-    let mut vec = get_vec_with_size(min_uncompressed_size);
-    let decomp_len = decompress_into_with_dict(input, &mut vec[..], ext_dict)?;
-    vec.truncate(decomp_len);
+    let mut vec = Vec::with_capacity(min_uncompressed_size);
+    let decomp_len =
+        decompress_internal::<true, _>(input, &mut PtrSink::from_vec(&mut vec, 0), ext_dict)?;
+    unsafe {
+        vec.set_len(decomp_len);
+    }
     Ok(vec)
 }
 
@@ -504,9 +486,12 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
 #[inline]
 pub fn decompress(input: &[u8], min_uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
     // Allocate a vector to contain the decompressed stream.
-    let mut vec = get_vec_with_size(min_uncompressed_size);
-    let decomp_len = decompress_into(input, &mut vec[..])?;
-    vec.truncate(decomp_len);
+    let mut vec = Vec::with_capacity(min_uncompressed_size);
+    let decomp_len =
+        decompress_internal::<true, _>(input, &mut PtrSink::from_vec(&mut vec, 0), b"")?;
+    unsafe {
+        vec.set_len(decomp_len);
+    }
     Ok(vec)
 }
 

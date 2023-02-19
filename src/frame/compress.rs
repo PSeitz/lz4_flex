@@ -250,7 +250,7 @@ impl<W: io::Write> FrameEncoder<W> {
 
         let compress_result = if self.ext_dict_len != 0 {
             debug_assert_eq!(self.frame_info.block_mode, BlockMode::Linked);
-            compress_internal::<_, true>(
+            compress_internal::<_, true, _>(
                 input,
                 self.src_start,
                 &mut vec_sink_for_compression(&mut self.dst, 0, 0, dst_required_size),
@@ -259,7 +259,7 @@ impl<W: io::Write> FrameEncoder<W> {
                 self.src_stream_offset,
             )
         } else {
-            compress_internal::<_, false>(
+            compress_internal::<_, false, _>(
                 input,
                 self.src_start,
                 &mut vec_sink_for_compression(&mut self.dst, 0, 0, dst_required_size),
