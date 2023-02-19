@@ -3,7 +3,7 @@
 #[macro_use]
 extern crate more_asserts;
 
-use std::{convert::TryInto, iter};
+use std::iter;
 
 use lz4_compress::compress as lz4_rust_compress;
 #[cfg(feature = "frame")]
