@@ -1,4 +1,4 @@
-//#[cfg(any(feature = "frame"))]
+#[allow(unused_imports)]
 use alloc::vec::Vec;
 
 /// Returns a Sink implementation appropriate for outputing up to `required_capacity`
