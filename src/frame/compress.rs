@@ -111,6 +111,17 @@ impl<W: io::Write> FrameEncoder<W> {
         );
     }
 
+    /// Returns a wrapper around `self` that will finish the stream on drop.
+    ///
+    /// # Panic
+    ///
+    /// Panics on drop if an error happens when finishing the stream.
+    pub fn auto_finish(self) -> AutoFinishEncoder<W> {
+        AutoFinishEncoder {
+            encoder: Some(self),
+        }
+    }
+
     /// Creates a new Encoder with the specified FrameInfo.
     pub fn with_frame_info(frame_info: FrameInfo, wtr: W) -> Self {
         FrameEncoder {
@@ -373,6 +384,37 @@ impl<W: io::Write> io::Write for FrameEncoder<W> {
             self.write_block()?;
         }
         Ok(())
+    }
+}
+
+/// A wrapper around an `FrameEncoder<W>` that finishes the stream on drop.
+///
+/// This can be created by the [`auto_finish()`] method on the [`FrameEncoder`].
+///
+/// [`auto_finish()`]: Encoder::auto_finish
+/// [`Encoder`]: Encoder
+pub struct AutoFinishEncoder<W: Write> {
+    // We wrap this in an option to take it during drop.
+    encoder: Option<FrameEncoder<W>>,
+}
+
+impl<W: io::Write> Drop for AutoFinishEncoder<W> {
+    fn drop(&mut self) {
+        if let Some(mut encoder) = self.encoder.take() {
+            if let Err(err) = encoder.try_finish() {
+                panic!("Error when flushing frame on drop {:?} ", err);
+            }
+        }
+    }
+}
+
+impl<W: Write> Write for AutoFinishEncoder<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.encoder.as_mut().unwrap().write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.encoder.as_mut().unwrap().flush()
     }
 }
 
