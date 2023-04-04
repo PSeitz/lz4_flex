@@ -134,7 +134,7 @@ impl Default for BlockMode {
 // |:----------:| ------ |:----------------:|
 // |  4 bytes   |        |   0 - 4 bytes    |
 //
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 /// The metadata for de/compressing with lz4 frame format.
 pub struct FrameInfo {
     /// If set, includes the total uncompressed size of data in the frame.
@@ -157,24 +157,10 @@ pub struct FrameInfo {
     pub legacy_frame: bool,
 }
 
-impl Default for FrameInfo {
-    fn default() -> Self {
-        FrameInfo::new()
-    }
-}
-
 impl FrameInfo {
     /// Create a new `FrameInfo`.
     pub fn new() -> Self {
-        Self {
-            content_size: None,
-            dict_id: None,
-            block_size: BlockSize::default(),
-            block_mode: BlockMode::default(),
-            block_checksums: false,
-            content_checksum: false,
-            legacy_frame: false,
-        }
+        Self::default()
     }
     pub(crate) fn read_size(input: &[u8]) -> Result<usize, Error> {
         let mut required = MIN_FRAME_INFO_SIZE;
