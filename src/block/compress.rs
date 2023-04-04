@@ -638,7 +638,7 @@ fn compress_into_vec_with_dict<const USE_DICT: bool>(
     let prepend_size_num_bytes = if prepend_size { 4 } else { 0 };
     let max_compressed_size = get_maximum_output_size(input.len()) + prepend_size_num_bytes;
     #[cfg(feature = "safe-encode")]
-    {
+    let mut compressed = {
         let mut compressed: Vec<u8> = vec![0u8; max_compressed_size];
         let out = if prepend_size {
             compressed[..4].copy_from_slice(&(input.len() as u32).to_le_bytes());
@@ -652,9 +652,9 @@ fn compress_into_vec_with_dict<const USE_DICT: bool>(
 
         compressed.truncate(prepend_size_num_bytes + compressed_len);
         compressed
-    }
+    };
     #[cfg(not(feature = "safe-encode"))]
-    {
+    let mut compressed = {
         let mut vec = Vec::with_capacity(max_compressed_size);
         let start_pos = if prepend_size {
             vec.extend_from_slice(&(input.len() as u32).to_le_bytes());
@@ -672,7 +672,10 @@ fn compress_into_vec_with_dict<const USE_DICT: bool>(
             vec.set_len(prepend_size_num_bytes + compressed_len);
         }
         vec
-    }
+    };
+
+    compressed.shrink_to_fit();
+    compressed
 }
 
 /// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as a little
