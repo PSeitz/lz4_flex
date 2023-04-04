@@ -153,7 +153,7 @@ pub struct FrameInfo {
     /// If set, includes a content checksum to verify that the full frame contents have been
     /// decoded correctly.
     pub content_checksum: bool,
-    /// If set, use legacy frame format
+    /// If set, use the legacy frame format
     pub legacy_frame: bool,
 }
 
@@ -162,6 +162,44 @@ impl FrameInfo {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Whether to include the total uncompressed size of data in the frame.
+    pub fn content_size(mut self, content_size: Option<u64>) -> Self {
+        self.content_size = content_size;
+        self
+    }
+
+    /// The maximum uncompressed size of each data block.
+    pub fn block_size(mut self, block_size: BlockSize) -> Self {
+        self.block_size = block_size;
+        self
+    }
+
+    /// The block mode.
+    pub fn block_mode(mut self, block_mode: BlockMode) -> Self {
+        self.block_mode = block_mode;
+        self
+    }
+
+    /// If set, includes a checksum for each data block in the frame.
+    pub fn block_checksums(mut self, block_checksums: bool) -> Self {
+        self.block_checksums = block_checksums;
+        self
+    }
+
+    /// If set, includes a content checksum to verify that the full frame contents have been
+    /// decoded correctly.
+    pub fn content_checksum(mut self, content_checksum: bool) -> Self {
+        self.content_checksum = content_checksum;
+        self
+    }
+
+    /// If set, use the legacy frame format.
+    pub fn legacy_frame(mut self, legacy_frame: bool) -> Self {
+        self.legacy_frame = legacy_frame;
+        self
+    }
+
     pub(crate) fn read_size(input: &[u8]) -> Result<usize, Error> {
         let mut required = MIN_FRAME_INFO_SIZE;
         let magic_num = u32::from_le_bytes(input[0..4].try_into().unwrap());
