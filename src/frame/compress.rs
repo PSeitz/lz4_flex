@@ -112,10 +112,6 @@ impl<W: io::Write> FrameEncoder<W> {
     }
 
     /// Returns a wrapper around `self` that will finish the stream on drop.
-    ///
-    /// # Panic
-    ///
-    /// Panics on drop if an error happens when finishing the stream.
     pub fn auto_finish(self) -> AutoFinishEncoder<W> {
         AutoFinishEncoder {
             encoder: Some(self),
