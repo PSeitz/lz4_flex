@@ -401,9 +401,7 @@ pub struct AutoFinishEncoder<W: Write> {
 impl<W: io::Write> Drop for AutoFinishEncoder<W> {
     fn drop(&mut self) {
         if let Some(mut encoder) = self.encoder.take() {
-            if let Err(err) = encoder.try_finish() {
-                panic!("Error when flushing frame on drop {:?} ", err);
-            }
+            let _ = encoder.try_finish();
         }
     }
 }
