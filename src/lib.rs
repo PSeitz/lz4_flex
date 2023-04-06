@@ -73,6 +73,7 @@
 #![deny(warnings)]
 #![deny(missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[allow(unused_imports)]
 #[cfg_attr(test, macro_use)]
@@ -84,6 +85,7 @@ extern crate more_asserts;
 
 pub mod block;
 #[cfg(feature = "frame")]
+#[cfg_attr(docsrs, doc(cfg(feature = "frame")))]
 pub mod frame;
 
 pub use block::{compress, compress_into, compress_prepend_size};
