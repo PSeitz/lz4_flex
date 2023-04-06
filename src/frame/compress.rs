@@ -30,7 +30,11 @@ use crate::block::WINDOW_SIZE;
 /// writer in a `std::io::BufWriter`.
 ///
 /// To ensure a well formed stream the encoder must be finalized by calling
-/// either `finish` or `try_finish()` methods.
+/// either the [`finish()`], [`try_finish()`], or [`auto_finish()`] methods.
+///
+/// [`finish()`]: Self::finish
+/// [`try_finish()`]: Self::try_finish
+/// [`auto_finish()`]: Self::auto_finish
 ///
 /// # Example 1
 /// Serializing json values into a compressed file.
@@ -112,6 +116,13 @@ impl<W: io::Write> FrameEncoder<W> {
     }
 
     /// Returns a wrapper around `self` that will finish the stream on drop.
+    ///
+    /// # Note
+    /// Errors on drop get silently ignored. If you want to handle errors then use [`finish()`] or
+    /// [`try_finish()`] instead.
+    ///
+    /// [`finish()`]: Self::finish
+    /// [`try_finish()`]: Self::try_finish
     pub fn auto_finish(self) -> AutoFinishEncoder<W> {
         AutoFinishEncoder {
             encoder: Some(self),
@@ -383,12 +394,18 @@ impl<W: io::Write> io::Write for FrameEncoder<W> {
     }
 }
 
-/// A wrapper around an `FrameEncoder<W>` that finishes the stream on drop.
+/// A wrapper around an [`FrameEncoder<W>`] that finishes the stream on drop.
 ///
-/// This can be created by the [`auto_finish()`] method on the [`FrameEncoder`].
+/// This can be created by the [`auto_finish()`] method on the [`FrameEncoder<W>`].
 ///
-/// [`auto_finish()`]: Encoder::auto_finish
-/// [`Encoder`]: Encoder
+/// # Note
+/// Errors on drop get silently ignored. If you want to handle errors then use [`finish()`] or
+/// [`try_finish()`] instead.
+///
+/// [`finish()`]: FrameEncoder::finish
+/// [`try_finish()`]: FrameEncoder::try_finish
+/// [`auto_finish()`]: FrameEncoder::auto_finish
+/// [`FrameEncoder<W>`]: FrameEncoder
 pub struct AutoFinishEncoder<W: Write> {
     // We wrap this in an option to take it during drop.
     encoder: Option<FrameEncoder<W>>,
