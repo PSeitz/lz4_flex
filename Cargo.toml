@@ -11,6 +11,10 @@ license = "MIT"
 version = "0.10.0"
 include = ["src/*.rs", "src/frame/**/*", "src/block/**/*", "README.md"]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [[bench]]
 harness = false
 name = "crit_bench"
