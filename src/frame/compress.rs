@@ -405,7 +405,6 @@ impl<W: io::Write> io::Write for FrameEncoder<W> {
 /// [`finish()`]: FrameEncoder::finish
 /// [`try_finish()`]: FrameEncoder::try_finish
 /// [`auto_finish()`]: FrameEncoder::auto_finish
-/// [`FrameEncoder<W>`]: FrameEncoder
 pub struct AutoFinishEncoder<W: Write> {
     // We wrap this in an option to take it during drop.
     encoder: Option<FrameEncoder<W>>,
