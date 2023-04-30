@@ -489,6 +489,17 @@ fn buf_fuzz_5() {
 }
 
 #[test]
+fn bug_fuzz_6() {
+    let data = &[
+        181, 181, 181, 181, 181, 147, 147, 147, 0, 0, 255, 218, 44, 0, 177, 44, 0, 233, 177, 74,
+        85, 47, 95, 146, 189, 177, 1, 0, 255, 2, 109, 180, 255, 255, 0, 0, 0, 181, 181, 181, 147,
+        147, 147, 0, 0, 255, 218, 146, 146, 181, 0, 0, 181,
+    ];
+
+    test_roundtrip(data);
+}
+
+#[test]
 fn test_so_many_zeros() {
     let data: Vec<u8> = iter::repeat(0).take(30_000).collect();
     test_roundtrip(data);

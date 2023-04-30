@@ -179,6 +179,40 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
         }
     }
 
+    // compare 4 bytes block
+    #[cfg(target_pointer_width = "64")]
+    {
+        if input_end - *cur >= 4 {
+            let diff = read_u32_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u32_ptr(source_ptr);
+
+            if diff == 0 {
+                *cur += 4;
+                unsafe {
+                    source_ptr = source_ptr.add(4);
+                }
+            } else {
+                *cur += (diff.to_le().trailing_zeros() / 8) as usize;
+                return *cur - start;
+            }
+        }
+    }
+
+    // compare 2 bytes block
+    if input_end - *cur >= 2
+        && unsafe { read_u16_ptr(input.as_ptr().add(*cur)) == read_u16_ptr(source_ptr) }
+    {
+        *cur += 2;
+        unsafe {
+            source_ptr = source_ptr.add(2);
+        }
+    }
+
+    if *cur < input_end
+        && unsafe { input.as_ptr().add(*cur).read() } == unsafe { source_ptr.read() }
+    {
+        *cur += 1;
+    }
+
     *cur - start
 }
 
@@ -702,6 +736,16 @@ pub fn compress_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
 #[inline]
 pub fn compress_prepend_size_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
     compress_into_vec_with_dict::<true>(input, true, ext_dict)
+}
+
+#[inline]
+#[cfg(not(feature = "safe-encode"))]
+fn read_u16_ptr(input: *const u8) -> u16 {
+    let mut num: u16 = 0;
+    unsafe {
+        core::ptr::copy_nonoverlapping(input, &mut num as *mut u16 as *mut u8, 2);
+    }
+    num
 }
 
 #[inline]
