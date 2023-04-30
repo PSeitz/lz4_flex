@@ -48,6 +48,7 @@ fn wild_copy_from_src_16(mut source: *const u8, mut dst_ptr: *mut u8, num_items:
 
 /// Copy function, if the data start + match_length overlaps into output_ptr
 #[inline]
+#[cfg_attr(nightly, optimize(size))] // to avoid loop unrolling
 unsafe fn duplicate_overlapping(
     output_ptr: &mut *mut u8,
     mut start: *const u8,

@@ -184,6 +184,7 @@ impl<'a> Sink for SliceSink<'a> {
 
     #[inline]
     #[cfg(feature = "safe-decode")]
+    #[cfg_attr(nightly, optimize(size))] // to avoid loop unrolling
     fn extend_from_within_overlapping(&mut self, start: usize, num_bytes: usize) {
         let offset = self.pos - start;
         for i in start + offset..start + offset + num_bytes {
