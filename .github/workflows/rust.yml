@@ -41,7 +41,9 @@ jobs:
       run: cargo +nightly test --no-default-features --features frame --features nightly
     - name: Run tests unsafe with checked-decode and frame
       run: cargo test --no-default-features --features checked-decode --features frame
+    - name: Install cargo fuzz
+      run: cargo install cargo-fuzz
     - name: Run fuzz tests (safe)
-      run: for fuzz_test in `cargo fuzz list`; do cargo fuzz run $fuzz_test -- -max_total_time=30 || exit 1; done
+      run: for fuzz_test in `cargo fuzz list`; do cargo +nightly fuzz run $fuzz_test -- -max_total_time=30 || exit 1; done
     - name: Run fuzz tests (unsafe)
-      run: for fuzz_test in `cargo fuzz list`; do cargo fuzz run $fuzz_test --no-default-features -- -max_total_time=30 || exit 1; done
+      run: for fuzz_test in `cargo fuzz list`; do cargo +nightly fuzz run $fuzz_test --no-default-features -- -max_total_time=30 || exit 1; done
