@@ -12,6 +12,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Setup nightly Rust Toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
     - uses: actions/checkout@v2
     - name: Ensure no_std compiles
       run: cargo build --no-default-features
@@ -25,12 +29,16 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test
+    - name: Run tests with nightly
+      run: cargo +nightly test --features nightly
     - name: Run tests safe-encode
       run: cargo test --features safe-encode
     - name: Run tests safe-decode
       run: cargo test --features safe-decode
-    - name: Run tests --no-default-features (no safe-decode) with frame
+    - name: Run tests --no-default-features with frame
       run: cargo test --no-default-features --features frame
+    - name: Run tests --no-default-features with frame, with nightly features
+      run: cargo +nightly test --no-default-features --features frame --features nightly
     - name: Run tests unsafe with checked-decode and frame
       run: cargo test --no-default-features --features checked-decode --features frame
     - name: Run fuzz tests (safe)

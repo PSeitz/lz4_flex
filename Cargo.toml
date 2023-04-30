@@ -47,6 +47,8 @@ safe-encode = []
 checked-decode = []
 frame = ["std", "dep:twox-hash"]
 std = []
+# use nightly compiler features
+nightly = []
 
 [dependencies]
 twox-hash = { version = "1.6.3", default-features = false, optional = true }
