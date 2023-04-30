@@ -63,7 +63,7 @@ unsafe fn duplicate_overlapping(
         // Note that we copy 4 bytes, instead of one.
         // Without that the compiler will unroll/auto-vectorize the copy with a lot of branches.
         // This is not what we want, as large overlapping copies are not that common.
-        core::ptr::copy(start, *output_ptr, 4);
+        core::ptr::copy(start, *output_ptr, 1);
         start = start.add(1);
         *output_ptr = output_ptr.add(1);
     }

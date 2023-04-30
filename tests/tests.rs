@@ -322,24 +322,36 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
 mod checked_decode {
     use super::*;
 
-    #[cfg_attr(not(feature = "checked_decode"), ignore)]
+    #[cfg_attr(not(feature = "checked-decode"), ignore)]
     #[test]
     fn error_case_1() {
         let _err = decompress_size_prepended(&[122, 1, 0, 1, 0, 10, 1, 0]);
     }
-    #[cfg_attr(not(feature = "checked_decode"), ignore)]
+    #[cfg_attr(not(feature = "checked-decode"), ignore)]
     #[test]
     fn error_case_2() {
         let _err = decompress_size_prepended(&[
             44, 251, 49, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0, 0,
         ]);
     }
-    #[cfg_attr(not(feature = "checked_decode"), ignore)]
+    #[cfg_attr(not(feature = "checked-decode"), ignore)]
     #[test]
     fn error_case_3() {
         let _err = decompress_size_prepended(&[
             7, 0, 0, 0, 0, 0, 0, 11, 0, 0, 7, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 1, 0, 0,
         ]);
+    }
+
+    #[cfg_attr(not(feature = "checked-decode"), ignore)]
+    #[test]
+    fn error_case_4() {
+        let _err = decompress_size_prepended(&[0, 61, 0, 0, 0, 7, 0]);
+    }
+
+    #[cfg_attr(not(feature = "checked-decode"), ignore)]
+    #[test]
+    fn error_case_5() {
+        let _err = decompress_size_prepended(&[8, 0, 0, 0, 4, 0, 0, 0]);
     }
 }
 
