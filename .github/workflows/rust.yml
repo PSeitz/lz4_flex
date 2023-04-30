@@ -13,10 +13,10 @@ jobs:
 
     steps:
     - name: Setup nightly Rust Toolchain
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@master
       with:
         toolchain: nightly
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: Ensure no_std compiles
       run: cargo build --no-default-features
     - name: Ensure no_std compiles for safe-decode
