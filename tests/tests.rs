@@ -177,8 +177,7 @@ fn test_minimum_compression_ratio_frame() {
     let get_ratio = |input| {
         let compressed = lz4_flex_frame_compress_with(FrameInfo::new(), input).unwrap();
 
-        let ratio = compressed.len() as f64 / input.len() as f64;
-        ratio
+        compressed.len() as f64 / input.len() as f64
     };
 
     let ratio = get_ratio(COMPRESSION34K);
@@ -573,8 +572,8 @@ proptest! {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn proptest_roundtrip(v in vec_of_vec()) {
-        let data: Vec<u8>  = v.iter().flat_map(|v|v.into_iter()).cloned().collect::<Vec<_>>();
-        test_roundtrip(&data);  // sum of the sum of all vectors.
+        let data: Vec<u8>  = v.iter().flat_map(|v|v.iter()).cloned().collect::<Vec<_>>();
+        test_roundtrip(data);  // sum of the sum of all vectors.
     }
 
 }

@@ -36,8 +36,10 @@ pub(crate) const BLOCK_INFO_SIZE: usize = 4;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 /// Different predefines blocksizes to choose when compressing data.
+#[derive(Default)]
 pub enum BlockSize {
     /// Will detect optimal frame size based on the size of the first write call
+    #[default]
     Auto = 0,
     /// The default block size.
     Max64KB = 4,
@@ -51,12 +53,6 @@ pub enum BlockSize {
     Max8MB = 8,
 }
 
-impl Default for BlockSize {
-    fn default() -> Self {
-        BlockSize::Auto
-    }
-}
-
 impl BlockSize {
     /// Try to find optimal size based on passed buffer length.
     pub(crate) fn from_buf_length(buf_len: usize) -> Self {
@@ -68,7 +64,7 @@ impl BlockSize {
             }
             blocksize = candidate;
         }
-        return BlockSize::Max64KB;
+        BlockSize::Max64KB
     }
     pub(crate) fn get_size(&self) -> usize {
         match self {
@@ -84,19 +80,15 @@ impl BlockSize {
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 /// The two `BlockMode` operations that can be set on (`FrameInfo`)[FrameInfo]
+#[derive(Default)]
 pub enum BlockMode {
     /// Every block is compressed independently. The default.
+    #[default]
     Independent,
     /// Blocks can reference data from previous blocks.
     ///
     /// Effective when the stream contains small blocks.
     Linked,
-}
-
-impl Default for BlockMode {
-    fn default() -> Self {
-        BlockMode::Independent
-    }
 }
 
 // From: https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md
