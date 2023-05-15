@@ -38,10 +38,13 @@ fn wild_copy_from_src_16(mut source: *const u8, mut dst_ptr: *mut u8, num_items:
     // It's not the case for 16 bytes stepsize, but for 8 bytes.
     unsafe {
         let dst_ptr_end = dst_ptr.add(num_items);
-        while (dst_ptr as usize) < dst_ptr_end as usize {
+        loop {
             core::ptr::copy_nonoverlapping(source, dst_ptr, 16);
             source = source.add(16);
             dst_ptr = dst_ptr.add(16);
+            if dst_ptr >= dst_ptr_end {
+                break;
+            }
         }
     }
 }
@@ -60,7 +63,7 @@ unsafe fn duplicate_overlapping(
     // This is the same strategy used by the reference C implementation https://github.com/lz4/lz4/pull/772
     output_ptr.write(0u8);
     let dst_ptr_end = output_ptr.add(match_length);
-    while (*output_ptr as usize) < dst_ptr_end as usize {
+    while *output_ptr < dst_ptr_end {
         // Note that we copy 4 bytes, instead of one.
         // Without that the compiler will unroll/auto-vectorize the copy with a lot of branches.
         // This is not what we want, as large overlapping copies are not that common.
