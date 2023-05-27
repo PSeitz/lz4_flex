@@ -1,5 +1,6 @@
 //! The block decompression algorithm.
 use crate::block::{DecompressError, MINMATCH};
+use crate::fastcpy_unsafe;
 use crate::sink::SliceSink;
 use crate::sink::{PtrSink, Sink};
 use alloc::vec::Vec;
@@ -90,6 +91,7 @@ unsafe fn copy_from_dict(
     let dict_offset = ext_dict.len() + output_ptr.offset_from(output_base) as usize - offset;
     // Can't copy past ext_dict len, the match may cross dict and output
     let dict_match_length = match_length.min(ext_dict.len() - dict_offset);
+    // TODO test fastcpy_unsafe
     core::ptr::copy_nonoverlapping(
         ext_dict.as_ptr().add(dict_offset),
         *output_ptr,
@@ -297,6 +299,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
             if offset >= match_length {
                 unsafe {
                     // _copy_, not copy_non_overlaping, as it may overlap.
+                    // Compiles to the same assembly on x68_64.
                     core::ptr::copy(start_ptr, output_ptr, 18);
                     output_ptr = output_ptr.add(match_length);
                 }
@@ -337,7 +340,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
                 }
             }
             unsafe {
-                core::ptr::copy_nonoverlapping(input_ptr, output_ptr, literal_length);
+                fastcpy_unsafe::slice_copy(input_ptr, output_ptr, literal_length);
                 output_ptr = output_ptr.add(literal_length);
                 input_ptr = input_ptr.add(literal_length);
             }
