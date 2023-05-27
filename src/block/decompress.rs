@@ -64,12 +64,23 @@ unsafe fn duplicate_overlapping(
     // This is the same strategy used by the reference C implementation https://github.com/lz4/lz4/pull/772
     output_ptr.write(0u8);
     let dst_ptr_end = output_ptr.add(match_length);
-    while *output_ptr < dst_ptr_end {
-        // Note that we copy 4 bytes, instead of one.
+
+    while output_ptr.add(1) < dst_ptr_end {
+        // Note that this loop unrolling is done, so that the compiler doesn't do it in a awful
+        // way.
         // Without that the compiler will unroll/auto-vectorize the copy with a lot of branches.
         // This is not what we want, as large overlapping copies are not that common.
         core::ptr::copy(start, *output_ptr, 1);
         start = start.add(1);
+        *output_ptr = output_ptr.add(1);
+
+        core::ptr::copy(start, *output_ptr, 1);
+        start = start.add(1);
+        *output_ptr = output_ptr.add(1);
+    }
+
+    if *output_ptr < dst_ptr_end {
+        core::ptr::copy(start, *output_ptr, 1);
         *output_ptr = output_ptr.add(1);
     }
 }
