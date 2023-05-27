@@ -91,6 +91,8 @@ pub mod frame;
 
 #[allow(dead_code)]
 mod fastcpy;
+#[allow(dead_code)]
+mod fastcpy_unsafe;
 
 pub use block::{compress, compress_into, compress_prepend_size};
 pub use block::{decompress, decompress_into, decompress_size_prepended};
