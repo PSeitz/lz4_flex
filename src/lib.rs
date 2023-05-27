@@ -89,8 +89,10 @@ pub mod block;
 #[cfg_attr(docsrs, doc(cfg(feature = "frame")))]
 pub mod frame;
 
-pub use block::{compress, compress_into, compress_prepend_size};
+#[allow(dead_code)]
+mod fastcpy;
 
+pub use block::{compress, compress_into, compress_prepend_size};
 pub use block::{decompress, decompress_into, decompress_size_prepended};
 
 #[cfg_attr(
