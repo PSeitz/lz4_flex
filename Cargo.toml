@@ -21,7 +21,7 @@ name = "crit_bench"
 path = "benches/crit_bench.rs"
 
 [dev-dependencies]
-criterion = "0.4.0"
+criterion = { git = "https://github.com/PSeitz/criterion.rs/", rev = "cf60ffc"}
 lzzzz = "1.0.4"
 lz4-compress = "0.1.1"
 more-asserts = "0.3.1"
@@ -55,13 +55,13 @@ twox-hash = { version = "1.6.3", default-features = false, optional = true }
 
 [profile.bench]
 codegen-units = 1
-# debug = true
+debug = false
 lto = true
 opt-level = 3
 
 [profile.release]
 codegen-units = 1
-debug = true
+#debug = true
 lto = true
 opt-level = 3
 panic = "unwind"
