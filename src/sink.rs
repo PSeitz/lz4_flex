@@ -1,6 +1,8 @@
 #[allow(unused_imports)]
 use alloc::vec::Vec;
 
+use crate::fastcpy::slice_copy;
+
 /// Returns a Sink implementation appropriate for outputing up to `required_capacity`
 /// bytes at `vec[offset..offset+required_capacity]`.
 /// It can be either a `SliceSink` (pre-filling the vec with zeroes if necessary)
@@ -168,7 +170,7 @@ impl<'a> Sink for SliceSink<'a> {
     #[inline]
     fn extend_from_slice_wild(&mut self, data: &[u8], copy_len: usize) {
         assert!(copy_len <= data.len());
-        self.output[self.pos..self.pos + data.len()].copy_from_slice(data);
+        slice_copy(data, &mut self.output[self.pos..(self.pos) + data.len()]);
         self.pos += copy_len;
     }
 
