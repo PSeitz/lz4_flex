@@ -1,6 +1,6 @@
 //! The block decompression algorithm.
 use crate::block::{DecompressError, MINMATCH};
-//use crate::fastcpy_unsafe;
+use crate::fastcpy_unsafe;
 use crate::sink::SliceSink;
 use crate::sink::{PtrSink, Sink};
 use alloc::vec::Vec;
@@ -357,8 +357,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
                 }
             }
             unsafe {
-                core::ptr::copy_nonoverlapping(input_ptr, output_ptr, literal_length);
-                //fastcpy_unsafe::slice_copy(input_ptr, output_ptr, literal_length);
+                fastcpy_unsafe::slice_copy(input_ptr, output_ptr, literal_length);
                 output_ptr = output_ptr.add(literal_length);
                 input_ptr = input_ptr.add(literal_length);
             }

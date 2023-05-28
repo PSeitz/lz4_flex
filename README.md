@@ -24,8 +24,8 @@ AMD Ryzen 7 5900HX, rustc 1.69.0 (84c898d65 2023-04-16), Manjaro, CPU Boost Disa
 10 Mb dickens
 |    Compressor        | Compression | Decompression | Ratio		 |
 |----------------------|-------------|---------------|---------------|
-| lz4_flex unsafe      | 338 MiB/s   | 2721 MiB/s    |  0.5873  	 |
-| lz4_flex unsafe w. checked_decode      | 338 MiB/s   | 3168 MiB/s    |  0.5873  	 |
+| lz4_flex unsafe      | 338 MiB/s   | 3168 MiB/s    |  0.5873  	 |
+| lz4_flex unsafe w. checked_decode      | 338 MiB/s   | 2734 MiB/s    |  0.5873  	 |
 | lz4_flex safe        | 268 MiB/s   | 2338 MiB/s    | 0.5873 |
 | lzzz (lz4 1.9.3)     | 357 MiB/s | 2759 MiB/s    | 0.6372 |
 | lz4_fear             | 201 MiB/s   | 370 MiB/s     | 0.6372 |
