@@ -86,6 +86,8 @@ pub struct FrameEncoder<W: io::Write> {
     dst: Vec<u8>,
     /// Whether we have an open frame in the output.
     is_frame_open: bool,
+    /// Whether we have an frame closed in the output.
+    data_to_frame_written: bool,
     /// The frame information to be used in this encoder.
     frame_info: FrameInfo,
 }
@@ -140,6 +142,7 @@ impl<W: io::Write> FrameEncoder<W> {
             content_len: 0,
             dst: Vec::new(),
             is_frame_open: false,
+            data_to_frame_written: false,
             frame_info,
             src_start: 0,
             src_end: 0,
@@ -169,8 +172,15 @@ impl<W: io::Write> FrameEncoder<W> {
     /// terminator.
     pub fn try_finish(&mut self) -> Result<(), Error> {
         match self.flush() {
-            Ok(()) if self.is_frame_open => self.end_frame(),
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                // Empty input special case
+                if !self.is_frame_open && !self.data_to_frame_written {
+                    self.begin_frame(0)?;
+                }
+                self.end_frame()?;
+                self.data_to_frame_written = true;
+                Ok(())
+            }
             Err(err) => Err(err.into()),
         }
     }
