@@ -528,6 +528,17 @@ fn bug_fuzz_7() {
     test_decomp(data);
 }
 
+// TODO maybe also not panic for default feature flags
+#[cfg(all(not(feature = "safe-decode"), feature = "checked-decode"))]
+#[test]
+fn bug_fuzz_8() {
+    let data = &[
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 10,
+    ];
+
+    test_decomp(data);
+}
+
 #[test]
 fn test_so_many_zeros() {
     let data: Vec<u8> = iter::repeat(0).take(30_000).collect();
