@@ -208,7 +208,7 @@ fn compress_lz4_fear(input: &[u8]) -> Vec<u8> {
 }
 
 fn print_compression_ration(input: &'static [u8], name: &str) {
-    println!("\nComparing for {}", name);
+    println!("\nComparing for {name}");
     let name = "";
     let compressed = compress_block(input);
     // println!("{:?}", compressed);
@@ -507,8 +507,8 @@ fn test_decomp(data: &[u8]) {
         return;
     }
     // should not panic
-    let _ = decompress_size_prepended(&data);
-    let _ = decompress_size_prepended_with_dict(&data, &data);
+    let _ = decompress_size_prepended(data);
+    let _ = decompress_size_prepended_with_dict(data, data);
 }
 
 #[test]

@@ -346,8 +346,7 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
 /// uncompressed data.
 #[inline]
 pub fn decompress(input: &[u8], min_uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
-    let mut decompressed: Vec<u8> = Vec::with_capacity(min_uncompressed_size);
-    decompressed.resize(min_uncompressed_size, 0);
+    let mut decompressed: Vec<u8> = vec![0; min_uncompressed_size];
     let decomp_len =
         decompress_internal::<false, _>(input, &mut SliceSink::new(&mut decompressed, 0), b"")?;
     decompressed.truncate(decomp_len);

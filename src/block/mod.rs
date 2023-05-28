@@ -110,9 +110,8 @@ impl fmt::Display for DecompressError {
             DecompressError::OutputTooSmall { expected, actual } => {
                 write!(
                     f,
-                    "provided output is too small for the decompressed data, actual {}, expected \
-                     {}",
-                    actual, expected
+                    "provided output is too small for the decompressed data, actual {actual}, expected \
+                     {expected}"
                 )
             }
             DecompressError::LiteralOutOfBounds => {
