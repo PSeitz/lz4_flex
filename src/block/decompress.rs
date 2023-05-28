@@ -1,6 +1,6 @@
 //! The block decompression algorithm.
 use crate::block::{DecompressError, MINMATCH};
-use crate::fastcpy_unsafe;
+//use crate::fastcpy_unsafe;
 use crate::sink::SliceSink;
 use crate::sink::{PtrSink, Sink};
 use alloc::vec::Vec;
@@ -224,12 +224,21 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
     let safe_distance_from_end =  (16 /* literal copy */ +  2 /* u16 match offset */ + 1 /* The next token to read (we can skip the check) */).min(input.len()) ;
     let input_ptr_safe = unsafe { input_ptr_end.sub(safe_distance_from_end) };
 
-    let safe_output_ptr = unsafe {
+    let mut safe_output_ptr = unsafe {
         output_base.add(
             output
                 .capacity()
                 .saturating_sub(16 /* literal copy */ + 18 /* match copy */),
         )
+    };
+
+    if USE_DICT {
+        unsafe {
+            // In the dictionary case the output pointer is moved by the match length in the dictionary.
+            // This may be up to 17 bytes without exiting the loop. So we need to ensure that we have
+            // at least additional 17 bytes of space left in the output buffer in the fast loop.
+            safe_output_ptr = safe_output_ptr.sub(17);
+        }
     };
 
     // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer is
@@ -351,7 +360,8 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
                 }
             }
             unsafe {
-                fastcpy_unsafe::slice_copy(input_ptr, output_ptr, literal_length);
+                core::ptr::copy_nonoverlapping(input_ptr, output_ptr, literal_length);
+                //fastcpy_unsafe::slice_copy(input_ptr, output_ptr, literal_length);
                 output_ptr = output_ptr.add(literal_length);
                 input_ptr = input_ptr.add(literal_length);
             }
