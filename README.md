@@ -7,19 +7,29 @@
 ![lz4_flex_logo](https://raw.githubusercontent.com/PSeitz/lz4_flex/master/logo.jpg)
 
 Fastest LZ4 implementation in Rust. Originally based on [redox-os' lz4 compression](https://crates.io/crates/lz4-compress), but now a complete rewrite.
-The results in the table are from a benchmark in this project (66Kb JSON) with the block format. 
+The results in the table are from a benchmark in this project (66Kb JSON, 10MB dickens) with the block format. 
 
-AMD Ryzen 7 5900HX, rustc 1.67.0 (fc594f156 2023-01-24), Manjaro.
+AMD Ryzen 7 5900HX, rustc 1.69.0 (84c898d65 2023-04-16), Manjaro, CPU Boost Disabled, CPU Governor: Performance
 
+66Kb JSON
 |    Compressor        | Compression | Decompression | Ratio		 |
 |----------------------|-------------|---------------|---------------|
-| lz4_flex unsafe      | 2169 MiB/s   | 8266 MiB/s    | 0.2289   	 |
-| lz4_flex unsafe w. checked_decode      | 2169 MiB/s   | 7019 MiB/s    | 0.2289   	 |
-| lz4_flex safe        | 1730 MiB/s   | 5925 MiB/s    | 0.2289   	 |
-| lzzz (lz4 1.9.3)     | 2292 MiB/s   | 7196 MiB/s    | 0.2283   	 |
-| lz4_fear             | 886 MiB/s   | 1359 MiB/s     | 0.2283	     |
-| snap                 | 1886 MiB/s   | 1649 MiB/s     | 0.2242      |
+| lz4_flex unsafe      | 1638 MiB/s   | 5973 MiB/s    | 0.2284   	 |
+| lz4_flex unsafe w. checked_decode      | 1638 MiB/s   | 5512 MiB/s    | 0.2284   	 |
+| lz4_flex safe        | 1583 MiB/s   | 4540 MiB/s    | 0.2284   	 |
+| lzzz (lz4 1.9.3)     | 1622 MiB/s   | 5313 MiB/s    | 0.2283   	 |
+| lz4_fear             | 662 MiB/s   | 939 MiB/s     | 0.2283	     |
+| snap                 | 1452 MiB/s   | 1649 MiB/s     | 0.2242      |
 
+10 Mb dickens
+|    Compressor        | Compression | Decompression | Ratio		 |
+|----------------------|-------------|---------------|---------------|
+| lz4_flex unsafe      | 338 MiB/s   | 2721 MiB/s    |  0.5873  	 |
+| lz4_flex unsafe w. checked_decode      | 338 MiB/s   | 3168 MiB/s    |  0.5873  	 |
+| lz4_flex safe        | 268 MiB/s   | 2338 MiB/s    | 0.5873 |
+| lzzz (lz4 1.9.3)     | 357 MiB/s | 2759 MiB/s    | 0.6372 |
+| lz4_fear             | 201 MiB/s   | 370 MiB/s     | 0.6372 |
+| snap                 | 286 MiB/s   | 679 MiB/s     | 0.6276 |
 
 ## Features
 - Very good logo
