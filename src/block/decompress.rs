@@ -224,21 +224,18 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
     let safe_distance_from_end =  (16 /* literal copy */ +  2 /* u16 match offset */ + 1 /* The next token to read (we can skip the check) */).min(input.len()) ;
     let input_ptr_safe = unsafe { input_ptr_end.sub(safe_distance_from_end) };
 
-    let mut safe_output_ptr = unsafe {
-        output_base.add(
-            output
-                .capacity()
-                .saturating_sub(16 /* literal copy */ + 18 /* match copy */),
-        )
-    };
-
-    if USE_DICT {
-        unsafe {
+    let safe_output_ptr = unsafe {
+        let mut output_num_safe_bytes = output
+            .capacity()
+            .saturating_sub(16 /* literal copy */ + 18 /* match copy */);
+        if USE_DICT {
             // In the dictionary case the output pointer is moved by the match length in the dictionary.
             // This may be up to 17 bytes without exiting the loop. So we need to ensure that we have
             // at least additional 17 bytes of space left in the output buffer in the fast loop.
-            safe_output_ptr = safe_output_ptr.sub(17);
-        }
+            output_num_safe_bytes = output_num_safe_bytes.saturating_sub(17);
+        };
+
+        output_base.add(output_num_safe_bytes)
     };
 
     // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer is
@@ -268,7 +265,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
             // output_ptr <= safe_output_ptr should guarantee we have enough space in output
             debug_assert!(
                 unsafe { output_ptr.add(literal_length + match_length) } <= output_end,
-                "{} wont fit ",
+                "{literal_length} + {match_length} {} wont fit ",
                 literal_length + match_length
             );
 
