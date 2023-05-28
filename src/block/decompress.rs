@@ -177,11 +177,11 @@ const FIT_TOKEN_MASK_MATCH: u8 = 0b11110000;
 
 #[test]
 fn check_token() {
-    assert_eq!(does_token_fit(15), false);
-    assert_eq!(does_token_fit(14), true);
-    assert_eq!(does_token_fit(114), true);
-    assert_eq!(does_token_fit(0b11110000), false);
-    assert_eq!(does_token_fit(0b10110000), true);
+    assert!(!does_token_fit(15));
+    assert!(does_token_fit(14));
+    assert!(does_token_fit(114));
+    assert!(!does_token_fit(0b11110000));
+    assert!(does_token_fit(0b10110000));
 }
 
 /// The token consists of two parts, the literal length (upper 4 bits) and match_length (lower 4
