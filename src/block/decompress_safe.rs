@@ -95,9 +95,16 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
     let safe_input_pos = input
         .len()
         .saturating_sub(16 /* literal copy */ +  2 /* u16 match offset */);
-    let safe_output_pos = output
+    let mut safe_output_pos = output
         .capacity()
         .saturating_sub(16 /* literal copy */ + 18 /* match copy */);
+
+    if USE_DICT {
+        // In the dictionary case the output pointer is moved by the match length in the dictionary.
+        // This may be up to 17 bytes without exiting the loop. So we need to ensure that we have
+        // at least additional 17 bytes of space left in the output buffer in the fast loop.
+        safe_output_pos = safe_output_pos.saturating_sub(17);
+    };
 
     // Exhaust the decoder by reading and decompressing all blocks until the remaining buffer is
     // empty.

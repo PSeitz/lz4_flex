@@ -3,14 +3,17 @@
 #[macro_use]
 extern crate more_asserts;
 
-use std::iter;
+use std::{convert::TryInto, iter};
 
 use lz4_compress::compress as lz4_rust_compress;
 #[cfg(feature = "frame")]
 use lz4_flex::frame::BlockMode;
 use lz4_flex::{
-    block::{compress_prepend_size, decompress_size_prepended},
-    compress as compress_block, decompress,
+    block::{
+        compress_prepend_size, decompress, decompress_size_prepended,
+        decompress_size_prepended_with_dict,
+    },
+    compress as compress_block,
 };
 
 const COMPRESSION1K: &[u8] = include_bytes!("../benches/compression_1k.txt");
@@ -496,6 +499,33 @@ fn bug_fuzz_6() {
     ];
 
     test_roundtrip(data);
+}
+
+fn test_decomp(data: &[u8]) {
+    let size = u32::from_le_bytes(data[0..4].try_into().unwrap());
+    if size > 20_000_000 {
+        return;
+    }
+    // should not panic
+    let _ = decompress_size_prepended(&data);
+    let _ = decompress_size_prepended_with_dict(&data, &data);
+}
+
+#[test]
+fn bug_fuzz_7() {
+    #[cfg(not(feature = "safe-decode"))]
+    {
+        #[cfg(not(feature = "checked-decode"))]
+        {
+            return;
+        }
+    }
+    let data = &[
+        39, 0, 0, 0, 0, 0, 0, 237, 0, 0, 0, 0, 0, 0, 16, 0, 0, 4, 0, 0, 0, 39, 32, 0, 2, 0, 162, 5,
+        36, 0, 0, 0, 0, 7, 0,
+    ];
+
+    test_decomp(data);
 }
 
 #[test]
