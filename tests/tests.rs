@@ -95,7 +95,6 @@ fn test_roundtrip(bytes: impl AsRef<[u8]>) {
         let mut frame_info = lz4_flex::frame::FrameInfo::new();
         frame_info.block_mode = *bm;
         let compressed_flex = lz4_flex_frame_compress_with(frame_info, bytes).unwrap();
-        dbg!(&compressed_flex);
         let decompressed = lz4_flex_frame_decompress(&compressed_flex).unwrap();
         assert_eq!(decompressed, bytes);
     }
