@@ -32,13 +32,13 @@ proptest = "1.0.0"
 [dev-dependencies.lz-fear]
 git = "https://github.com/main--/rust-lz-fear"
 
-# Uncomment to make lz4_flex master available as lz4_flex_master
-# [dev-dependencies.lz4_flex_master]
-# rev= "eb8c2e090485dcb5ef9e0da96bf72a95023753c1" # before this PR was merged
-# git = "https://github.com/PSeitz/lz4_flex"
-# package = "lz4_flex"
-# default-features=false
-# features = ["std", "safe-encode", "safe-decode", "frame"]
+ #Uncomment to make lz4_flex master available as lz4_flex_master
+ #[dev-dependencies.lz4_flex_master]
+ #rev= "a122673" # v10
+ #git = "https://github.com/PSeitz/lz4_flex"
+ #package = "lz4_flex"
+ #default-features=false
+ #features = ["std", "safe-encode", "safe-decode", "frame"]
 
 [features]
 default = ["std", "safe-encode", "safe-decode", "frame"]
