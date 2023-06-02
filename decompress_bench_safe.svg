@@ -1,6 +1,6 @@
 <svg viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
 <g fill="#FFFFFF" font-family="Roboto-Regular,Roboto, sans-serif">
-<rect fill="#333333" height="600" width="800" x="0" y="0"/>
+<rect fill="#0d1117" height="600" width="800" x="0" y="0"/>
 <g transform="translate(0,30)">
 <line stroke="#999999" x1="85" x2="80" y1="510" y2="510"/>
 <line stroke="#999999" x1="80" x2="643" y1="510" y2="510"/>
