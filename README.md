@@ -75,30 +75,27 @@ fn main(){
 
 no_std support is currently only for the block format, since the frame format uses `std::io::Write`, which is not available in core.
 
-
 ## Benchmarks
 The benchmark is run with criterion, the test files are in the benches folder.
 
-Currently 4 implementations are compared, this one, [lz-fear](https://github.com/main--/rust-lz-fear) and the [c++ version via rust bindings](https://crates.io/crates/lz4) and [snappy](https://github.com/burntsushi/rust-snappy). 
+Currently 4 implementations are compared, this one, [lz-fear](https://github.com/main--/rust-lz-fear), the [c version via rust bindings](https://crates.io/crates/lzzzz) and [snappy](https://github.com/burntsushi/rust-snappy). 
 The lz4-flex version is tested with the feature flags safe-decode and safe-encode switched on and off.
 
-- lz4_cpp: https://crates.io/crates/lz4
+- lz4_cpp: https://crates.io/crates/lzzzz
 - lz-fear: https://github.com/main--/rust-lz-fear
 - snap: https://github.com/burntsushi/rust-snappy 
 
-### Results v0.8.0 17-05-2021 (safe-decode and safe-encode off)
-`cargo bench --no-default-features`
+Tested on AMD Ryzen 7 5900HX, rustc 1.69.0 (84c898d65 2023-04-16), Manjaro, CPU Boost Disabled, CPU 3GHZ
 
-Executed on Core i7-6700 Linux Mint.
+### Results v0.11.0 02-06-2023 (safe-decode and safe-encode off)
+`cargo bench --no-default-features`
 
 ![Compress](./compress_bench.svg)
 
 ![Decompress](./decompress_bench.svg)
 
-### Results v0.8.0 17-05-2021 (safe-decode and safe-encode on)
+### Results v0.11.0 02-06-2023 (safe-decode and safe-encode on)
 `cargo bench`
-
-Executed on Core i7-6700 Linux Mint.
 
 ![Compress](./compress_bench_safe.svg)
 
@@ -122,7 +119,7 @@ This fuzz target asserts compression with cpp and decompression with lz4_flex re
 
 ## Bindings in other languages
  - Node.js: [lz4-napi](https://github.com/antoniomuso/lz4-napi) 
- - Wasm: [lz4-wasm](https://github.com/PSeitz/lz4_flex/tree/main/lz4-wasm)
+ - Wasm: [lz4-wasm](https://github.com/PSeitz/lz4-wasm)
 
 ## TODO
 - High compression
