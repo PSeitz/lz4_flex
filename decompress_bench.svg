@@ -1,29 +1,29 @@
 <svg xmlns="http://www.w3.org/2000/svg">
 <g fill="#FFFFFF" font-family="Roboto-Regular,Roboto, sans-serif">
-<rect fill="#333333" height="100%" width="100%"/>
+<rect fill="#333333" height="600" width="800"/>
 <g transform="translate(0,30)">
 <line stroke="#999999" x1="85" x2="80" y1="510" y2="510"/>
-<line stroke="#999999" x1="80" x2="703" y1="510" y2="510"/>
+<line stroke="#999999" x1="80" x2="643" y1="510" y2="510"/>
 <text direction="rtl" font-size="12" x="75" y="514">
 0
 </text>
 <line stroke="#999999" x1="85" x2="80" y1="419.12433" y2="419.12433"/>
-<line stroke="#999999" x1="80" x2="703" y1="419.12433" y2="419.12433"/>
+<line stroke="#999999" x1="80" x2="643" y1="419.12433" y2="419.12433"/>
 <text direction="rtl" font-size="12" x="75" y="423.12433">
 1
 </text>
 <line stroke="#999999" x1="85" x2="80" y1="328.24866" y2="328.24866"/>
-<line stroke="#999999" x1="80" x2="703" y1="328.24866" y2="328.24866"/>
+<line stroke="#999999" x1="80" x2="643" y1="328.24866" y2="328.24866"/>
 <text direction="rtl" font-size="12" x="75" y="332.24866">
 2
 </text>
 <line stroke="#999999" x1="85" x2="80" y1="237.37302" y2="237.37302"/>
-<line stroke="#999999" x1="80" x2="703" y1="237.37302" y2="237.37302"/>
+<line stroke="#999999" x1="80" x2="643" y1="237.37302" y2="237.37302"/>
 <text direction="rtl" font-size="12" x="75" y="241.37302">
 3
 </text>
 <line stroke="#999999" x1="85" x2="80" y1="146.49731" y2="146.49731"/>
-<line stroke="#999999" x1="80" x2="703" y1="146.49731" y2="146.49731"/>
+<line stroke="#999999" x1="80" x2="643" y1="146.49731" y2="146.49731"/>
 <text direction="rtl" font-size="12" x="75" y="150.49731">
 4
 </text>
@@ -31,43 +31,43 @@
 Gb/s
 </text>
 <line stroke="#999999" x1="85" x2="85" y1="10" y2="510"/>
-<line stroke="#999999" x1="85" x2="790" y1="510" y2="510"/>
-<rect fill="#52C1BF" height="190.66739" width="25" x="90" y="319.3326"/>
-<rect fill="#9B9B9B" height="28.727325" width="25" x="118" y="481.27267"/>
-<rect fill="#EEA47F" height="200.31981" width="25" x="146" y="309.68018"/>
-<rect fill="#F7DC6F" height="121.91135" width="25" x="174" y="388.08865"/>
+<line stroke="#999999" x1="85" x2="730" y1="510" y2="510"/>
+<rect fill="#52C1BF" height="190.66739" width="22" x="90" y="319.3326"/>
+<rect fill="#9B9B9B" height="28.727325" width="22" x="115" y="481.27267"/>
+<rect fill="#EEA47F" height="200.31981" width="22" x="140" y="309.68018"/>
+<rect fill="#F7DC6F" height="121.91135" width="22" x="165" y="388.08865"/>
 <text text-anchor="left" x="90" y="530">
 34K Text
 </text>
-<rect fill="#52C1BF" height="199.81696" width="25" x="230" y="310.18304"/>
-<rect fill="#9B9B9B" height="27.692726" width="25" x="258" y="482.30728"/>
-<rect fill="#EEA47F" height="205.66939" width="25" x="286" y="304.33063"/>
-<rect fill="#F7DC6F" height="107.23206" width="25" x="314" y="402.76794"/>
-<text text-anchor="left" x="230" y="530">
+<rect fill="#52C1BF" height="199.81696" width="22" x="218" y="310.18304"/>
+<rect fill="#9B9B9B" height="27.692726" width="22" x="243" y="482.30728"/>
+<rect fill="#EEA47F" height="205.66939" width="22" x="268" y="304.33063"/>
+<rect fill="#F7DC6F" height="107.23206" width="22" x="293" y="402.76794"/>
+<text text-anchor="left" x="218" y="530">
 65K Text
 </text>
-<rect fill="#52C1BF" height="500" width="25" x="370" y="10"/>
-<rect fill="#9B9B9B" height="81.45571" width="25" x="398" y="428.54428"/>
-<rect fill="#EEA47F" height="474.26117" width="25" x="426" y="35.73883"/>
-<rect fill="#F7DC6F" height="303.81888" width="25" x="454" y="206.18112"/>
-<text text-anchor="left" x="370" y="530">
+<rect fill="#52C1BF" height="500" width="22" x="346" y="10"/>
+<rect fill="#9B9B9B" height="81.45571" width="22" x="371" y="428.54428"/>
+<rect fill="#EEA47F" height="474.26117" width="22" x="396" y="35.73883"/>
+<rect fill="#F7DC6F" height="303.81888" width="22" x="421" y="206.18112"/>
+<text text-anchor="left" x="346" y="530">
 66K JSON
 </text>
-<rect fill="#52C1BF" height="282.43152" width="25" x="510" y="227.56848"/>
-<rect fill="#9B9B9B" height="45.893696" width="25" x="538" y="464.1063"/>
-<rect fill="#EEA47F" height="283.6356" width="25" x="566" y="226.36441"/>
-<rect fill="#F7DC6F" height="164.51988" width="25" x="594" y="345.4801"/>
-<text text-anchor="left" x="510" y="530">
+<rect fill="#52C1BF" height="282.43152" width="22" x="474" y="227.56848"/>
+<rect fill="#9B9B9B" height="45.893696" width="22" x="499" y="464.1063"/>
+<rect fill="#EEA47F" height="283.6356" width="22" x="524" y="226.36441"/>
+<rect fill="#F7DC6F" height="164.51988" width="22" x="549" y="345.4801"/>
+<text text-anchor="left" x="474" y="530">
 725b Text
 </text>
-<rect fill="#52C1BF" height="232.46768" width="25" x="650" y="277.53232"/>
-<rect fill="#9B9B9B" height="33.10687" width="25" x="678" y="476.89313"/>
-<rect fill="#EEA47F" height="228.97597" width="25" x="706" y="281.02405"/>
-<rect fill="#F7DC6F" height="74.15554" width="25" x="734" y="435.84445"/>
-<text text-anchor="left" x="650" y="530">
+<rect fill="#52C1BF" height="232.46768" width="22" x="602" y="277.53232"/>
+<rect fill="#9B9B9B" height="33.10687" width="22" x="627" y="476.89313"/>
+<rect fill="#EEA47F" height="228.97597" width="22" x="652" y="281.02405"/>
+<rect fill="#F7DC6F" height="74.15554" width="22" x="677" y="435.84445"/>
+<text text-anchor="left" x="602" y="530">
 10Mb Dickens
 </text>
-<g fill="#000000" transform="translate(717,20)">
+<g fill="#000000" transform="translate(657,20)">
 <rect fill="#FFFFFF" height="100" stroke="#121212" width="117"/>
 <text font-size="12" x="10" y="25">
 lz4_cpp
