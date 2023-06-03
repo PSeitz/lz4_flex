@@ -174,6 +174,7 @@ impl<W: io::Write> FrameEncoder<W> {
         match self.flush() {
             Ok(()) => {
                 // Empty input special case
+                // https://github.com/ouch-org/ouch/pull/163#discussion_r1108965151
                 if !self.is_frame_open && !self.data_to_frame_written {
                     self.begin_frame(0)?;
                 }
