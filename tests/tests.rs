@@ -134,16 +134,15 @@ fn lz4_cpp_compatibility(bytes: &[u8]) {
         assert_eq!(decompressed, bytes);
 
         // compress with rust, decompress with lz4 cpp
-        if !bytes.is_empty() {
-            // compress_frame won't write a header if nothing is written to it
-            // which is more in line with io::Write interface?
-            for bm in &[BlockMode::Independent, BlockMode::Linked] {
-                let mut frame_info = lz4_flex::frame::FrameInfo::new();
-                frame_info.block_mode = *bm;
-                let compressed_flex = lz4_flex_frame_compress_with(frame_info, bytes).unwrap();
-                let decompressed = lz4_cpp_frame_decompress(&compressed_flex).unwrap();
-                assert_eq!(decompressed, bytes);
-            }
+        //if !bytes.is_empty() {
+        // compress_frame won't write a header if nothing is written to it
+        // which is more in line with io::Write interface?
+        for bm in &[BlockMode::Independent, BlockMode::Linked] {
+            let mut frame_info = lz4_flex::frame::FrameInfo::new();
+            frame_info.block_mode = *bm;
+            let compressed_flex = lz4_flex_frame_compress_with(frame_info, bytes).unwrap();
+            let decompressed = lz4_cpp_frame_decompress(&compressed_flex).unwrap();
+            assert_eq!(decompressed, bytes);
         }
     }
 }
