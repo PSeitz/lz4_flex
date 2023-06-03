@@ -1,7 +1,7 @@
 [package]
 authors = ["Pascal Seitz <pascal.seitz@gmail.com>", "Arthur Silva <arthurprs@gmail.com>", "ticki <Ticki@users.noreply.github.com>"]
 description = "Fastest LZ4 implementation in Rust, no unsafe by default."
-edition = "2018"
+edition = "2021"
 keywords = ["compression", "lz4", "compress", "decompression", "decompress"]
 name = "lz4_flex"
 homepage = "https://github.com/pseitz/lz4_flex"
@@ -55,14 +55,12 @@ twox-hash = { version = "1.6.3", default-features = false, optional = true }
 
 [profile.bench]
 codegen-units = 1
-debug = false
-lto = true
+debug = true
 opt-level = 3
 
 [profile.release]
 codegen-units = 1
 #debug = true
-lto = true
 opt-level = 3
 panic = "unwind"
 
