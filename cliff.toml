@@ -17,7 +17,7 @@ body = """
 {% for group, commits in commits | group_by(attribute="group") %}
     ### {{ group | upper_first }}
     {% for commit in commits %}
-        - {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message | upper_first }}\
+        - {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message | split(pat="\n") | first | trim | upper_first }}(@{{ commit.author.name }})\n{{ commit.message | upper_first }}\
     {% endfor %}
 {% endfor %}\n
 """
@@ -26,6 +26,11 @@ trim = true
 # changelog footer
 footer = """
 """
+
+postprocessors = [
+    { pattern = 'Pascal Seitz', replace = "PSeitz"}, # replace with github user
+    { pattern = '', replace = ""}, # replace with github user
+]
 
 [git]
 # parse the commits based on https://www.conventionalcommits.org
@@ -37,7 +42,9 @@ split_commits = false
 # regex for preprocessing the commit messages
 commit_preprocessors = [
     # { pattern = '\((\w+\s)?#([0-9]+)\)', replace = "([#${2}](https://github.com/orhun/git-cliff/issues/${2}))"}, # replace issue numbers
+    #{ pattern = '\((\w+\s)?#([0-9]+)\)', replace = "[#${2}](https://github.com/PSeitz/lz4_flex/issues/${2})"}, # replace issue numbers
 ]
+
 # regex for parsing and grouping commits
 commit_parsers = [
     { message = "^feat", group = "Features"},
@@ -50,7 +57,7 @@ commit_parsers = [
     { message = "^chore\\(release\\): prepare for", skip = true},
     { message = "^chore", group = "Miscellaneous Tasks"},
     { body = ".*security", group = "Security"},
-    #{ message = ".*", group = "Other", default_scope = "other"},
+    { message = ".*", group = "Other", default_scope = "other"},
 ]
 # protect breaking changes from being skipped due to matching a skipping commit_parser
 protect_breaking_commits = false

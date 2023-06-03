@@ -1,4 +1,4 @@
-0.11.0 (2023-02-08)
+0.11.0 (2023-06-03)
 ==================
 
 ### Documentation
@@ -7,16 +7,54 @@
 
 ### Features
 
-- Feat: allow to pass buffer larger than size, warn on missing docs [#78](https://github.com/PSeitz/lz4_flex/pull/78)
+- Allow to pass buffer larger than size [#78](https://github.com/PSeitz/lz4_flex/pull/78)
+```
+This removes an unnecessary check in the decompression, when the passed buffer is too big.
+```
+- Add auto_finish to FrameEncoder [#95](https://github.com/PSeitz/lz4_flex/pull/95) [#100](https://github.com/PSeitz/lz4_flex/pull/100)
+```
+Empty input was ignored previously and didn't write anything. Now an empty Frame is written. This improves compatibility with the reference implementation and some corner cases.
+```
+- Autodetect frame blocksize [#81](https://github.com/PSeitz/lz4_flex/pull/81)
+```
+The default blocksize of FrameInfo is now auto instead of 64kb, it will detect the blocksize
+depending of the size of the first write call. This increases
+compression ratio and speed for use cases where the data is larger than
+64kb.
+```
+- Add fluent API style contruction for FrameInfo [#99](https://github.com/PSeitz/lz4_flex/pull/99) (thanks @CosmicHorrorDev)
+```
+This adds in fluent API style construction for FrameInfo. Now you can do
+
+let info = FrameInfo::new()
+    .block_size(BlockSize::Max1MB)
+    .content_checksum(true);
+```
+- Handle empty input [#120](https://github.com/PSeitz/lz4_flex/pull/120)
+```
+Empty input was ignored previously and didn't write anything. Now an empty Frame is written. This improves compatibility with the reference implementation and some corner cases.
+```
 
 ### Performance
-
-- Perf: faster duplicate_overlapping [#69](https://github.com/PSeitz/lz4_flex/pull/69)
+- Perf: Faster Decompression [#113](https://github.com/PSeitz/lz4_flex/pull/113) [#112](https://github.com/PSeitz/lz4_flex/pull/112)
 ```
-improve duplicate_overlapping unsafe version. The compiler generates unfavourable assembly for the simple version.
-Now we copy 4 bytes, instead of one in every iteration.
-Without that the compiler will unroll/auto-vectorize the copy with a lot of branches.
-This is not what we want, as large overlapping copies are not that common.
+Replace calls to memcpy with custom function
+```
+
+- Perf: optimize wildcopy [#109](https://github.com/PSeitz/lz4_flex/pull/109)
+```
+The initial check in the the 16 byte wild copy is unnecessary, since it is already done before calling the method.
+```
+
+- Perf: faster duplicate_overlapping [#114](https://github.com/PSeitz/lz4_flex/pull/114)
+```
+Replace the aggressive compiler unrolling after the
+failed attempt #69 (wrote out of bounds in some cases)
+
+The unrolling is avoided by manually unrolling less aggressive.
+Decompression performance is slightly improved by ca 4%, except the
+smallest test case.
+
 ```
 - Perf: simplify extend_from_within_overlapping [#72](https://github.com/PSeitz/lz4_flex/pull/72)
 ```
@@ -44,7 +82,7 @@ those assertions are only used in safe code and therefore unnecessary
 Improve safe decompression speed by 8-18%
 
 Reduce multiple slice fetches. every slice access, also nested ones
-,carries some overhead. In the hot loop a fixed &[u8;16] is fetched to
+, carries some overhead. In the hot loop a fixed &[u8;16] is fetched to
 operate on. This is purely done to pass that info to the compiler.
 
 Remove error handling that only carries overhead. As we are in safe
