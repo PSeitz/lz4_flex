@@ -94,7 +94,15 @@ mod fastcpy;
 #[allow(dead_code)]
 mod fastcpy_unsafe;
 
+#[deprecated(
+    since = "0.11",
+    note = "This re-export is deprecated as it can be confused with the frame API, use block:: instead"
+)]
 pub use block::{compress, compress_into, compress_prepend_size};
+#[deprecated(
+    since = "0.11",
+    note = "This re-export is deprecated as it can be confused with the frame API, use block:: instead"
+)]
 pub use block::{decompress, decompress_into, decompress_size_prepended};
 
 #[cfg_attr(
