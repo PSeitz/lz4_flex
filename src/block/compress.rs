@@ -662,10 +662,13 @@ pub fn compress_into_with_dict(
 fn compress_into_vec_with_dict<const USE_DICT: bool>(
     input: &[u8],
     prepend_size: bool,
-    dict_data: &[u8],
+    mut dict_data: &[u8],
 ) -> Vec<u8> {
     let prepend_size_num_bytes = if prepend_size { 4 } else { 0 };
     let max_compressed_size = get_maximum_output_size(input.len()) + prepend_size_num_bytes;
+    if dict_data.len() <= 3 {
+        dict_data = b"";
+    }
     #[cfg(feature = "safe-encode")]
     let mut compressed = {
         let mut compressed: Vec<u8> = vec![0u8; max_compressed_size];
@@ -875,6 +878,15 @@ mod tests {
         .unwrap();
         uncompressed.truncate(uncomp_size);
         assert_eq!(input, uncompressed);
+    }
+
+    #[test]
+    fn test_dict_no_panic() {
+        let input: &[u8] = &[
+            10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
+        ];
+        let dict = &[10, 12, 14];
+        let _compressed = compress_with_dict(input, dict);
     }
 
     #[test]
