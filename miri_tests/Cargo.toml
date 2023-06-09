@@ -7,5 +7,5 @@ edition = "2021"
 
 [dependencies]
 rand = "0.8.5"
-lz4_flex = { path = "..", default-features = false, features=["frame", "checked-decode"] }
+lz4_flex = { path = "..", default-features = false, features=["frame"] }
 

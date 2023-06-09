@@ -44,7 +44,7 @@ git = "https://github.com/main--/rust-lz-fear"
 default = ["std", "safe-encode", "safe-decode", "frame"]
 safe-decode = []
 safe-encode = []
-checked-decode = []
+unchecked-decode = [] # Removes some checks for additional performance. Only enable on trusted input!
 frame = ["std", "dep:twox-hash"]
 std = []
 # use nightly compiler features

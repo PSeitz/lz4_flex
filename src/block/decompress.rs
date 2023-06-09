@@ -96,7 +96,7 @@ unsafe fn copy_from_dict(
     // If we're here we know offset > output pos, so we have at least 1 byte to copy from dict
     debug_assert!(output_ptr.offset_from(output_base) >= 0);
     debug_assert!(offset > output_ptr.offset_from(output_base) as usize);
-    // If checked-decode is enabled we also know that the offset falls within ext_dict
+    // If unchecked-decode is not disabled we also know that the offset falls within ext_dict
     debug_assert!(ext_dict.len() + output_ptr.offset_from(output_base) as usize >= offset);
 
     let dict_offset = ext_dict.len() + output_ptr.offset_from(output_base) as usize - offset;
@@ -138,7 +138,7 @@ fn read_integer_ptr(
     loop {
         // We add the next byte until we get a byte which we add to the counting variable.
 
-        #[cfg(feature = "checked-decode")]
+        #[cfg(not(feature = "unchecked-decode"))]
         {
             if *input_ptr >= _input_ptr_end {
                 return Err(DecompressError::ExpectedAnotherByte);
@@ -283,7 +283,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
             let offset = read_u16_ptr(&mut input_ptr) as usize;
 
             let output_len = unsafe { output_ptr.offset_from(output_base) as usize };
-            #[cfg(feature = "checked-decode")]
+            #[cfg(not(feature = "unchecked-decode"))]
             {
                 if offset > output_len + ext_dict.len() {
                     return Err(DecompressError::OffsetOutOfBounds);
@@ -341,7 +341,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
                 literal_length += read_integer_ptr(&mut input_ptr, input_ptr_end)? as usize;
             }
 
-            #[cfg(feature = "checked-decode")]
+            #[cfg(not(feature = "unchecked-decode"))]
             {
                 // Check if literal is out of bounds for the input, and if there is enough space on
                 // the output
@@ -370,7 +370,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
         }
 
         // Read duplicate section
-        #[cfg(feature = "checked-decode")]
+        #[cfg(not(feature = "unchecked-decode"))]
         {
             if (input_ptr_end as usize) - (input_ptr as usize) < 2 {
                 return Err(DecompressError::ExpectedAnotherByte);
@@ -396,8 +396,8 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
         // by simply referencing the other location.
         let output_len = unsafe { output_ptr.offset_from(output_base) as usize };
 
-        // We'll do a bounds check in checked-decode.
-        #[cfg(feature = "checked-decode")]
+        // We'll do a bounds check except unchecked-decode is enabled.
+        #[cfg(not(feature = "unchecked-decode"))]
         {
             if offset > output_len + ext_dict.len() {
                 return Err(DecompressError::OffsetOutOfBounds);
@@ -415,7 +415,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
                 copy_from_dict(output_base, &mut output_ptr, ext_dict, offset, match_length)
             };
             if copied == match_length {
-                #[cfg(feature = "checked-decode")]
+                #[cfg(not(feature = "unchecked-decode"))]
                 {
                     if input_ptr >= input_ptr_end {
                         return Err(DecompressError::ExpectedAnotherByte);
@@ -438,7 +438,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
         unsafe {
             duplicate(&mut output_ptr, output_end, start_ptr, match_length);
         }
-        #[cfg(feature = "checked-decode")]
+        #[cfg(not(feature = "unchecked-decode"))]
         {
             if input_ptr >= input_ptr_end {
                 return Err(DecompressError::ExpectedAnotherByte);
@@ -539,8 +539,8 @@ mod test {
         assert_eq!(decompress(&[0x30, b'a', b'4', b'9'], 3).unwrap(), b"a49");
     }
 
-    // this error test is only valid in checked-decode.
-    #[cfg(feature = "checked-decode")]
+    // this error test is only valid with checked-decode.
+    #[cfg(not(feature = "unchecked-decode"))]
     #[test]
     fn offset_oob() {
         decompress(&[0x10, b'a', 2, 0], 4).unwrap_err();

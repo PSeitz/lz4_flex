@@ -184,7 +184,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
             if literal_length > input.len() - input_pos {
                 return Err(DecompressError::LiteralOutOfBounds);
             }
-            #[cfg(feature = "checked-decode")]
+            #[cfg(not(feature = "unchecked-decode"))]
             if literal_length > output.capacity() - output.pos() {
                 return Err(DecompressError::OutputTooSmall {
                     expected: output.pos() + literal_length,
@@ -217,7 +217,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
             match_length += read_integer(input, &mut input_pos)? as usize;
         }
 
-        #[cfg(feature = "checked-decode")]
+        #[cfg(not(feature = "unchecked-decode"))]
         if output.pos() + match_length > output.capacity() {
             return Err(DecompressError::OutputTooSmall {
                 expected: output.pos() + match_length,

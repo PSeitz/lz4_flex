@@ -21,7 +21,7 @@ jobs:
       - name: Generate code coverage all-features
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov2.info
       - name: Generate code coverage unsafe w. checked-decode
-        run: cargo llvm-cov --no-default-features --features frame --features checked-decode --workspace --lcov --output-path lcov3.info
+        run: cargo llvm-cov --no-default-features --features frame --workspace --lcov --output-path lcov3.info
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1
         with:

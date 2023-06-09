@@ -320,22 +320,20 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
 // }
 
 #[cfg(test)]
+#[cfg(not(feature = "unchecked-decode"))]
 mod checked_decode {
     use super::*;
 
-    #[cfg_attr(not(feature = "checked-decode"), ignore)]
     #[test]
     fn error_case_1() {
         let _err = decompress_size_prepended(&[122, 1, 0, 1, 0, 10, 1, 0]);
     }
-    #[cfg_attr(not(feature = "checked-decode"), ignore)]
     #[test]
     fn error_case_2() {
         let _err = decompress_size_prepended(&[
             44, 251, 49, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0, 0,
         ]);
     }
-    #[cfg_attr(not(feature = "checked-decode"), ignore)]
     #[test]
     fn error_case_3() {
         let _err = decompress_size_prepended(&[
@@ -343,13 +341,11 @@ mod checked_decode {
         ]);
     }
 
-    #[cfg_attr(not(feature = "checked-decode"), ignore)]
     #[test]
     fn error_case_4() {
         let _err = decompress_size_prepended(&[0, 61, 0, 0, 0, 7, 0]);
     }
 
-    #[cfg_attr(not(feature = "checked-decode"), ignore)]
     #[test]
     fn error_case_5() {
         let _err = decompress_size_prepended(&[8, 0, 0, 0, 4, 0, 0, 0]);
@@ -514,7 +510,7 @@ fn test_decomp(data: &[u8]) {
 fn bug_fuzz_7() {
     #[cfg(not(feature = "safe-decode"))]
     {
-        #[cfg(not(feature = "checked-decode"))]
+        #[cfg(feature = "unchecked-decode")]
         {
             return;
         }
@@ -528,7 +524,7 @@ fn bug_fuzz_7() {
 }
 
 // TODO maybe also not panic for default feature flags
-#[cfg(all(not(feature = "safe-decode"), feature = "checked-decode"))]
+#[cfg(all(not(feature = "safe-decode"), feature = "unchecked-decode"))]
 #[test]
 fn bug_fuzz_8() {
     let data = &[
