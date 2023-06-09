@@ -40,7 +40,7 @@ jobs:
     - name: Run tests --no-default-features with frame, with nightly features
       run: cargo +nightly test --no-default-features --features frame --features nightly
     - name: Run tests unsafe with checked-decode and frame
-      run: cargo test --no-default-features --features checked-decode --features frame
+      run: cargo test --no-default-features --features frame
     - name: Install cargo fuzz
       run: cargo install cargo-fuzz
     - name: Run fuzz tests (safe)

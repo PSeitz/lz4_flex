@@ -54,9 +54,9 @@ Performance:
 lz4_flex = { version = "0.10", default-features = false }
 ```
 
-Warning: If you don't trust your input and your are using the Block format, use checked-decode in order to avoid out of bounds access. When using the Frame format make sure to enable checksums.
+If you know your data is valid and not broken or corrupted, you can use `unchecked-decode` feature-flag to get a little bit more performance.
 ```
-lz4_flex = { version = "0.10", default-features = false, features = ["checked-decode"] }
+lz4_flex = { version = "0.10", default-features = false, features = ["unchecked-decode"] }
 ```
 
 ```rust
