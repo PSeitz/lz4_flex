@@ -21,8 +21,8 @@ use alloc::vec::Vec;
 #[cfg(feature = "safe-encode")]
 use core::convert::TryInto;
 
+use super::hashtable::HashTable4K;
 use super::hashtable::HashTable4KU16;
-use super::hashtable::HashTable8K;
 use super::{CompressError, WINDOW_SIZE};
 
 /// Increase step size after 1<<INCREASE_STEPSIZE_BITSHIFT non matches
@@ -603,8 +603,7 @@ pub(crate) fn compress_into_sink_with_dict<const USE_DICT: bool>(
         init_dict(&mut dict, &mut dict_data);
         compress_internal::<_, USE_DICT, _>(input, 0, output, &mut dict, dict_data, dict_data.len())
     } else {
-        // For some reason using a 4K hashtable causes a performance regression (memory layout?)
-        let mut dict = HashTable8K::new();
+        let mut dict = HashTable4K::new();
         init_dict(&mut dict, &mut dict_data);
         compress_internal::<_, USE_DICT, _>(input, 0, output, &mut dict, dict_data, dict_data.len())
     }
