@@ -21,7 +21,6 @@ const COMPRESSION34K: &[u8] = include_bytes!("../benches/compression_34k.txt");
 const COMPRESSION65: &[u8] = include_bytes!("../benches/compression_65k.txt");
 const COMPRESSION66JSON: &[u8] = include_bytes!("../benches/compression_66k_JSON.txt");
 const COMPRESSION10MB: &[u8] = include_bytes!("../benches/dickens.txt");
-const DECOMPRESSION10MB: &[u8] = include_bytes!("../benches/dickens.lz4");
 
 fn lz4_cpp_block_compress(input: &[u8]) -> Result<Vec<u8>, lzzzz::Error> {
     let mut out = Vec::new();
@@ -748,7 +747,8 @@ mod frame {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn legacy_frame() {
-        let uncompressed = lz4_flex_frame_decompress(DECOMPRESSION10MB).unwrap();
+        const DECOMPRESSION10MB_LEGACY: &[u8] = include_bytes!("../benches/dickens.lz4");
+        let uncompressed = lz4_flex_frame_decompress(DECOMPRESSION10MB_LEGACY).unwrap();
         assert_eq!(uncompressed, COMPRESSION10MB);
     }
 }

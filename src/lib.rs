@@ -77,7 +77,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(nightly, feature(optimize_attribute))]
 
-#[allow(unused_imports)]
 #[cfg_attr(test, macro_use)]
 extern crate alloc;
 
@@ -96,13 +95,13 @@ mod fastcpy;
 mod fastcpy_unsafe;
 
 #[deprecated(
-    since = "0.11",
-    note = "This re-export is deprecated as it can be confused with the frame API, use block:: instead"
+    since = "0.11.0",
+    note = "This re-export is deprecated as it can be confused with the frame API and is not suitable for very large data, use block:: instead"
 )]
 pub use block::{compress, compress_into, compress_prepend_size};
 #[deprecated(
-    since = "0.11",
-    note = "This re-export is deprecated as it can be confused with the frame API, use block:: instead"
+    since = "0.11.0",
+    note = "This re-export is deprecated as it can be confused with the frame API and is not suitable for very large data, use block:: instead"
 )]
 pub use block::{decompress, decompress_into, decompress_size_prepended};
 
