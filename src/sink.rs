@@ -9,7 +9,7 @@ use crate::fastcpy::slice_copy;
 /// when the `safe-decode` feature is enabled, or `VecSink` otherwise.
 /// The argument `pos` defines the initial output position in the Sink.
 #[inline]
-#[cfg(any(feature = "frame"))]
+#[cfg(feature = "frame")]
 pub fn vec_sink_for_compression(
     vec: &mut Vec<u8>,
     offset: usize,
@@ -50,7 +50,7 @@ pub trait Sink {
     fn byte_at(&mut self, pos: usize) -> u8;
 
     /// Pushes a byte to the end of the Sink.
-    #[cfg(any(feature = "safe-encode"))]
+    #[cfg(feature = "safe-encode")]
     fn push(&mut self, byte: u8);
 
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
@@ -63,7 +63,7 @@ pub trait Sink {
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
     unsafe fn set_pos(&mut self, new_pos: usize);
 
-    #[cfg(any(feature = "safe-decode"))]
+    #[cfg(feature = "safe-decode")]
     fn extend_with_fill(&mut self, byte: u8, len: usize);
 
     /// Extends the Sink with `data`.
@@ -126,7 +126,7 @@ impl<'a> Sink for SliceSink<'a> {
 
     /// Pushes a byte to the end of the Sink.
     #[inline]
-    #[cfg(any(feature = "safe-encode"))]
+    #[cfg(feature = "safe-encode")]
     fn push(&mut self, byte: u8) {
         self.output[self.pos] = byte;
         self.pos += 1;
@@ -155,7 +155,7 @@ impl<'a> Sink for SliceSink<'a> {
     }
 
     #[inline]
-    #[cfg(any(feature = "safe-decode"))]
+    #[cfg(feature = "safe-decode")]
     fn extend_with_fill(&mut self, byte: u8, len: usize) {
         self.output[self.pos..self.pos + len].fill(byte);
         self.pos += len;
@@ -245,7 +245,7 @@ impl Sink for PtrSink {
 
     /// Pushes a byte to the end of the Sink.
     #[inline]
-    #[cfg(any(feature = "safe-encode"))]
+    #[cfg(feature = "safe-encode")]
     fn push(&mut self, byte: u8) {
         unsafe {
             self.pos_mut_ptr().write(byte);
@@ -276,7 +276,7 @@ impl Sink for PtrSink {
     }
 
     #[inline]
-    #[cfg(any(feature = "safe-decode"))]
+    #[cfg(feature = "safe-decode")]
     fn extend_with_fill(&mut self, _byte: u8, _len: usize) {
         unreachable!();
     }
