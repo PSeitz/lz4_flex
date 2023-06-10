@@ -90,12 +90,9 @@ impl HashTable for HashTable4KU16 {
 }
 
 #[derive(Debug)]
-#[repr(align(64))]
-#[cfg(feature = "frame")]
 pub struct HashTable4K {
     dict: Box<[u32; HASHTABLE_SIZE_4K]>,
 }
-#[cfg(feature = "frame")]
 impl HashTable4K {
     #[inline]
     pub fn new() -> Self {
@@ -106,15 +103,14 @@ impl HashTable4K {
         Self { dict }
     }
 
-    #[cfg(feature = "frame")]
     #[cold]
+    #[allow(dead_code)]
     pub fn reposition(&mut self, offset: u32) {
         for i in self.dict.iter_mut() {
             *i = i.saturating_sub(offset);
         }
     }
 }
-#[cfg(feature = "frame")]
 impl HashTable for HashTable4K {
     #[inline]
     fn get_at(&self, hash: usize) -> usize {
@@ -134,10 +130,10 @@ const HASHTABLE_SIZE_8K: usize = 8 * 1024;
 const HASH_TABLE_BIT_SHIFT_8K: usize = 3;
 
 #[derive(Debug)]
-#[repr(align(64))]
 pub struct HashTable8K {
     dict: Box<[u32; HASHTABLE_SIZE_8K]>,
 }
+#[allow(dead_code)]
 impl HashTable8K {
     #[inline]
     pub fn new() -> Self {

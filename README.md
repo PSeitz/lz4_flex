@@ -14,20 +14,20 @@ AMD Ryzen 7 5900HX, rustc 1.69.0 (84c898d65 2023-04-16), Manjaro, CPU Boost Disa
 66Kb JSON
 |    Compressor        | Compression | Decompression | Ratio		 |
 |----------------------|-------------|---------------|---------------|
-| lz4_flex unsafe w. unchecked_decode  | 1638 MiB/s   | 5973 MiB/s    | 0.2284   	 |
-| lz4_flex unsafe | 1638 MiB/s   | 5512 MiB/s    | 0.2284   	 |
-| lz4_flex safe        | 1583 MiB/s   | 4540 MiB/s    | 0.2284   	 |
-| lzzz (lz4 1.9.3)     | 1622 MiB/s   | 5313 MiB/s    | 0.2283   	 |
+| lz4_flex unsafe w. unchecked_decode  | 1615 MiB/s   | 5973 MiB/s    | 0.2284   	 |
+| lz4_flex unsafe | 1615 MiB/s   | 5512 MiB/s    | 0.2284   	 |
+| lz4_flex safe        | 1272 MiB/s   | 4540 MiB/s    | 0.2284   	 |
+| lzzz (lz4 1.9.3)     | 1469 MiB/s   | 5313 MiB/s    | 0.2283   	 |
 | lz4_fear             | 662 MiB/s   | 939 MiB/s     | 0.2283	     |
 | snap                 | 1452 MiB/s   | 1649 MiB/s     | 0.2242      |
 
 10 Mb dickens
 |    Compressor        | Compression | Decompression | Ratio		 |
 |----------------------|-------------|---------------|---------------|
-| lz4_flex unsafe w. unchecked_decode       | 338 MiB/s   | 3168 MiB/s    |  0.5873  	 |
-| lz4_flex unsafe      | 338 MiB/s   | 2734 MiB/s    |  0.5873  	 |
-| lz4_flex safe        | 268 MiB/s   | 2338 MiB/s    | 0.5873 |
-| lzzz (lz4 1.9.3)     | 357 MiB/s | 2759 MiB/s    | 0.6372 |
+| lz4_flex unsafe w. unchecked_decode       | 347 MiB/s   | 3168 MiB/s    |  0.6372  	 |
+| lz4_flex unsafe      | 347 MiB/s   | 2734 MiB/s    |  0.6372  	 |
+| lz4_flex safe        | 259 MiB/s   | 2338 MiB/s    | 0.6372 |
+| lzzz (lz4 1.9.3)     | 324 MiB/s | 2759 MiB/s    | 0.6372 |
 | lz4_fear             | 201 MiB/s   | 370 MiB/s     | 0.6372 |
 | snap                 | 286 MiB/s   | 679 MiB/s     | 0.6276 |
 
