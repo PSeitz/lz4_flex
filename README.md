@@ -14,8 +14,8 @@ AMD Ryzen 7 5900HX, rustc 1.69.0 (84c898d65 2023-04-16), Manjaro, CPU Boost Disa
 66Kb JSON
 |    Compressor        | Compression | Decompression | Ratio		 |
 |----------------------|-------------|---------------|---------------|
-| lz4_flex unsafe      | 1638 MiB/s   | 5973 MiB/s    | 0.2284   	 |
-| lz4_flex unsafe w. checked_decode      | 1638 MiB/s   | 5512 MiB/s    | 0.2284   	 |
+| lz4_flex unsafe w. unchecked_decode  | 1638 MiB/s   | 5973 MiB/s    | 0.2284   	 |
+| lz4_flex unsafe | 1638 MiB/s   | 5512 MiB/s    | 0.2284   	 |
 | lz4_flex safe        | 1583 MiB/s   | 4540 MiB/s    | 0.2284   	 |
 | lzzz (lz4 1.9.3)     | 1622 MiB/s   | 5313 MiB/s    | 0.2283   	 |
 | lz4_fear             | 662 MiB/s   | 939 MiB/s     | 0.2283	     |
@@ -24,8 +24,8 @@ AMD Ryzen 7 5900HX, rustc 1.69.0 (84c898d65 2023-04-16), Manjaro, CPU Boost Disa
 10 Mb dickens
 |    Compressor        | Compression | Decompression | Ratio		 |
 |----------------------|-------------|---------------|---------------|
-| lz4_flex unsafe      | 338 MiB/s   | 3168 MiB/s    |  0.5873  	 |
-| lz4_flex unsafe w. checked_decode      | 338 MiB/s   | 2734 MiB/s    |  0.5873  	 |
+| lz4_flex unsafe w. unchecked_decode       | 338 MiB/s   | 3168 MiB/s    |  0.5873  	 |
+| lz4_flex unsafe      | 338 MiB/s   | 2734 MiB/s    |  0.5873  	 |
 | lz4_flex safe        | 268 MiB/s   | 2338 MiB/s    | 0.5873 |
 | lzzz (lz4 1.9.3)     | 357 MiB/s | 2759 MiB/s    | 0.6372 |
 | lz4_fear             | 201 MiB/s   | 370 MiB/s     | 0.6372 |
@@ -54,13 +54,22 @@ Performance:
 lz4_flex = { version = "0.10", default-features = false }
 ```
 
-If you know your data is valid and not broken or corrupted, you can use `unchecked-decode` feature-flag to get a little bit more performance.
+If you know guaranteed your data is valid and not broken or corrupted, you can use `unchecked-decode` feature-flag to get a little bit more performance during decompression.
+Ususally you don't want this, use case may be:
+- Compression/Decompression happens in memory.
+- You run sandboxed so out of bounds reads/writes are not a problem.
+- You data is checked against a checksum.
 ```
 lz4_flex = { version = "0.10", default-features = false, features = ["unchecked-decode"] }
 ```
 
+
+### Block Format
+The block format is only valid for smaller data chunks as as block is de/compressed in memory.
+For larger data use the frame format, which consists of multiple blocks.
+
 ```rust
-use lz4_flex::{compress_prepend_size, decompress_size_prepended};
+use lz4_flex::block::{compress_prepend_size, decompress_size_prepended};
 
 fn main(){
     let input: &[u8] = b"Hello people, what's up?";
@@ -108,7 +117,7 @@ Tested on AMD Ryzen 7 5900HX, rustc 1.69.0 (84c898d65 2023-04-16), Manjaro, CPU 
 `MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-disable-stacked-borrows" cargo +nightly miri test --no-default-features --features frame`
 
 ## Fuzzer
-This fuzz target generates corrupted data for the decompressor. Make sure to switch to the checked_decode version in `fuzz/Cargo.toml` before testing this.
+This fuzz target generates corrupted data for the decompressor. 
 `cargo +nightly fuzz run fuzz_decomp_corrupt_block` and `cargo +nightly fuzz run fuzz_decomp_corrupt_frame`
 
 This fuzz target asserts that a compression and decompression rountrip returns the original input.
