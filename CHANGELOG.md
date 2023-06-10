@@ -5,8 +5,28 @@
 
 - Docs: add decompress block example
 
+### Fixes
+- Handle empty input in Frame Format [#120](https://github.com/PSeitz/lz4_flex/pull/120)
+```
+Empty input was ignored previously and didn't write anything. Now an empty Frame is written. This improves compatibility with the reference implementation and some corner cases.
+```
+
+- Fix: Small dict leads to panic [#133](https://github.com/PSeitz/lz4_flex/pull/133)
+```
+compress_into_with_dict panicked when the dict passed was smaller than 4 bytes. A match has the minimum length of 4 bytes, smaller dicts will be ignored now.
+```
+
 ### Features
 
+- [**breaking**] invert checked-decode to unchecked-decode [#134](https://github.com/PSeitz/lz4_flex/pull/134)
+```
+invert `checked-decode` feature flag to `unchecked-decode`
+Previously setting `default-features=false` removed the bounds checks from the
+`checked-decode` feature flag. `unchecked-decode` inverts this, so it will needs to be
+deliberately deactivated.
+
+To migrate, just remove the `checked-decode` feature flag.
+```
 - Allow to pass buffer larger than size [#78](https://github.com/PSeitz/lz4_flex/pull/78)
 ```
 This removes an unnecessary check in the decompression, when the passed buffer is too big.
@@ -29,10 +49,6 @@ This adds in fluent API style construction for FrameInfo. Now you can do
 let info = FrameInfo::new()
     .block_size(BlockSize::Max1MB)
     .content_checksum(true);
-```
-- Handle empty input [#120](https://github.com/PSeitz/lz4_flex/pull/120)
-```
-Empty input was ignored previously and didn't write anything. Now an empty Frame is written. This improves compatibility with the reference implementation and some corner cases.
 ```
 
 ### Performance

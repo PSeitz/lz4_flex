@@ -133,3 +133,12 @@ This fuzz target asserts compression with cpp and decompression with lz4_flex re
 ## TODO
 - High compression
 
+## Migrate from v0.10 to v0.11
+0.11 inverts `checked-decode` feature flag to `unchecked-decode`.
+Previously setting `default-features=false` removed the bounds checks from the
+`checked-decode` feature flag. `unchecked-decode` inverts this, so it will needs to be
+deliberately deactivated.
+
+To migrate, just remove the `checked-decode` feature flag if you use it.
+
+
