@@ -259,7 +259,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
             && (input_ptr as usize) <= input_ptr_safe as usize
             && output_ptr < safe_output_ptr
         {
-            let literal_length = (token >> 4) as usize;
+            let literal_length = (token >> 4) as usize; // max value == 15
             let mut match_length = MINMATCH + (token & 0xF) as usize;
 
             // output_ptr <= safe_output_ptr should guarantee we have enough space in output

@@ -290,7 +290,7 @@ fn backtrack_match(
 ) {
     // Note: Even if iterator version of this loop has less branches inside the loop it has more
     // branches before the loop. That in practice seems to make it slower than the while version
-    // bellow. TODO: It should be possible remove all bounds checks, since we are walking
+    // below. TODO: It should be possible remove all bounds checks, since we are walking
     // backwards
     while *candidate > 0 && *cur > literal_start && input[*cur - 1] == source[*candidate - 1] {
         *cur -= 1;

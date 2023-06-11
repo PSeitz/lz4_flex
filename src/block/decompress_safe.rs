@@ -24,7 +24,7 @@ use alloc::vec::Vec;
 /// is encoded to _255 + 255 + 255 + 4 = 769_. The bytes after the first 4 is ignored, because
 /// 4 is the first non-0xFF byte.
 #[inline]
-fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, DecompressError> {
+fn read_integer(input: &[u8], input_pos: &mut u32) -> Result<u32, DecompressError> {
     // We start at zero and count upwards.
     let mut n: u32 = 0;
     // If this byte takes value 255 (the maximum value it can take), another byte is read
@@ -32,7 +32,7 @@ fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, DecompressEr
     loop {
         // We add the next byte until we get a byte which we add to the counting variable.
         let extra: u8 = *input
-            .get(*input_pos)
+            .get(*input_pos as usize)
             .ok_or(DecompressError::ExpectedAnotherByte)?;
         *input_pos += 1;
         n += extra as u32;
@@ -51,9 +51,9 @@ fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, DecompressEr
 
 /// Read a little-endian 16-bit integer from the input stream.
 #[inline]
-fn read_u16(input: &[u8], input_pos: &mut usize) -> Result<u16, DecompressError> {
+fn read_u16(input: &[u8], input_pos: &mut u32) -> Result<u16, DecompressError> {
     let dst = input
-        .get(*input_pos..*input_pos + 2)
+        .get(*input_pos as usize..*input_pos as usize + 2)
         .ok_or(DecompressError::ExpectedAnotherByte)?;
     *input_pos += 2;
     Ok(u16::from_le_bytes(dst.try_into().unwrap()))
@@ -83,18 +83,19 @@ fn does_token_fit(token: u8) -> bool {
 /// Decompress all bytes of `input` into `output`.
 ///
 /// Returns the number of bytes written (decompressed) into `output`.
-#[inline(always)] // (always) necessary to get the best performance in non LTO builds
+#[inline(never)] // (always) necessary to get the best performance in non LTO builds
 pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
     input: &[u8],
     output: &mut S,
     ext_dict: &[u8],
 ) -> Result<usize, DecompressError> {
-    let mut input_pos = 0;
+    let mut input_pos: u32 = 0; // u32 to tell compiler it can't overflow when input..input + X
     let initial_output_pos = output.pos();
 
     let safe_input_pos = input
         .len()
-        .saturating_sub(16 /* literal copy */ +  2 /* u16 match offset */);
+        .saturating_sub(16 /* literal copy */ +  2 /* u16 match offset */)
+        as u32;
     let mut safe_output_pos = output
         .capacity()
         .saturating_sub(16 /* literal copy */ + 18 /* match copy */);
@@ -114,7 +115,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
         // This token contains to 4-bit "fields", a higher and a lower, representing the literals'
         // length and the back reference's length, respectively.
         let token = *input
-            .get(input_pos)
+            .get(input_pos as usize)
             .ok_or(DecompressError::ExpectedAnotherByte)?;
         input_pos += 1;
 
@@ -126,22 +127,31 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
         // that doesn't work when the safe_output_pos is 0 due to saturated_sub. So we use
         // `<` instead of `<=`, which covers that case.
         if does_token_fit(token) && input_pos <= safe_input_pos && output.pos() < safe_output_pos {
-            let literal_length = (token >> 4) as usize;
+            let literal_length = (token >> 4) as usize; // Max value == 15
+            assert!(literal_length < 16);
+            let mut match_length = MINMATCH + (token & 0xF) as usize; // Max value == 19
 
             // casting to [u8;u16] doesn't seem to make a difference vs &[u8] (same assembly)
-            let input: &[u8; 16] = input[input_pos..input_pos + 16].try_into().unwrap();
+            // Bounds checks should be able to be removed because of the safe input pos check
+            let input: &[u8; 17] = input[input_pos as usize..input_pos as usize + 17]
+                .try_into()
+                .unwrap();
 
             // Copy the literal
             // The literal is at max 14 bytes, and the is_safe_distance check assures
             // that we are far away enough from the end so we can safely copy 16 bytes
             output.extend_from_slice_wild(input, literal_length);
-            input_pos += literal_length;
+            input_pos += literal_length as u32;
 
+            // The compiler should be able to remove the bounds checks, since the slice is 17
+            // bytes, and literal_length is at most 15.
+            assert!(input.len() > literal_length + 2);
+            let input: &[u8; 2] = input[literal_length..literal_length + 2]
+                .try_into()
+                .unwrap();
             // clone as we don't want to mutate
-            let offset = read_u16(input, &mut literal_length.clone())? as usize;
+            let offset = read_u16(input, &mut 0)? as usize;
             input_pos += 2;
-
-            let mut match_length = MINMATCH + (token & 0xF) as usize;
 
             if USE_DICT && offset > output.pos() {
                 let copied = copy_from_dict(output, ext_dict, offset, match_length)?;
@@ -153,7 +163,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
                 match_length -= copied;
             }
 
-            // In this branch we know that match_length is at most 18 (14 + MINMATCH).
+            // In this branch we know that match_length is at most 18 (14 + mut MINMATCH).
             // But the blocks can overlap, so make sure they are at least 18 bytes apart
             // to enable an optimized copy of 18 bytes.
             let (start, did_overflow) = output.pos().overflowing_sub(offset);
@@ -181,7 +191,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
                 literal_length += read_integer(input, &mut input_pos)? as usize;
             }
 
-            if literal_length > input.len() - input_pos {
+            if literal_length > input.len() - input_pos as usize {
                 return Err(DecompressError::LiteralOutOfBounds);
             }
             #[cfg(not(feature = "unchecked-decode"))]
@@ -191,13 +201,14 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
                     actual: output.capacity(),
                 });
             }
-            output.extend_from_slice(&input[input_pos..input_pos + literal_length]);
-            input_pos += literal_length;
+            output
+                .extend_from_slice(&input[input_pos as usize..input_pos as usize + literal_length]);
+            input_pos += literal_length as u32;
         }
 
         // If the input stream is emptied, we break out of the loop. This is only the case
         // in the end of the stream, since the block is intact otherwise.
-        if input_pos >= input.len() {
+        if input_pos as usize >= input.len() {
             break;
         }
 
