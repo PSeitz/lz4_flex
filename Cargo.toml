@@ -55,7 +55,7 @@ twox-hash = { version = "1.6.3", default-features = false, optional = true }
 
 [profile.bench]
 codegen-units = 1
-debug = true
+lto = true
 opt-level = 3
 
 [profile.release]
