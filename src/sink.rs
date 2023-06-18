@@ -188,10 +188,12 @@ impl<'a> Sink for SliceSink<'a> {
     #[cfg(feature = "safe-decode")]
     #[cfg_attr(nightly, optimize(size))] // to avoid loop unrolling
     fn extend_from_within_overlapping(&mut self, start: usize, num_bytes: usize) {
-        let offset = self.pos - start;
-        for i in start + offset..start + offset + num_bytes {
-            self.output[i] = self.output[i - offset];
-        }
+        for window in std::cell::Cell::from_mut(&mut self.output[start..self.pos + num_bytes])
+        .as_slice_of_cells()
+        .windows(self.pos - start + 1)
+    {
+        window.last().unwrap().set(window[0].get());
+    }
         self.pos += num_bytes;
     }
 }
