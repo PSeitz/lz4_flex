@@ -46,23 +46,22 @@ Compression and decompression uses no usafe via the default feature flags "safe-
 
 Safe:
 ```
-lz4_flex = { version = "0.10" }
+lz4_flex = { version = "0.11" }
 ```
 
 Performance:
 ```
-lz4_flex = { version = "0.10", default-features = false }
+lz4_flex = { version = "0.11", default-features = false }
 ```
 
 If you know guaranteed your data is valid and not broken or corrupted, you can use `unchecked-decode` feature-flag to get a little bit more performance during decompression.
 Ususally you don't want this, use case may be:
 - Compression/Decompression happens in memory.
-- You run sandboxed so out of bounds reads/writes are not a problem.
-- You data is checked against a checksum.
+- The compression runs sandboxed so out of bounds reads/writes are not a problem.
+- The data is checked against a checksum.
 ```
-lz4_flex = { version = "0.10", default-features = false, features = ["unchecked-decode"] }
+lz4_flex = { version = "0.11", default-features = false, features = ["unchecked-decode"] }
 ```
-
 
 ### Block Format
 The block format is only valid for smaller data chunks as as block is de/compressed in memory.
