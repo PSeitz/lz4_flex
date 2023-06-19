@@ -54,15 +54,6 @@ Performance:
 lz4_flex = { version = "0.11", default-features = false }
 ```
 
-If you know guaranteed your data is valid and not broken or corrupted, you can use `unchecked-decode` feature-flag to get a little bit more performance during decompression.
-Ususally you don't want this, use case may be:
-- Compression/Decompression happens in memory.
-- The compression runs sandboxed so out of bounds reads/writes are not a problem.
-- The data is checked against a checksum.
-```
-lz4_flex = { version = "0.11", default-features = false, features = ["unchecked-decode"] }
-```
-
 ### Block Format
 The block format is only valid for smaller data chunks as as block is de/compressed in memory.
 For larger data use the frame format, which consists of multiple blocks.
@@ -132,12 +123,7 @@ This fuzz target asserts compression with cpp and decompression with lz4_flex re
 ## TODO
 - High compression
 
-## Migrate from v0.10 to v0.11
-0.11 inverts `checked-decode` feature flag to `unchecked-decode`.
-Previously setting `default-features=false` removed the bounds checks from the
-`checked-decode` feature flag. `unchecked-decode` inverts this, so it will needs to be
-deliberately deactivated.
-
-To migrate, just remove the `checked-decode` feature flag if you use it.
+## Migrate from v0.10 to v0.11.1
+To migrate, just remove the `checked-decode` feature flag if you used it.
 
 
