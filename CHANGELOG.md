@@ -1,4 +1,12 @@
-0.11.0 (2023-06-03)
+
+0.11.1 (2023-06-19)
+==================
+
+- [**breaking**] remove `unchecked-decode`
+Remove `unchecked-decode` feature-flag, because of feature unification:
+https://doc.rust-lang.org/cargo/reference/features.html#feature-unification
+
+0.11.0 (2023-06-18)
 ==================
 
 ### Documentation
