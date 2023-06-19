@@ -8,7 +8,7 @@ homepage = "https://github.com/pseitz/lz4_flex"
 repository = "https://github.com/pseitz/lz4_flex"
 readme = "README.md"
 license = "MIT"
-version = "0.11.0"
+version = "0.11.1"
 include = ["src/*.rs", "src/frame/**/*", "src/block/**/*", "README.md"]
 
 [package.metadata.docs.rs]
@@ -44,7 +44,7 @@ git = "https://github.com/main--/rust-lz-fear"
 default = ["std", "safe-encode", "safe-decode", "frame"]
 safe-decode = []
 safe-encode = []
-unchecked-decode = [] # Removes some checks for additional performance. Only enable on trusted input!
+#unchecked-decode = [] # Removes some checks for additional performance. Only enable on trusted input!
 frame = ["std", "dep:twox-hash"]
 std = []
 # use nightly compiler features
