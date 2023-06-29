@@ -283,12 +283,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
             let offset = read_u16_ptr(&mut input_ptr) as usize;
 
             let output_len = unsafe { output_ptr.offset_from(output_base) as usize };
-            #[cfg(not(feature = "unchecked-decode"))]
-            {
-                if offset > output_len + ext_dict.len() {
-                    return Err(DecompressError::OffsetOutOfBounds);
-                }
-            }
+            let offset = offset.min(output_len + ext_dict.len());
 
             // Check if part of the match is in the external dict
             if USE_DICT && offset > output_len {

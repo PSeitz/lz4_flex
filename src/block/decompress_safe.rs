@@ -156,10 +156,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
             // In this branch we know that match_length is at most 18 (14 + MINMATCH).
             // But the blocks can overlap, so make sure they are at least 18 bytes apart
             // to enable an optimized copy of 18 bytes.
-            let (start, did_overflow) = output.pos().overflowing_sub(offset);
-            if did_overflow {
-                return Err(DecompressError::OffsetOutOfBounds);
-            }
+            let start = output.pos().saturating_sub(offset);
             if offset >= match_length {
                 output.extend_from_within(start, 18, match_length);
             } else {
