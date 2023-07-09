@@ -170,6 +170,10 @@ impl<R: io::Read> Decoder<R> {
     }
 
     fn read_block(&mut self) -> Result<usize, Error> {
+        if self.current_frame_info.is_none() && self.read_frame_info()? == 0 {
+            return Ok(0);
+        }
+
         debug_assert_eq!(self.dst_start, self.dst_end);
         let frame_info = self.current_frame_info.as_ref().unwrap();
 
@@ -322,25 +326,15 @@ impl<R: io::Read> Decoder<R> {
 
         Ok(self.dst_end - self.dst_start)
     }
-
-    fn read_more(&mut self) -> Result<usize, Error> {
-        if self.current_frame_info.is_none() && self.read_frame_info()? == 0 {
-            return Ok(0);
-        }
-        self.read_block()
-    }
 }
 
 impl<R: io::Read> Decoder<R> {
     /// Read the next block of decompressed data.
     pub fn next_block(&mut self) -> Result<&[u8], Error> {
-        if self.dst_start == self.dst_end {
-            self.read_more()?;
-        }
-        let end = self.dst_end;
+        self.read_block()?;
         let start = self.dst_start;
         self.dst_start = self.dst_end;
-        Ok(&self.dst[start..end])
+        Ok(&self.dst[start..self.dst_end])
     }
 }
 
