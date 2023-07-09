@@ -23,10 +23,12 @@ use std::{fmt, io};
 pub(crate) mod compress;
 #[cfg_attr(feature = "safe-decode", forbid(unsafe_code))]
 pub(crate) mod decompress;
+pub(crate) mod raw_decompress;
 pub(crate) mod header;
 
 pub use compress::{AutoFinishEncoder, FrameEncoder};
 pub use decompress::FrameDecoder;
+pub use raw_decompress::Decoder;
 pub use header::{BlockMode, BlockSize, FrameInfo};
 
 #[derive(Debug)]
