@@ -326,9 +326,7 @@ impl<R: io::Read> Decoder<R> {
 
         Ok(self.dst_end - self.dst_start)
     }
-}
 
-impl<R: io::Read> Decoder<R> {
     /// Read the next block of decompressed data.
     pub fn next_block(&mut self) -> Result<&[u8], Error> {
         self.read_block()?;
