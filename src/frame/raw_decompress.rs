@@ -89,24 +89,6 @@ impl<R: io::Read> Decoder<R> {
         }
     }
 
-    /// Gets a reference to the underlying reader in this decoder.
-    pub fn get_ref(&self) -> &R {
-        &self.r
-    }
-
-    /// Gets a mutable reference to the underlying reader in this decoder.
-    ///
-    /// Note that mutation of the stream may result in surprising results if
-    /// this decoder is continued to be used.
-    pub fn get_mut(&mut self) -> &mut R {
-        &mut self.r
-    }
-
-    /// Consumes the Decoder and returns the underlying reader.
-    pub fn into_inner(self) -> R {
-        self.r
-    }
-
     fn read_frame_info(&mut self) -> Result<usize, io::Error> {
         let mut buffer = [0u8; MAX_FRAME_INFO_SIZE];
 
