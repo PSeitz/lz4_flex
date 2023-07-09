@@ -169,7 +169,7 @@ impl<R: io::Read> Decoder<R> {
         Ok(())
     }
 
-    fn read_block(&mut self) -> io::Result<usize> {
+    fn read_block(&mut self) -> Result<usize, Error> {
         debug_assert_eq!(self.dst_start, self.dst_end);
         let frame_info = self.current_frame_info.as_ref().unwrap();
 
@@ -217,7 +217,7 @@ impl<R: io::Read> Decoder<R> {
                 if err.kind() == ErrorKind::UnexpectedEof {
                     return Ok(0);
                 } else {
-                    return Err(err);
+                    return Err(err.into());
                 }
             }
             BlockInfo::read(&buffer)?
@@ -226,7 +226,7 @@ impl<R: io::Read> Decoder<R> {
             BlockInfo::Uncompressed(len) => {
                 let len = len as usize;
                 if len > max_block_size {
-                    return Err(Error::BlockTooBig.into());
+                    return Err(Error::BlockTooBig);
                 }
                 // TODO: Attempt to avoid initialization of read buffer when
                 // https://github.com/rust-lang/rust/issues/42788 stabilizes
@@ -249,7 +249,7 @@ impl<R: io::Read> Decoder<R> {
             BlockInfo::Compressed(len) => {
                 let len = len as usize;
                 if len > max_block_size {
-                    return Err(Error::BlockTooBig.into());
+                    return Err(Error::BlockTooBig);
                 }
                 // TODO: Attempt to avoid initialization of read buffer when
                 // https://github.com/rust-lang/rust/issues/42788 stabilizes
@@ -299,15 +299,14 @@ impl<R: io::Read> Decoder<R> {
                         return Err(Error::ContentLengthError {
                             expected,
                             actual: self.content_len,
-                        }
-                        .into());
+                        });
                     }
                 }
                 if frame_info.content_checksum {
                     let expected_checksum = Self::read_checksum(&mut self.r)?;
                     let calc_checksum = self.content_hasher.finish() as u32;
                     if calc_checksum != expected_checksum {
-                        return Err(Error::ContentChecksumError.into());
+                        return Err(Error::ContentChecksumError);
                     }
                 }
                 self.current_frame_info = None;
@@ -324,7 +323,7 @@ impl<R: io::Read> Decoder<R> {
         Ok(self.dst_end - self.dst_start)
     }
 
-    fn read_more(&mut self) -> io::Result<usize> {
+    fn read_more(&mut self) -> Result<usize, Error> {
         if self.current_frame_info.is_none() && self.read_frame_info()? == 0 {
             return Ok(0);
         }
@@ -334,7 +333,7 @@ impl<R: io::Read> Decoder<R> {
 
 impl<R: io::Read> Decoder<R> {
     /// Read the next block of decompressed data.
-    pub fn next_block(&mut self) -> io::Result<&[u8]> {
+    pub fn next_block(&mut self) -> Result<&[u8], Error> {
         if self.dst_start == self.dst_end {
             self.read_more()?;
         }
