@@ -1,10 +1,5 @@
-use std::{
-    convert::TryInto,
-    fmt,
-    hash::Hasher,
-    io::{self, ErrorKind},
-    mem::size_of,
-};
+use alloc::collections::VecDeque;
+use std::{convert::TryInto, hash::Hasher, io, mem::size_of};
 use twox_hash::XxHash32;
 
 use super::header::{
@@ -46,9 +41,10 @@ use crate::{
 ///     }
 /// }
 /// ```
-pub struct Decoder<R: io::Read> {
-    /// The underlying reader.
-    r: R,
+#[derive(Debug, Default)]
+pub struct Decoder {
+    /// The bytes we have been given so far
+    raw: VecDeque<u8>,
     /// The FrameInfo of the frame currently being decoded.
     /// It starts as `None` and is filled with the FrameInfo is read from the input.
     /// It's reset to `None` once the frame EndMarker is read from the input.
@@ -72,56 +68,54 @@ pub struct Decoder<R: io::Read> {
     dst_end: usize,
 }
 
-impl<R: io::Read> Decoder<R> {
+impl Decoder {
     /// Creates a new Decoder for the specified reader.
-    pub fn new(rdr: R) -> Decoder<R> {
-        Decoder {
-            r: rdr,
-            src: Default::default(),
-            dst: Default::default(),
-            ext_dict_offset: 0,
-            ext_dict_len: 0,
-            dst_start: 0,
-            dst_end: 0,
-            current_frame_info: None,
-            content_hasher: XxHash32::with_seed(0),
-            content_len: 0,
-        }
+    pub fn new() -> Decoder {
+        Decoder::default()
     }
 
-    fn read_frame_info(&mut self) -> Result<usize, io::Error> {
+    /// Provide compressed data
+    pub fn push(&mut self, bytes: &[u8]) {
+        self.raw.extend(bytes);
+    }
+    fn read_exact(raw: &mut VecDeque<u8>, buffer: &mut [u8]) -> Result<(), Error> {
+        if raw.len() < buffer.len() {
+            return Err(Error::NeedMoreInput(buffer.len() - raw.len()));
+        }
+        for o in buffer.iter_mut() {
+            *o = raw.pop_front().unwrap();
+        }
+        Ok(())
+    }
+
+    fn read_frame_info(&mut self) -> Result<usize, Error> {
         let mut buffer = [0u8; MAX_FRAME_INFO_SIZE];
 
-        match self.r.read(&mut buffer[..MAGIC_NUMBER_SIZE])? {
-            0 => return Ok(0),
-            MAGIC_NUMBER_SIZE => (),
-            read => self.r.read_exact(&mut buffer[read..MAGIC_NUMBER_SIZE])?,
+        if self.raw.is_empty() {
+            return Ok(0);
         }
+        Self::read_exact(&mut self.raw, &mut buffer[0..MAGIC_NUMBER_SIZE])?;
 
         if u32::from_le_bytes(buffer[0..MAGIC_NUMBER_SIZE].try_into().unwrap())
             != LZ4F_LEGACY_MAGIC_NUMBER
         {
-            match self
-                .r
-                .read(&mut buffer[MAGIC_NUMBER_SIZE..MIN_FRAME_INFO_SIZE])?
-            {
-                0 => return Ok(0),
-                MIN_FRAME_INFO_SIZE => (),
-                read => self
-                    .r
-                    .read_exact(&mut buffer[MAGIC_NUMBER_SIZE + read..MIN_FRAME_INFO_SIZE])?,
+            if self.raw.is_empty() {
+                return Ok(0);
             }
+            Self::read_exact(
+                &mut self.raw,
+                &mut buffer[MAGIC_NUMBER_SIZE..MIN_FRAME_INFO_SIZE],
+            )?;
         }
         let required = FrameInfo::read_size(&buffer[..MIN_FRAME_INFO_SIZE])?;
         if required != MIN_FRAME_INFO_SIZE && required != MAGIC_NUMBER_SIZE {
-            self.r
-                .read_exact(&mut buffer[MIN_FRAME_INFO_SIZE..required])?;
+            Self::read_exact(&mut self.raw, &mut buffer[MIN_FRAME_INFO_SIZE..required])?;
         }
 
         let frame_info = FrameInfo::read(&buffer[..required])?;
         if frame_info.dict_id.is_some() {
             // Unsupported right now so it must be None
-            return Err(Error::DictionaryNotSupported.into());
+            return Err(Error::DictionaryNotSupported);
         }
 
         let max_block_size = frame_info.block_size.get_size();
@@ -151,9 +145,9 @@ impl<R: io::Read> Decoder<R> {
     }
 
     #[inline]
-    fn read_checksum(r: &mut R) -> Result<u32, io::Error> {
+    fn read_checksum(&mut self) -> Result<u32, io::Error> {
         let mut checksum_buffer = [0u8; size_of::<u32>()];
-        r.read_exact(&mut checksum_buffer[..])?;
+        Self::read_exact(&mut self.raw, &mut checksum_buffer[..])?;
         let checksum = u32::from_le_bytes(checksum_buffer);
         Ok(checksum)
     }
@@ -175,7 +169,7 @@ impl<R: io::Read> Decoder<R> {
         }
 
         debug_assert_eq!(self.dst_start, self.dst_end);
-        let frame_info = self.current_frame_info.as_ref().unwrap();
+        let frame_info = self.current_frame_info.clone().unwrap();
 
         // Adjust dst buffer offsets to decompress the next block
         let max_block_size = frame_info.block_size.get_size();
@@ -217,11 +211,11 @@ impl<R: io::Read> Decoder<R> {
         // Read and decompress block
         let block_info = {
             let mut buffer = [0u8; 4];
-            if let Err(err) = self.r.read_exact(&mut buffer) {
-                if err.kind() == ErrorKind::UnexpectedEof {
+            if let Err(err) = Self::read_exact(&mut self.raw, &mut buffer) {
+                if let Error::NeedMoreInput(_) = err {
                     return Ok(0);
                 } else {
-                    return Err(err.into());
+                    return Err(err);
                 }
             }
             BlockInfo::read(&buffer)?
@@ -234,13 +228,12 @@ impl<R: io::Read> Decoder<R> {
                 }
                 // TODO: Attempt to avoid initialization of read buffer when
                 // https://github.com/rust-lang/rust/issues/42788 stabilizes
-                self.r.read_exact(vec_resize_and_get_mut(
-                    &mut self.dst,
-                    self.dst_start,
-                    self.dst_start + len,
-                ))?;
+                Self::read_exact(
+                    &mut self.raw,
+                    vec_resize_and_get_mut(&mut self.dst, self.dst_start, self.dst_start + len),
+                )?;
                 if frame_info.block_checksums {
-                    let expected_checksum = Self::read_checksum(&mut self.r)?;
+                    let expected_checksum = self.read_checksum()?;
                     Self::check_block_checksum(
                         &self.dst[self.dst_start..self.dst_start + len],
                         expected_checksum,
@@ -257,10 +250,9 @@ impl<R: io::Read> Decoder<R> {
                 }
                 // TODO: Attempt to avoid initialization of read buffer when
                 // https://github.com/rust-lang/rust/issues/42788 stabilizes
-                self.r
-                    .read_exact(vec_resize_and_get_mut(&mut self.src, 0, len))?;
+                Self::read_exact(&mut self.raw, vec_resize_and_get_mut(&mut self.src, 0, len))?;
                 if frame_info.block_checksums {
-                    let expected_checksum = Self::read_checksum(&mut self.r)?;
+                    let expected_checksum = self.read_checksum()?;
                     Self::check_block_checksum(&self.src[..len], expected_checksum)?;
                 }
 
@@ -307,7 +299,7 @@ impl<R: io::Read> Decoder<R> {
                     }
                 }
                 if frame_info.content_checksum {
-                    let expected_checksum = Self::read_checksum(&mut self.r)?;
+                    let expected_checksum = self.read_checksum()?;
                     let calc_checksum = self.content_hasher.finish() as u32;
                     if calc_checksum != expected_checksum {
                         return Err(Error::ContentChecksumError);
@@ -333,22 +325,6 @@ impl<R: io::Read> Decoder<R> {
         let start = self.dst_start;
         self.dst_start = self.dst_end;
         Ok(&self.dst[start..self.dst_end])
-    }
-}
-
-impl<R: fmt::Debug + io::Read> fmt::Debug for Decoder<R> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("FrameDecoder")
-            .field("r", &self.r)
-            .field("content_hasher", &self.content_hasher)
-            .field("content_len", &self.content_len)
-            .field("src", &"[...]")
-            .field("dst", &"[...]")
-            .field("dst_end", &self.dst_end)
-            .field("ext_dict_offset", &self.ext_dict_offset)
-            .field("ext_dict_len", &self.ext_dict_len)
-            .field("current_frame_info", &self.current_frame_info)
-            .finish()
     }
 }
 

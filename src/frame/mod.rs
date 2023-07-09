@@ -23,13 +23,13 @@ use std::{fmt, io};
 pub(crate) mod compress;
 #[cfg_attr(feature = "safe-decode", forbid(unsafe_code))]
 pub(crate) mod decompress;
-pub(crate) mod raw_decompress;
 pub(crate) mod header;
+pub(crate) mod raw_decompress;
 
 pub use compress::{AutoFinishEncoder, FrameEncoder};
 pub use decompress::FrameDecoder;
-pub use raw_decompress::Decoder;
 pub use header::{BlockMode, BlockSize, FrameInfo};
+pub use raw_decompress::Decoder;
 
 #[derive(Debug)]
 #[non_exhaustive]
@@ -71,6 +71,8 @@ pub enum Error {
         /// Actual content lenght.
         actual: u64,
     },
+    /// The raw decompressor needs to be provided more compressed bytes.
+    NeedMoreInput(usize),
 }
 
 impl From<Error> for io::Error {
@@ -80,6 +82,7 @@ impl From<Error> for io::Error {
             Error::CompressionError(_)
             | Error::DecompressionError(_)
             | Error::SkippableFrame(_)
+            | Error::NeedMoreInput(_)
             | Error::DictionaryNotSupported => io::Error::new(io::ErrorKind::Other, e),
             Error::WrongMagicNumber
             | Error::UnsupportedBlocksize(..)
