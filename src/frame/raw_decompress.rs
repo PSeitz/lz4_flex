@@ -12,34 +12,21 @@ use crate::{
     sink::{vec_sink_for_decompression, SliceSink},
 };
 
-/// A reader for decompressing the LZ4 frame format
-///
-/// This Decoder wraps any other reader that implements `io::Read`.
-/// Bytes read will be decompressed according to the [LZ4 frame format](
-/// https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md).
+/// A struct for decompressing the LZ4 frame format given pushed byte data
 ///
 /// # Example 1
 /// Deserializing json values out of a compressed file.
 ///
 /// ```no_run
-/// let compressed_input = std::fs::File::open("datafile").unwrap();
-/// let mut decompressed_input = lz4_flex::frame::FrameDecoder::new(compressed_input);
-/// let json: serde_json::Value = serde_json::from_reader(decompressed_input).unwrap();
-/// ```
-///
-/// # Example
-/// Deserializing multiple json values out of a compressed file
-///
-/// ```no_run
-/// let compressed_input = std::fs::File::open("datafile").unwrap();
-/// let mut decompressed_input = lz4_flex::frame::FrameDecoder::new(compressed_input);
-/// loop {
-///     match serde_json::from_reader::<_, serde_json::Value>(&mut decompressed_input) {
-///         Ok(json) => { println!("json {:?}", json); }
-///         Err(e) if e.is_eof() => break,
-///         Err(e) => panic!("{}", e),
-///     }
+/// let mut decoder = lz4_flex::frame::Decoder::new();
+/// let compressed_input: Vec<u8> = std::fs::read("datafile").unwrap();
+/// decoder.push(&compressed_input);
+/// let mut decompressed = Vec::new();
+/// while let Ok(v) = decoder.next_block() {
+///     decompressed.extend(v);
 /// }
+/// let json: serde_json::Value = serde_json::from_slice(&decompressed).unwrap();
+/// ```\
 /// ```
 #[derive(Debug, Default)]
 pub struct Decoder {
@@ -74,7 +61,7 @@ impl Decoder {
         Decoder::default()
     }
 
-    /// Provide compressed data
+    /// Provide compressed data to decompress
     pub fn push(&mut self, bytes: &[u8]) {
         self.raw.extend(bytes);
     }
@@ -320,6 +307,10 @@ impl Decoder {
     }
 
     /// Read the next block of decompressed data.
+    /// 
+    /// When using this function, unless it is known that all data has already
+    /// been pushed, the user should check for an `Error::NeedMoreData` to see
+    /// if more data is needed.
     pub fn next_block(&mut self) -> Result<&[u8], Error> {
         self.read_block()?;
         let start = self.dst_start;
