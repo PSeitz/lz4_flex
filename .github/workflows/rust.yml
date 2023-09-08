@@ -47,3 +47,14 @@ jobs:
       run: for fuzz_test in `cargo fuzz list`; do cargo +nightly fuzz run $fuzz_test -- -max_total_time=30 || exit 1; done
     - name: Run fuzz tests (unsafe)
       run: for fuzz_test in `cargo fuzz list`; do cargo +nightly fuzz run $fuzz_test --no-default-features -- -max_total_time=30 || exit 1; done
+
+  semver:
+    name: semver
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Check semver
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          rust-toolchain: ${{ env.rust_stable }}
+          release-type: minor
