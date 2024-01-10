@@ -9,7 +9,7 @@ repository = "https://github.com/pseitz/lz4_flex"
 readme = "README.md"
 license = "MIT"
 version = "0.11.1"
-include = ["src/*.rs", "src/frame/**/*", "src/block/**/*", "README.md"]
+include = ["src/*.rs", "src/frame/**/*", "src/block/**/*", "README.md", "LICENSE"]
 
 [package.metadata.docs.rs]
 all-features = true
