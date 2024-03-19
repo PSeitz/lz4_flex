@@ -1,12 +1,13 @@
 //! The block decompression algorithm.
 
-use core::convert::TryInto;
-
 use crate::block::DecompressError;
 use crate::block::MINMATCH;
 use crate::sink::Sink;
 use crate::sink::SliceSink;
+
+#[allow(unused_imports)]
 use alloc::vec;
+#[allow(unused_imports)]
 use alloc::vec::Vec;
 
 /// Read an integer.

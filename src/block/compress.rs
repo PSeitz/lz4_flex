@@ -16,10 +16,9 @@ use crate::sink::Sink;
 use crate::sink::SliceSink;
 #[allow(unused_imports)]
 use alloc::vec;
-use alloc::vec::Vec;
 
-#[cfg(feature = "safe-encode")]
-use core::convert::TryInto;
+#[allow(unused_imports)]
+use alloc::vec::Vec;
 
 use super::hashtable::HashTable4K;
 use super::hashtable::HashTable4KU16;
