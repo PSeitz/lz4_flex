@@ -16,10 +16,10 @@ pub fn vec_sink_for_compression(
     pos: usize,
     required_capacity: usize,
 ) -> SliceSink {
-    return {
+    {
         vec.resize(offset + required_capacity, 0);
         SliceSink::new(&mut vec[offset..], pos)
-    };
+    }
 }
 
 /// Returns a Sink implementation appropriate for outputing up to `required_capacity`
@@ -35,10 +35,10 @@ pub fn vec_sink_for_decompression(
     pos: usize,
     required_capacity: usize,
 ) -> SliceSink {
-    return {
+    {
         vec.resize(offset + required_capacity, 0);
         SliceSink::new(&mut vec[offset..], pos)
-    };
+    }
 }
 
 pub trait Sink {
@@ -47,6 +47,7 @@ pub trait Sink {
     unsafe fn pos_mut_ptr(&mut self) -> *mut u8;
 
     /// read byte at position
+    #[allow(dead_code)]
     fn byte_at(&mut self, pos: usize) -> u8;
 
     /// Pushes a byte to the end of the Sink.

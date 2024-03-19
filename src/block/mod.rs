@@ -30,7 +30,6 @@ pub(crate) mod decompress;
 pub use compress::*;
 pub use decompress::*;
 
-use core::convert::TryInto;
 use core::fmt;
 
 pub(crate) const WINDOW_SIZE: usize = 64 * 1024;

@@ -1,5 +1,5 @@
+#[allow(unused_imports)]
 use alloc::boxed::Box;
-use core::convert::TryInto;
 
 /// The Hashtable trait used by the compression to store hashed bytes to their position.
 /// `val` can be maximum the size of the input in bytes.
@@ -36,6 +36,7 @@ fn hash5(sequence: usize) -> u32 {
 pub trait HashTable {
     fn get_at(&self, pos: usize) -> usize;
     fn put_at(&mut self, pos: usize, val: usize);
+    #[allow(dead_code)]
     fn clear(&mut self);
     #[inline]
     #[cfg(target_pointer_width = "64")]
