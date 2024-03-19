@@ -1,5 +1,4 @@
 use std::{
-    convert::TryInto,
     fmt,
     hash::Hasher,
     io::{self, BufRead, ErrorKind},
@@ -371,7 +370,7 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
         let mut written = 0;
         loop {
             match self.fill_buf() {
-                Ok(b) if b.is_empty() => return Ok(written),
+                Ok([]) => return Ok(written),
                 Ok(b) => {
                     let s = std::str::from_utf8(b).map_err(|_| {
                         io::Error::new(
@@ -394,7 +393,7 @@ impl<R: io::Read> io::Read for FrameDecoder<R> {
         let mut written = 0;
         loop {
             match self.fill_buf() {
-                Ok(b) if b.is_empty() => return Ok(written),
+                Ok([]) => return Ok(written),
                 Ok(b) => {
                     buf.extend_from_slice(b);
                     let len = b.len();

@@ -2,7 +2,6 @@ use twox_hash::XxHash32;
 
 use super::Error;
 use std::{
-    convert::TryInto,
     fmt::Debug,
     hash::Hasher,
     io,

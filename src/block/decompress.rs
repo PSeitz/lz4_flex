@@ -3,6 +3,7 @@ use crate::block::{DecompressError, MINMATCH};
 use crate::fastcpy_unsafe;
 use crate::sink::SliceSink;
 use crate::sink::{PtrSink, Sink};
+#[allow(unused_imports)]
 use alloc::vec::Vec;
 
 /// Copies data to output_ptr by self-referential copy from start and match_length
