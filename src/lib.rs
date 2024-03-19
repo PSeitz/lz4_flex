@@ -88,6 +88,8 @@ pub mod frame;
 
 #[allow(dead_code)]
 mod fastcpy;
+
+#[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
 #[allow(dead_code)]
 mod fastcpy_unsafe;
 
