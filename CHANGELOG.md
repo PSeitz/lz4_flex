@@ -1,3 +1,8 @@
+0.11.3 (2024-03-30)
+==================
+- Fix support for `--deny=unsafe_code` compilation [#152](https://github.com/PSeitz/lz4_flex/pull/152)
+- make `get_maximum_output_size` const [#153](https://github.com/PSeitz/lz4_flex/pull/153)
+
 0.11.2 (2024-01-11)
 ==================
 - Include license file in the published crate
