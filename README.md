@@ -55,7 +55,7 @@ lz4_flex = { version = "0.11", default-features = false }
 ```
 
 ### Block Format
-The block format is only valid for smaller data chunks as as block is de/compressed in memory.
+The block format is only valid for smaller data chunks as block is de/compressed in memory.
 For larger data use the frame format, which consists of multiple blocks.
 
 ```rust
