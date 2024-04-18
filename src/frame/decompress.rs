@@ -347,6 +347,12 @@ impl<R: io::Read> FrameDecoder<R> {
         }
         self.read_block()
     }
+
+    /// Returns the total number of uncompressed bytes read so far
+    pub fn total_out(&self) -> usize {
+        // TODO: confirm if self.dst_start or self.ext_dict_offset is the correct one here
+        self.dst_start
+    }
 }
 
 impl<R: io::Read> io::Read for FrameDecoder<R> {
