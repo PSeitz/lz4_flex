@@ -319,7 +319,6 @@ fn print_compression_ration(input: &'static [u8], name: &str) {
 // }
 
 #[cfg(test)]
-#[cfg(not(feature = "unchecked-decode"))]
 mod checked_decode {
     use super::*;
 
@@ -507,13 +506,6 @@ fn test_decomp(data: &[u8]) {
 
 #[test]
 fn bug_fuzz_7() {
-    #[cfg(not(feature = "safe-decode"))]
-    {
-        #[cfg(feature = "unchecked-decode")]
-        {
-            return;
-        }
-    }
     let data = &[
         39, 0, 0, 0, 0, 0, 0, 237, 0, 0, 0, 0, 0, 0, 16, 0, 0, 4, 0, 0, 0, 39, 32, 0, 2, 0, 162, 5,
         36, 0, 0, 0, 0, 7, 0,
@@ -523,7 +515,7 @@ fn bug_fuzz_7() {
 }
 
 // TODO maybe also not panic for default feature flags
-#[cfg(all(not(feature = "safe-decode"), feature = "unchecked-decode"))]
+#[cfg(not(feature = "safe-decode"))]
 #[test]
 fn bug_fuzz_8() {
     let data = &[
