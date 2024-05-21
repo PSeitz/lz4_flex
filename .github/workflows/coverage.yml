@@ -12,16 +12,16 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install Rust
-        run: rustup toolchain install stable
+        run: rustup toolchain install nightly
       - name: Install llvm
         run: rustup component add llvm-tools-preview --toolchain stable-x86_64-unknown-linux-gnu
       - uses: taiki-e/install-action@cargo-llvm-cov
       - name: Generate code coverage normal run
-        run: cargo llvm-cov --workspace --lcov --output-path lcov1.info
+        run: cargo +nightly llvm-cov --workspace --lcov --output-path lcov1.info
       - name: Generate code coverage all-features
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov2.info
+        run: cargo +nightly llvm-cov --all-features --workspace --lcov --output-path lcov2.info
       - name: Generate code coverage unsafe w. checked-decode
-        run: cargo llvm-cov --no-default-features --features frame --workspace --lcov --output-path lcov3.info
+        run: cargo +nightly llvm-cov --no-default-features --features frame --workspace --lcov --output-path lcov3.info
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1
         with:
