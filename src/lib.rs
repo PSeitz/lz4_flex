@@ -72,7 +72,7 @@
 #![deny(missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![cfg_attr(nightly, feature(optimize_attribute))]
+#![cfg_attr(feature = "nightly", feature(optimize_attribute))]
 
 #[cfg_attr(test, macro_use)]
 extern crate alloc;

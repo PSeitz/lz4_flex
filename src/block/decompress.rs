@@ -53,7 +53,7 @@ fn wild_copy_from_src_16(mut source: *const u8, mut dst_ptr: *mut u8, num_items:
 
 /// Copy function, if the data start + match_length overlaps into output_ptr
 #[inline]
-#[cfg_attr(nightly, optimize(size))] // to avoid loop unrolling
+#[cfg_attr(feature = "nightly", optimize(size))] // to avoid loop unrolling
 unsafe fn duplicate_overlapping(
     output_ptr: &mut *mut u8,
     mut start: *const u8,
@@ -97,7 +97,7 @@ unsafe fn copy_from_dict(
     // If we're here we know offset > output pos, so we have at least 1 byte to copy from dict
     debug_assert!(output_ptr.offset_from(output_base) >= 0);
     debug_assert!(offset > output_ptr.offset_from(output_base) as usize);
-    // If unchecked-decode is not disabled we also know that the offset falls within ext_dict
+    // offset falls within ext_dict
     debug_assert!(ext_dict.len() + output_ptr.offset_from(output_base) as usize >= offset);
 
     let dict_offset = ext_dict.len() + output_ptr.offset_from(output_base) as usize - offset;
@@ -139,7 +139,7 @@ fn read_integer_ptr(
     loop {
         // We add the next byte until we get a byte which we add to the counting variable.
 
-        #[cfg(not(feature = "unchecked-decode"))]
+        // could be skipped with unchecked-decode
         {
             if *input_ptr >= _input_ptr_end {
                 return Err(DecompressError::ExpectedAnotherByte);
@@ -337,7 +337,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
                 literal_length += read_integer_ptr(&mut input_ptr, input_ptr_end)? as usize;
             }
 
-            #[cfg(not(feature = "unchecked-decode"))]
+            // could be skipped with unchecked-decode
             {
                 // Check if literal is out of bounds for the input, and if there is enough space on
                 // the output
@@ -366,7 +366,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
         }
 
         // Read duplicate section
-        #[cfg(not(feature = "unchecked-decode"))]
+        // could be skipped with unchecked-decode
         {
             if (input_ptr_end as usize) - (input_ptr as usize) < 2 {
                 return Err(DecompressError::ExpectedAnotherByte);
@@ -392,8 +392,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
         // by simply referencing the other location.
         let output_len = unsafe { output_ptr.offset_from(output_base) as usize };
 
-        // We'll do a bounds check except unchecked-decode is enabled.
-        #[cfg(not(feature = "unchecked-decode"))]
+        // could be skipped with unchecked-decode
         {
             if offset > output_len + ext_dict.len() {
                 return Err(DecompressError::OffsetOutOfBounds);
@@ -411,7 +410,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
                 copy_from_dict(output_base, &mut output_ptr, ext_dict, offset, match_length)
             };
             if copied == match_length {
-                #[cfg(not(feature = "unchecked-decode"))]
+                // could be skipped with unchecked-decode
                 {
                     if input_ptr >= input_ptr_end {
                         return Err(DecompressError::ExpectedAnotherByte);
@@ -434,7 +433,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
         unsafe {
             duplicate(&mut output_ptr, output_end, start_ptr, match_length);
         }
-        #[cfg(not(feature = "unchecked-decode"))]
+        // could be skipped with unchecked-decode
         {
             if input_ptr >= input_ptr_end {
                 return Err(DecompressError::ExpectedAnotherByte);
@@ -536,7 +535,6 @@ mod test {
     }
 
     // this error test is only valid with checked-decode.
-    #[cfg(not(feature = "unchecked-decode"))]
     #[test]
     fn offset_oob() {
         decompress(&[0x10, b'a', 2, 0], 4).unwrap_err();
