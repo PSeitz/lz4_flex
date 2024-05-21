@@ -15,11 +15,6 @@ include = ["src/*.rs", "src/frame/**/*", "src/block/**/*", "README.md", "LICENSE
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
-[[bench]]
-harness = false
-name = "crit_bench"
-path = "benches/crit_bench.rs"
-
 [dev-dependencies]
 criterion = { git = "https://github.com/PSeitz/criterion.rs/", rev = "cf60ffc"}
 lzzzz = "1.0.4"
@@ -28,6 +23,8 @@ more-asserts = "0.3.1"
 snap = "1.1.0"
 serde_json = "1.0.91"
 proptest = "1.0.0"
+binggan = { version = "0.8"}
+jemallocator = "0.5.4"
 
 [dev-dependencies.lz-fear]
 git = "https://github.com/main--/rust-lz-fear"
@@ -63,6 +60,16 @@ codegen-units = 1
 #debug = true
 opt-level = 3
 panic = "unwind"
+
+[[bench]]
+harness = false
+name = "binggan_bench"
+path = "benches/binggan_bench.rs"
+
+#[[bench]]
+#harness = false
+#name = "crit_bench"
+#path = "benches/crit_bench.rs"
 
 # [[bench]]
 # harness = false

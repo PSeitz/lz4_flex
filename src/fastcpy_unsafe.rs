@@ -116,6 +116,7 @@ fn double_copy_trick<const SIZE: usize>(src: *const u8, dst: *mut u8, len: usize
 #[cfg(test)]
 mod tests {
     use super::slice_copy;
+    use alloc::vec::Vec;
     use proptest::prelude::*;
     proptest! {
         #[test]
