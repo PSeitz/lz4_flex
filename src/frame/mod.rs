@@ -66,7 +66,7 @@ pub enum Error {
     ContentLengthError {
         /// Expected content length.
         expected: u64,
-        /// Actual content lenght.
+        /// Actual content length.
         actual: u64,
     },
 }
