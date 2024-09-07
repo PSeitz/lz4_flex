@@ -627,7 +627,7 @@ fn init_dict<T: HashTable>(dict: &mut T, dict_data: &mut &[u8]) {
 /// Can be used to preallocate capacity on the output vector
 #[inline]
 pub const fn get_maximum_output_size(input_len: usize) -> usize {
-    16 + 4 + (input_len * 110 / 100) as usize
+    16 + 4 + (input_len * 110 / 100)
 }
 
 /// Compress all bytes of `input` into `output`.

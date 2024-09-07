@@ -321,9 +321,7 @@ mod tests {
     fn test_sink_slice() {
         use crate::sink::Sink;
         use crate::sink::SliceSink;
-        use alloc::vec::Vec;
-        let mut data = Vec::new();
-        data.resize(5, 0);
+        let mut data = vec![0; 5];
         let sink = SliceSink::new(&mut data, 1);
         assert_eq!(sink.pos(), 1);
         assert_eq!(sink.capacity(), 5);
