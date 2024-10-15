@@ -1,13 +1,11 @@
 #![allow(dead_code)]
-extern crate criterion;
 
 #[allow(unused)]
 use std::io::{Read, Write};
 
-use binggan::black_box;
-use binggan::BenchRunner;
-use binggan::InputGroup;
-use binggan::PeakMemAlloc;
+use binggan::plugins::*;
+use binggan::*;
+
 use lz_fear::raw::compress2;
 use lz_fear::raw::decompress_raw;
 use lz_fear::raw::U16Table;
@@ -52,26 +50,36 @@ fn main() {
 #[cfg(feature = "frame")]
 fn frame_decompress(data_sets: &[(String, Vec<u8>)]) {
     let mut runner = BenchRunner::with_name("frame_decompress");
-    runner.set_alloc(&GLOBAL);
+    runner
+        .add_plugin(PerfCounterPlugin::default())
+        .add_plugin(PeakMemAllocPlugin::new(&GLOBAL));
     for (name, data_set) in data_sets {
-        let compressed_independent = lz4_cpp_frame_compress(&data_set, true).unwrap();
-        let compressed_linked = lz4_cpp_frame_compress(&data_set, false).unwrap();
+        let compressed_independent = lz4_cpp_frame_compress(data_set, true).unwrap();
+        let compressed_linked = lz4_cpp_frame_compress(data_set, false).unwrap();
+        let comp_snap = compress_snap_frame(data_set);
         let mut group = runner.new_group();
         group.set_name(name);
         group.set_input_size(data_set.len());
-        //runner.enable_perf();
 
         group.register_with_input("lz4 flex independent", &compressed_independent, move |i| {
             black_box(lz4_flex_frame_decompress(i).unwrap());
+            Some(())
         });
         group.register_with_input("lz4 c90 independent", &compressed_independent, move |i| {
             black_box(lz4_cpp_frame_decompress(i).unwrap());
+            Some(())
         });
         group.register_with_input("lz4 flex linked", &compressed_linked, move |i| {
             black_box(lz4_flex_frame_decompress(i).unwrap());
+            Some(())
         });
         group.register_with_input("lz4 c90 linked", &compressed_linked, move |i| {
             black_box(lz4_cpp_frame_decompress(i).unwrap());
+            Some(())
+        });
+        group.register_with_input("snap", &comp_snap, move |i| {
+            black_box(decompress_snap_frame(i));
+            Some(())
         });
 
         group.run();
@@ -79,46 +87,58 @@ fn frame_decompress(data_sets: &[(String, Vec<u8>)]) {
 }
 
 #[cfg(feature = "frame")]
-fn frame_compress(mut runner: InputGroup<Vec<u8>>) {
-    runner.set_name("frame_compress".to_string());
-    runner.set_alloc(&GLOBAL);
+fn frame_compress(mut runner: InputGroup<Vec<u8>, usize>) {
+    runner.set_name("frame_compress");
+    runner.add_plugin(PeakMemAllocPlugin::new(&GLOBAL));
 
     runner.throughput(|data| data.len());
     runner.register("lz4 flex independent", move |i| {
         let mut frame_info = lz4_flex::frame::FrameInfo::new();
         frame_info.block_size = lz4_flex::frame::BlockSize::Max256KB;
         frame_info.block_mode = lz4_flex::frame::BlockMode::Independent;
-        black_box(lz4_flex_frame_compress_with(frame_info, i).unwrap());
+        let out = black_box(lz4_flex_frame_compress_with(frame_info, i).unwrap());
+        Some(out.len())
     });
     runner.register("lz4 c90 indep", move |i| {
-        black_box(lz4_cpp_frame_compress(i, true).unwrap());
+        let out = black_box(lz4_cpp_frame_compress(i, true).unwrap());
+        Some(out.len())
     });
     runner.register("lz4 flex linked", move |i| {
         let mut frame_info = lz4_flex::frame::FrameInfo::new();
         frame_info.block_size = lz4_flex::frame::BlockSize::Max256KB;
         frame_info.block_mode = lz4_flex::frame::BlockMode::Linked;
-        black_box(lz4_flex_frame_compress_with(frame_info, i).unwrap());
+        let out = black_box(lz4_flex_frame_compress_with(frame_info, i).unwrap());
+        Some(out.len())
     });
     runner.register("lz4 c90 linked", move |i| {
-        black_box(lz4_cpp_frame_compress(i, false).unwrap());
+        let out = black_box(lz4_cpp_frame_compress(i, false).unwrap());
+        Some(out.len())
+    });
+    runner.register("snap", move |i| {
+        let out = compress_snap_frame(i);
+        Some(out.len())
     });
 
     runner.run();
 }
 
-fn block_compress(mut runner: InputGroup<Vec<u8>>) {
-    runner.set_name("block_compress".to_string());
-    runner.set_alloc(&GLOBAL); // Set the peak mem allocator. This will enable peak memory reporting.
-                               //runner.enable_perf();
+fn block_compress(mut runner: InputGroup<Vec<u8>, usize>) {
+    runner.set_name("block_compress");
+    // Set the peak mem allocator. This will enable peak memory reporting.
+    runner.add_plugin(PeakMemAllocPlugin::new(&GLOBAL));
+
     runner.throughput(|data| data.len());
     runner.register("lz4 flex", move |i| {
-        black_box(lz4_flex::compress(i));
+        let out = black_box(lz4_flex::compress(i));
+        Some(out.len())
     });
     runner.register("lz4 c90", move |i| {
-        black_box(lz4_cpp_block_compress(i).unwrap());
+        let out = black_box(lz4_cpp_block_compress(i).unwrap());
+        Some(out.len())
     });
     runner.register("snap", move |i| {
-        black_box(compress_snap(i));
+        let out = black_box(compress_snap(i));
+        Some(out.len())
     });
 
     runner.run();
@@ -126,7 +146,8 @@ fn block_compress(mut runner: InputGroup<Vec<u8>>) {
 
 fn block_decompress() {
     let mut runner = BenchRunner::with_name("block_decompress");
-    runner.set_alloc(&GLOBAL);
+    // Set the peak mem allocator. This will enable peak memory reporting.
+    runner.add_plugin(PeakMemAllocPlugin::new(&GLOBAL));
     for data_uncomp in ALL {
         let comp_lz4 = lz4_cpp_block_compress(data_uncomp).unwrap();
         let bundle = (comp_lz4, data_uncomp.len());
@@ -137,10 +158,12 @@ fn block_decompress() {
         group.set_input_size(data_uncomp.len());
 
         group.register_with_input("lz4 flex", &bundle, move |i| {
-            black_box(lz4_flex::decompress(&i.0, i.1).unwrap());
+            let size = black_box(lz4_flex::decompress(&i.0, i.1).unwrap());
+            Some(size.len())
         });
         group.register_with_input("lz4 c90", &bundle, move |i| {
-            black_box(lz4_cpp_block_decompress(&i.0, i.1).unwrap());
+            let size = black_box(lz4_cpp_block_decompress(&i.0, i.1).unwrap());
+            Some(size.len())
         });
 
         group.run();
@@ -179,7 +202,7 @@ fn compress_lz4_fear(input: &[u8]) -> Vec<u8> {
 
 fn decompress_lz4_fear(input: &[u8]) -> Vec<u8> {
     let mut vec = Vec::new();
-    decompress_raw(input, &[], &mut vec, std::usize::MAX).unwrap();
+    decompress_raw(input, &[], &mut vec, usize::MAX).unwrap();
     vec
 }
 
