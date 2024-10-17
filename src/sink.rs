@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use crate::fastcpy::slice_copy;
 
-/// Returns a Sink implementation appropriate for outputing up to `required_capacity`
+/// Returns a Sink implementation appropriate for outputting up to `required_capacity`
 /// bytes at `vec[offset..offset+required_capacity]`.
 /// It can be either a `SliceSink` (pre-filling the vec with zeroes if necessary)
 /// when the `safe-decode` feature is enabled, or `VecSink` otherwise.
@@ -22,7 +22,7 @@ pub fn vec_sink_for_compression(
     }
 }
 
-/// Returns a Sink implementation appropriate for outputing up to `required_capacity`
+/// Returns a Sink implementation appropriate for outputting up to `required_capacity`
 /// bytes at `vec[offset..offset+required_capacity]`.
 /// It can be either a `SliceSink` (pre-filling the vec with zeroes if necessary)
 /// when the `safe-decode` feature is enabled, or `VecSink` otherwise.

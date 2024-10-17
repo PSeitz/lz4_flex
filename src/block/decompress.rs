@@ -311,7 +311,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
             // to enable an optimized copy of 18 bytes.
             if offset >= match_length {
                 unsafe {
-                    // _copy_, not copy_non_overlaping, as it may overlap.
+                    // _copy_, not copy_non_overlapping, as it may overlap.
                     // Compiles to the same assembly on x68_64.
                     core::ptr::copy(start_ptr, output_ptr, 18);
                     output_ptr = output_ptr.add(match_length);

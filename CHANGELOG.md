@@ -58,7 +58,7 @@ depending of the size of the first write call. This increases
 compression ratio and speed for use cases where the data is larger than
 64kb.
 ```
-- Add fluent API style contruction for FrameInfo [#99](https://github.com/PSeitz/lz4_flex/pull/99) (thanks @CosmicHorrorDev)
+- Add fluent API style construction for FrameInfo [#99](https://github.com/PSeitz/lz4_flex/pull/99) (thanks @CosmicHorrorDev)
 ```
 This adds in fluent API style construction for FrameInfo. Now you can do
 
@@ -186,7 +186,7 @@ Fix no_std support for safe-decode
 
 0.9.0 (2021-09-25)
 ==================
-Fix unsoundness in the the api in regards to unitialized data. (thanks to @arthurprs)
+Fix unsoundness in the the api in regards to uninitialized data. (thanks to @arthurprs)
 * https://github.com/PSeitz/lz4_flex/pull/22
 
 0.8.0 (2021-05-17)

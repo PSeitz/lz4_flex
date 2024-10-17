@@ -62,7 +62,7 @@ impl HashTable4KU16 {
     #[inline]
     pub fn new() -> Self {
         // This generates more efficient assembly in contrast to Box::new(slice), because of an
-        // optmized call alloc_zeroed, vs. alloc + memset
+        // optimized call alloc_zeroed, vs. alloc + memset
         // try_into is optimized away
         let dict = alloc::vec![0; HASHTABLE_SIZE_4K]
             .into_boxed_slice()
