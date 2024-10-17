@@ -110,7 +110,7 @@ Tested on AMD Ryzen 7 5900HX, rustc 1.69.0 (84c898d65 2023-04-16), Manjaro, CPU 
 This fuzz target generates corrupted data for the decompressor. 
 `cargo +nightly fuzz run fuzz_decomp_corrupt_block` and `cargo +nightly fuzz run fuzz_decomp_corrupt_frame`
 
-This fuzz target asserts that a compression and decompression rountrip returns the original input.
+This fuzz target asserts that a compression and decompression roundtrip returns the original input.
 `cargo +nightly fuzz run fuzz_roundtrip` and `cargo +nightly fuzz run fuzz_roundtrip_frame`
 
 This fuzz target asserts compression with cpp and decompression with lz4_flex returns the original input.

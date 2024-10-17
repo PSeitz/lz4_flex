@@ -1,7 +1,7 @@
 //! The compression algorithm.
 //!
 //! We make use of hash tables to find duplicates. This gives a reasonable compression ratio with a
-//! high performance. It has fixed memory usage, which contrary to other approachs, makes it less
+//! high performance. It has fixed memory usage, which contrary to other approaches, makes it less
 //! memory hungry.
 
 use crate::block::hashtable::HashTable;
@@ -929,7 +929,7 @@ mod tests {
         // and no literal, so a block of 12 bytes can be compressed.
         let aaas: &[u8] = b"aaaaaaaaaaaaaaa";
 
-        // uncompressible
+        // incompressible
         let out = compress(&aaas[..12]);
         assert_gt!(out.len(), 12);
         // compressible
@@ -940,12 +940,12 @@ mod tests {
         let out = compress(&aaas[..15]);
         assert_le!(out.len(), 15);
 
-        // dict uncompressible
+        // dict incompressible
         let out = compress_with_dict(&aaas[..11], aaas);
         assert_gt!(out.len(), 11);
         // compressible
         let out = compress_with_dict(&aaas[..12], aaas);
-        // According to the spec this _could_ compres, but it doesn't in this lib
+        // According to the spec this _could_ compress, but it doesn't in this lib
         // as it aborts compression for any input len < LZ4_MIN_LENGTH
         assert_gt!(out.len(), 12);
         let out = compress_with_dict(&aaas[..13], aaas);
