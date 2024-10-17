@@ -74,15 +74,3 @@ path = "benches/binggan_bench.rs"
 # harness = false
 # name = "bench"
 # path = "benches/bench.rs"
-
-# [[bin]]
-# name = "decompress_with_stats"
-# path = "src/test_bins/decompress_with_stats.rs"
-
-# [[bin]]
-# name = "profile_decomp"
-# path = "src/test_bins/profile_decomp.rs"
-
-# [[bin]]
-# name = "profile_comp"
-# path = "src/test_bins/profile_comp.rs"
