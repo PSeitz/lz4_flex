@@ -447,6 +447,8 @@ impl<W: fmt::Debug + io::Write> fmt::Debug for FrameEncoder<W> {
             .field("is_frame_open", &self.is_frame_open)
             .field("content_hasher", &self.content_hasher)
             .field("content_len", &self.content_len)
+            .field("compression_table", &"{ ... }")
+            .field("data_to_frame_written", &self.data_to_frame_written)
             .field("dst", &"[...]")
             .field("src", &"[...]")
             .field("src_start", &self.src_start)
