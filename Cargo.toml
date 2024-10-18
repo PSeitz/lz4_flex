@@ -47,7 +47,7 @@ std = []
 nightly = []
 
 [dependencies]
-twox-hash = { version = "1.6.3", default-features = false, optional = true }
+twox-hash = { version = "2.0.0", default-features = false, features = ["xxhash32"], optional = true }
 
 [profile.bench]
 codegen-units = 1
