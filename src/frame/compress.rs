@@ -311,9 +311,7 @@ impl<W: io::Write> FrameEncoder<W> {
         self.w.write_all(&block_info_buffer[..])?;
         self.w.write_all(block_data)?;
         if self.frame_info.block_checksums {
-            let mut block_hasher = XxHash32::with_seed(0);
-            block_hasher.write(block_data);
-            let block_checksum = block_hasher.finish() as u32;
+            let block_checksum = XxHash32::oneshot(0, block_data);
             self.w.write_all(&block_checksum.to_le_bytes())?;
         }
 
