@@ -12,7 +12,7 @@ use alloc::boxed::Box;
 ///
 /// Every four bytes is assigned an entry. When this number is lower, fewer entries exists, and
 /// thus collisions are more likely, hurting the compression ratio.
-
+///
 /// hashes and right shifts to a maximum value of 16bit, 65535
 /// The right shift is done in order to not exceed, the hashtables capacity
 #[inline]

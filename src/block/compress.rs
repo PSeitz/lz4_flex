@@ -590,7 +590,6 @@ fn copy_literals_wild(output: &mut impl Sink, input: &[u8], input_start: usize, 
 /// `get_maximum_output_size`.
 ///
 /// Returns the number of bytes written (compressed) into `output`.
-
 #[inline]
 pub(crate) fn compress_into_sink_with_dict<const USE_DICT: bool>(
     input: &[u8],
