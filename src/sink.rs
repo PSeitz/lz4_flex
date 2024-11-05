@@ -111,7 +111,7 @@ impl<'a> SliceSink<'a> {
     }
 }
 
-impl<'a> Sink for SliceSink<'a> {
+impl Sink for SliceSink<'_> {
     /// Returns a raw ptr to the first unfilled byte of the Sink. Analogous to `[pos..].as_ptr()`.
     #[inline]
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
