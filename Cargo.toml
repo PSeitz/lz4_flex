@@ -10,6 +10,7 @@ readme = "README.md"
 license = "MIT"
 version = "0.11.3"
 include = ["src/*.rs", "src/frame/**/*", "src/block/**/*", "README.md", "LICENSE"]
+rust_version = "1.81"
 
 [package.metadata.docs.rs]
 all-features = true
