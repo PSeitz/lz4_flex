@@ -30,7 +30,7 @@ pub(crate) mod decompress;
 pub use compress::*;
 pub use decompress::*;
 
-use core::fmt;
+use core::{error::Error, fmt};
 
 pub(crate) const WINDOW_SIZE: usize = 64 * 1024;
 
@@ -137,11 +137,9 @@ impl fmt::Display for CompressError {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for DecompressError {}
+impl Error for DecompressError {}
 
-#[cfg(feature = "std")]
-impl std::error::Error for CompressError {}
+impl Error for CompressError {}
 
 /// This can be used in conjunction with `decompress_size_prepended`.
 /// It will read the first 4 bytes as little-endian encoded length, and return
