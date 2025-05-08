@@ -1,5 +1,5 @@
 ![Rust](https://github.com/PSeitz/lz4_flex/workflows/Rust/badge.svg)
-[![Docs](https://docs.rs/lz4_flex/badge.svg)](https://docs.rs/crate/lz4_flex/)
+[![Docs](https://img.shields.io/docsrs/lz4_flex)](https://docs.rs/lz4_flex)
 [![Crates.io](https://img.shields.io/crates/v/lz4_flex.svg)](https://crates.io/crates/lz4_flex)
 
 # lz4_flex
