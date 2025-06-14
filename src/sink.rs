@@ -15,7 +15,7 @@ pub fn vec_sink_for_compression(
     offset: usize,
     pos: usize,
     required_capacity: usize,
-) -> SliceSink {
+) -> SliceSink<'_> {
     {
         vec.resize(offset + required_capacity, 0);
         SliceSink::new(&mut vec[offset..], pos)
@@ -34,7 +34,7 @@ pub fn vec_sink_for_decompression(
     offset: usize,
     pos: usize,
     required_capacity: usize,
-) -> SliceSink {
+) -> SliceSink<'_> {
     {
         vec.resize(offset + required_capacity, 0);
         SliceSink::new(&mut vec[offset..], pos)

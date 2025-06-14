@@ -1,3 +1,8 @@
+0.11.4 (2025-06-14)
+==================
+- Upgrade to twox-hash 2.0[#175](https://github.com/PSeitz/lz4_flex/pull/175)
+- Better `no_std` compatibility [#180](https://github.com/PSeitz/lz4_flex/pull/180)
+
 0.11.3 (2024-03-30)
 ==================
 - Fix support for `--deny=unsafe_code` compilation [#152](https://github.com/PSeitz/lz4_flex/pull/152)
