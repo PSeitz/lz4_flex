@@ -189,9 +189,13 @@ impl Sink for SliceSink<'_> {
     #[cfg(feature = "safe-decode")]
     #[cfg_attr(feature = "nightly", optimize(size))] // to avoid loop unrolling
     fn extend_from_within_overlapping(&mut self, start: usize, num_bytes: usize) {
+        use std::cell::Cell;
         let offset = self.pos - start;
-        for i in start + offset..start + offset + num_bytes {
-            self.output[i] = self.output[i - offset];
+        let slice_of_cells: &[Cell<u8>] = Cell::from_mut(self.output).as_slice_of_cells();
+        let input = &slice_of_cells[start..][..offset.saturating_add(num_bytes)];
+        let output = &input[offset..];
+        for (in_byte, out_byte) in input.iter().zip(output.iter()) {
+            out_byte.set(in_byte.get());
         }
         self.pos += num_bytes;
     }
