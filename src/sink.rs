@@ -192,8 +192,8 @@ impl Sink for SliceSink<'_> {
         use std::cell::Cell;
         let offset = self.pos - start;
         let slice_of_cells: &[Cell<u8>] = Cell::from_mut(self.output).as_slice_of_cells();
-        let input = &slice_of_cells[start..][..offset.saturating_add(num_bytes)];
-        let output = &input[offset..];
+        let input = &slice_of_cells[start..];
+        let output = &input[offset..][..num_bytes];
         for (in_byte, out_byte) in input.iter().zip(output.iter()) {
             out_byte.set(in_byte.get());
         }
