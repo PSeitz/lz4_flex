@@ -1,3 +1,7 @@
+0.11.5 (2025-06-19)
+==================
+- Fix incorrect rust-version field name in Cargo.toml [#180](https://github.com/PSeitz/lz4_flex/pull/187)
+
 0.11.4 (2025-06-14)
 ==================
 - Upgrade to twox-hash 2.0[#175](https://github.com/PSeitz/lz4_flex/pull/175)

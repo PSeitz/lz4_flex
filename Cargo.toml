@@ -8,7 +8,7 @@ homepage = "https://github.com/pseitz/lz4_flex"
 repository = "https://github.com/pseitz/lz4_flex"
 readme = "README.md"
 license = "MIT"
-version = "0.11.4"
+version = "0.11.5"
 include = ["src/*.rs", "src/frame/**/*", "src/block/**/*", "README.md", "LICENSE"]
 rust-version = "1.81"
 
