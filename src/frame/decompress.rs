@@ -246,7 +246,7 @@ impl<R: io::Read> FrameDecoder<R> {
                     return Err(Error::BlockTooBig.into());
                 }
                 // TODO: Attempt to avoid initialization of read buffer when
-                // https://github.com/rust-lang/rust/issues/42788 stabilizes
+                // https://github.com/rust-lang/rust/issues/78485 stabilizes
                 self.r.read_exact(vec_resize_and_get_mut(
                     &mut self.dst,
                     self.dst_start,
@@ -269,7 +269,7 @@ impl<R: io::Read> FrameDecoder<R> {
                     return Err(Error::BlockTooBig.into());
                 }
                 // TODO: Attempt to avoid initialization of read buffer when
-                // https://github.com/rust-lang/rust/issues/42788 stabilizes
+                // https://github.com/rust-lang/rust/issues/78485 stabilizes
                 self.r
                     .read_exact(vec_resize_and_get_mut(&mut self.src, 0, len))?;
                 if frame_info.block_checksums {
