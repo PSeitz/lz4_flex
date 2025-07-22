@@ -119,6 +119,7 @@ This fuzz target asserts compression with cpp and decompression with lz4_flex re
 ## Bindings in other languages
  - Node.js: [lz4-napi](https://github.com/antoniomuso/lz4-napi) 
  - Wasm: [lz4-wasm](https://github.com/PSeitz/lz4-wasm)
+ - Python: [safelz4](https://github.com/LVivona/safelz4)
 
 ## TODO
 - High compression
