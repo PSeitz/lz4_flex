@@ -16,6 +16,8 @@
 
 #[cfg_attr(feature = "safe-encode", forbid(unsafe_code))]
 pub(crate) mod compress;
+#[cfg(feature = "hc")]
+pub(crate) mod compress_hc;
 pub(crate) mod hashtable;
 
 #[cfg(feature = "safe-decode")]
@@ -29,6 +31,8 @@ pub(crate) mod decompress;
 
 pub use compress::*;
 pub use decompress::*;
+#[cfg(feature = "hc")]
+pub use compress_hc::compress_hc;
 
 use core::{error::Error, fmt};
 
