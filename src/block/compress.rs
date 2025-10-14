@@ -221,7 +221,6 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
 /// to produce a total length. When the byte value is 255, another byte must read and added, and so
 /// on. There can be any number of bytes of value "255" following token
 #[inline]
-#[cfg(feature = "safe-encode")]
 fn write_integer(output: &mut impl Sink, mut n: usize) {
     // Note: Since `n` is usually < 0xFF and writing multiple bytes to the output
     // requires 2 branches of bound check (due to the possibility of add overflows)
@@ -231,36 +230,6 @@ fn write_integer(output: &mut impl Sink, mut n: usize) {
         push_byte(output, 0xFF);
     }
     push_byte(output, n as u8);
-}
-
-/// Write an integer to the output.
-///
-/// Each additional byte then represent a value from 0 to 255, which is added to the previous value
-/// to produce a total length. When the byte value is 255, another byte must read and added, and so
-/// on. There can be any number of bytes of value "255" following token
-#[inline]
-#[cfg(not(feature = "safe-encode"))]
-fn write_integer(output: &mut impl Sink, mut n: usize) {
-    // Write the 0xFF bytes as long as the integer is higher than said value.
-    if n >= 4 * 0xFF {
-        // In this unlikelly branch we use a fill instead of a loop,
-        // otherwise rustc may output a large unrolled/vectorized loop.
-        let bulk = n / (4 * 0xFF);
-        n %= 4 * 0xFF;
-        unsafe {
-            core::ptr::write_bytes(output.pos_mut_ptr(), 0xFF, 4 * bulk);
-            output.set_pos(output.pos() + 4 * bulk);
-        }
-    }
-
-    // Handle last 1 to 4 bytes
-    push_u32(output, 0xFFFFFFFF);
-    // Updating output len for the remainder
-    unsafe {
-        output.set_pos(output.pos() - 4 + 1 + n / 255);
-        // Write the remaining byte.
-        *output.pos_mut_ptr().sub(1) = (n % 255) as u8;
-    }
 }
 
 /// Handle the last bytes from the input as literals
@@ -546,15 +515,6 @@ fn push_u16(output: &mut impl Sink, el: u16) {
     unsafe {
         core::ptr::copy_nonoverlapping(el.to_le_bytes().as_ptr(), output.pos_mut_ptr(), 2);
         output.set_pos(output.pos() + 2);
-    }
-}
-
-#[inline]
-#[cfg(not(feature = "safe-encode"))]
-fn push_u32(output: &mut impl Sink, el: u32) {
-    unsafe {
-        core::ptr::copy_nonoverlapping(el.to_le_bytes().as_ptr(), output.pos_mut_ptr(), 4);
-        output.set_pos(output.pos() + 4);
     }
 }
 
