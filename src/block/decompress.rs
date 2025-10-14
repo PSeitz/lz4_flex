@@ -128,7 +128,7 @@ unsafe fn copy_from_dict(
 /// is encoded to _255 + 255 + 255 + 4 = 769_. The bytes after the first 4 is ignored, because
 /// 4 is the first non-0xFF byte.
 #[inline]
-fn read_integer_ptr(
+pub(super) fn read_integer_ptr(
     input_ptr: &mut *const u8,
     _input_ptr_end: *const u8,
 ) -> Result<u32, DecompressError> {

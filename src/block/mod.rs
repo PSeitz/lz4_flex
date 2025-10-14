@@ -152,3 +152,25 @@ pub fn uncompressed_size(input: &[u8]) -> Result<(usize, &[u8]), DecompressError
     let rest = &input[4..];
     Ok((uncompressed_size, rest))
 }
+
+#[test]
+#[cfg(target_pointer_width = "64")] // only relevant for 64bit CPUs
+fn large_integer_roundtrip() {
+    let u32_max = usize::try_from(u32::MAX).unwrap();
+    let value = u32_max + u32_max / 2;
+
+    let mut buf = vec![0u8; value / 255 + 1];
+    let mut sink = crate::sink::SliceSink::new(&mut buf, 0);
+    self::compress::write_integer(&mut sink, value);
+
+    #[cfg(feature = "safe-decode")]
+    let value_decompressed = self::decompress_safe::read_integer(&buf, &mut 0).unwrap();
+
+    #[cfg(not(feature = "safe-decode"))]
+    let value_decompressed = {
+        let mut ptr_range = buf.as_ptr_range();
+        self::decompress::read_integer_ptr(&mut ptr_range.start, ptr_range.end).unwrap()
+    };
+
+    assert_eq!(value, value_decompressed);
+}
