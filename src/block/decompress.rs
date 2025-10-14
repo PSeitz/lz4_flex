@@ -131,9 +131,9 @@ unsafe fn copy_from_dict(
 pub(super) fn read_integer_ptr(
     input_ptr: &mut *const u8,
     _input_ptr_end: *const u8,
-) -> Result<u32, DecompressError> {
+) -> Result<usize, DecompressError> {
     // We start at zero and count upwards.
-    let mut n: u32 = 0;
+    let mut n: usize = 0;
     // If this byte takes value 255 (the maximum value it can take), another byte is read
     // and added to the sum. This repeats until a byte lower than 255 is read.
     loop {
@@ -147,7 +147,7 @@ pub(super) fn read_integer_ptr(
         }
         let extra = unsafe { input_ptr.read() };
         *input_ptr = unsafe { input_ptr.add(1) };
-        n += extra as u32;
+        n += extra as usize;
 
         // We continue if we got 255, break otherwise.
         if extra != 0xFF {
