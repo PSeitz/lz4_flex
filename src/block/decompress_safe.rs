@@ -25,7 +25,7 @@ use alloc::vec::Vec;
 /// is encoded to _255 + 255 + 255 + 4 = 769_. The bytes after the first 4 is ignored, because
 /// 4 is the first non-0xFF byte.
 #[inline]
-fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, DecompressError> {
+pub(super) fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<u32, DecompressError> {
     // We start at zero and count upwards.
     let mut n: u32 = 0;
     // If this byte takes value 255 (the maximum value it can take), another byte is read

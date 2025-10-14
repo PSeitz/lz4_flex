@@ -221,7 +221,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
 /// to produce a total length. When the byte value is 255, another byte must read and added, and so
 /// on. There can be any number of bytes of value "255" following token
 #[inline]
-fn write_integer(output: &mut impl Sink, mut n: usize) {
+pub(super) fn write_integer(output: &mut impl Sink, mut n: usize) {
     // Note: Since `n` is usually < 0xFF and writing multiple bytes to the output
     // requires 2 branches of bound check (due to the possibility of add overflows)
     // the simple byte at a time implementation below is faster in most cases.
