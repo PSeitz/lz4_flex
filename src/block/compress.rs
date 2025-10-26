@@ -362,7 +362,7 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool, S: Sink>(
         assert!(input_stream_offset
             .checked_add(input.len())
             .and_then(|i| i.checked_add(ext_dict.len()))
-            .map_or(false, |i| i <= isize::MAX as usize));
+            .is_some_and(|i| i <= isize::MAX as usize));
     } else {
         assert!(ext_dict.is_empty());
     }

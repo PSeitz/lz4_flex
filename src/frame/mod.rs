@@ -78,7 +78,7 @@ impl From<Error> for io::Error {
             Error::CompressionError(_)
             | Error::DecompressionError(_)
             | Error::SkippableFrame(_)
-            | Error::DictionaryNotSupported => io::Error::new(io::ErrorKind::Other, e),
+            | Error::DictionaryNotSupported => io::Error::other(e),
             Error::WrongMagicNumber
             | Error::UnsupportedBlocksize(..)
             | Error::UnsupportedVersion(..)
