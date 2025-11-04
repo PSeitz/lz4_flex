@@ -106,6 +106,11 @@ impl<R: io::Read> FrameDecoder<R> {
         self.r
     }
 
+    /// Returns the total number of uncompressed bytes read so far
+    pub fn total_out(&self) -> u64 {
+        self.content_len
+    }
+
     fn read_frame_info(&mut self) -> Result<usize, io::Error> {
         let mut buffer = [0u8; MAX_FRAME_INFO_SIZE];
 
