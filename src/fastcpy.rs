@@ -17,8 +17,12 @@
 //! ///       [3, 4, 5, 6]
 //!
 
+use core::mem::MaybeUninit;
+
+use crate::sink::slice_ref_to_uninit;
+
 #[inline]
-pub fn slice_copy(src: &[u8], dst: &mut [u8]) {
+pub fn slice_copy(src: &[u8], dst: &mut [MaybeUninit<u8>]) {
     #[inline(never)]
     #[cold]
     #[track_caller]
@@ -73,15 +77,15 @@ pub fn slice_copy(src: &[u8], dst: &mut [u8]) {
     // The theory should be that the checks above don't cost much relative to the copy call for
     // larger copies.
     // The bounds checks in `copy_from_slice` are elided.
-    dst.copy_from_slice(src);
+    dst.copy_from_slice(slice_ref_to_uninit(src));
 }
 
 #[inline(always)]
-fn short_copy(src: &[u8], dst: &mut [u8]) {
+fn short_copy(src: &[u8], dst: &mut [MaybeUninit<u8>]) {
     let len = src.len();
 
     // length 1-3
-    dst[0] = src[0];
+    dst[0].write(src[0]);
     if len >= 2 {
         double_copy_trick::<2>(src, dst);
     }
@@ -91,13 +95,16 @@ fn short_copy(src: &[u8], dst: &mut [u8]) {
 /// [1, 2, 3, 4, 5, 6]
 /// [1, 2, 3, 4]
 ///       [3, 4, 5, 6]
-fn double_copy_trick<const SIZE: usize>(src: &[u8], dst: &mut [u8]) {
+fn double_copy_trick<const SIZE: usize>(src: &[u8], dst: &mut [MaybeUninit<u8>]) {
+    let src = slice_ref_to_uninit(src);
     dst[0..SIZE].copy_from_slice(&src[0..SIZE]);
     dst[src.len() - SIZE..].copy_from_slice(&src[src.len() - SIZE..]);
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::sink::slice_mut_to_uninit;
+
     use super::slice_copy;
     use alloc::vec::Vec;
     use proptest::prelude::*;
@@ -105,7 +112,7 @@ mod tests {
         #[test]
         fn test_fast_short_slice_copy(left: Vec<u8>) {
             let mut right = vec![0u8; left.len()];
-            slice_copy(&left, &mut right);
+            slice_copy(&left, slice_mut_to_uninit(&mut right));
             prop_assert_eq!(&left, &right);
         }
     }
@@ -115,7 +122,7 @@ mod tests {
         for len in 0..(512 * 2) {
             let left = (0..len).map(|i| i as u8).collect::<Vec<_>>();
             let mut right = vec![0u8; len];
-            slice_copy(&left, &mut right);
+            slice_copy(&left, slice_mut_to_uninit(&mut right));
             assert_eq!(left, right);
         }
     }
@@ -127,7 +134,7 @@ mod tests {
             24, 25, 26, 27, 28, 29, 30, 31, 32,
         ];
         let mut right = vec![0u8; left.len()];
-        slice_copy(&left, &mut right);
+        slice_copy(&left, slice_mut_to_uninit(&mut right));
         assert_eq!(left, right);
     }
 
@@ -139,7 +146,7 @@ mod tests {
             0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         let mut right = vec![0u8; left.len()];
-        slice_copy(&left, &mut right);
+        slice_copy(&left, slice_mut_to_uninit(&mut right));
         assert_eq!(left, right);
     }
 }
