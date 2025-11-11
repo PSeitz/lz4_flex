@@ -217,7 +217,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
     };
     let output_base = unsafe { output.base_mut_ptr() };
     let output_end = unsafe { output_base.add(output.capacity()) };
-    let output_start_pos_ptr = unsafe { output.base_mut_ptr().add(output.pos()) as *mut u8 };
+    let output_start_pos_ptr = unsafe { output.base_mut_ptr().add(output.pos()) };
     let mut output_ptr = output_start_pos_ptr;
 
     let mut input_ptr = input.as_ptr();
@@ -471,7 +471,6 @@ pub fn decompress_into_with_dict(
 /// # Panics
 /// May panic if the parameter `min_uncompressed_size` is smaller than the
 /// uncompressed data.
-
 #[inline]
 pub fn decompress_with_dict(
     input: &[u8],

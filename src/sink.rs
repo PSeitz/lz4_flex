@@ -1,3 +1,5 @@
+use core::mem::MaybeUninit;
+
 #[allow(unused_imports)]
 use alloc::vec::Vec;
 
@@ -93,21 +95,71 @@ pub trait Sink {
 ///   - Bytes `[..pos()]` are always initialized.
 pub struct SliceSink<'a> {
     /// The working slice, which may contain uninitialized bytes
-    output: &'a mut [u8],
+    output: &'a mut [MaybeUninit<u8>],
     /// Number of bytes in start of `output` guaranteed to be initialized
     pos: usize,
 }
 
+#[inline(always)]
+pub(crate) unsafe fn cast_slice_mut<T, U>(slice: &mut [T]) -> &mut [U] {
+    // Safety: caller ensures T's representation is compatible with U
+    unsafe { core::slice::from_raw_parts_mut(slice.as_mut_ptr().cast::<U>(), slice.len()) }
+}
+#[inline(always)]
+pub(crate) unsafe fn cast_slice<T, U>(slice: &[T]) -> &[U] {
+    // Safety: caller ensures T's representation is compatible with U
+    unsafe { core::slice::from_raw_parts(slice.as_ptr().cast::<U>(), slice.len()) }
+}
+#[inline(always)]
+pub(crate) fn slice_ref_to_uninit(slice: &[u8]) -> &[MaybeUninit<u8>] {
+    unsafe { cast_slice(slice) }
+}
+#[inline(always)]
+pub(crate) fn slice_mut_to_uninit(slice: &mut [u8]) -> &mut [MaybeUninit<u8>] {
+    unsafe { cast_slice_mut(slice) }
+}
+
 impl<'a> SliceSink<'a> {
-    /// Creates a `Sink` backed by the given byte slice.
+    /// Creates a [`Sink`] backed by the given byte slice.
     /// `pos` defines the initial output position in the Sink.
     /// # Panics
     /// Panics if `pos` is out of bounds.
     #[inline]
     pub fn new(output: &'a mut [u8], pos: usize) -> Self {
-        // SAFETY: Caller guarantees that all elements of `output[..pos]` are initialized.
         let _ = &mut output[..pos]; // bounds check pos
+
+        // Safety: all bytes are initialized, therefore all bytes prior to `pos` must be initialized
+        unsafe { Self::new_uninit(slice_mut_to_uninit(output), pos) }
+    }
+    /// Creates a [`Sink`] backed by the given byte slice.
+    /// `pos` defines the initial output position in the Sink.
+    /// # Panics
+    /// Panics if `pos` is out of bounds.
+    /// # Safety
+    /// Caller must ensure that output[..pos] is initialized
+    #[inline]
+    pub unsafe fn new_uninit(output: &'a mut [MaybeUninit<u8>], pos: usize) -> Self {
+        let _ = &mut output[..pos];
         SliceSink { output, pos }
+    }
+    /// Creates a [`Sink`] backed by the given byte slice, with the starting position set to 0.
+    #[inline]
+    #[allow(dead_code)]
+    pub fn new_uninit_zero_pos(output: &'a mut [MaybeUninit<u8>]) -> Self {
+        SliceSink { output, pos: 0 }
+    }
+    /// # Safety
+    /// Caller must ensure that the bytes in the range `pos..(pos + amount)` are initialized
+    #[inline]
+    pub unsafe fn bump_pos(&mut self, amount: usize) {
+        self.pos += amount;
+    }
+    /// Gets a mutable reference to the initialized portion of this [`SliceSink`]
+    #[inline]
+    #[allow(unused)]
+    pub fn init_part(&mut self) -> &mut [u8] {
+        // Safety: by the construction invariant, all bytes in ..self.pos are guaranteed to be initialized
+        unsafe { cast_slice_mut::<MaybeUninit<u8>, u8>(&mut self.output[..self.pos]) }
     }
 }
 
@@ -116,26 +168,27 @@ impl Sink for SliceSink<'_> {
     #[inline]
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
     unsafe fn pos_mut_ptr(&mut self) -> *mut u8 {
-        self.base_mut_ptr().add(self.pos()) as *mut u8
+        self.base_mut_ptr().add(self.pos())
     }
 
-    /// Pushes a byte to the end of the Sink.
     #[inline]
     fn byte_at(&mut self, pos: usize) -> u8 {
-        self.output[pos]
+        self.init_part()[pos]
     }
 
-    /// Pushes a byte to the end of the Sink.
     #[inline]
     #[cfg(feature = "safe-encode")]
     fn push(&mut self, byte: u8) {
-        self.output[self.pos] = byte;
-        self.pos += 1;
+        self.output[self.pos].write(byte);
+        // Safety: byte at `self.pos` is initialized above
+        unsafe {
+            self.bump_pos(1);
+        }
     }
 
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
     unsafe fn base_mut_ptr(&mut self) -> *mut u8 {
-        self.output.as_mut_ptr()
+        self.output.as_mut_ptr().cast()
     }
 
     #[inline]
@@ -158,11 +211,13 @@ impl Sink for SliceSink<'_> {
     #[inline]
     #[cfg(feature = "safe-decode")]
     fn extend_with_fill(&mut self, byte: u8, len: usize) {
-        self.output[self.pos..self.pos + len].fill(byte);
-        self.pos += len;
+        self.output[self.pos..(self.pos + len)].fill(MaybeUninit::new(byte));
+        // Safety: bytes in `self.pos..self.pos + len` are initialized above
+        unsafe {
+            self.bump_pos(len);
+        }
     }
 
-    /// Extends the Sink with `data`.
     #[inline]
     fn extend_from_slice(&mut self, data: &[u8]) {
         self.extend_from_slice_wild(data, data.len())
@@ -172,17 +227,22 @@ impl Sink for SliceSink<'_> {
     fn extend_from_slice_wild(&mut self, data: &[u8], copy_len: usize) {
         assert!(copy_len <= data.len());
         slice_copy(data, &mut self.output[self.pos..(self.pos) + data.len()]);
-        self.pos += copy_len;
+        // Safety: bytes in `self.pos..self.pos + copy_len` are initialized above
+        unsafe {
+            self.bump_pos(copy_len);
+        }
     }
 
-    /// Copies `len` bytes starting from `start` to the end of the Sink.
-    /// # Panics
-    /// Panics if `start` >= `pos`.
     #[inline]
     #[cfg(feature = "safe-decode")]
     fn extend_from_within(&mut self, start: usize, wild_len: usize, copy_len: usize) {
-        self.output.copy_within(start..start + wild_len, self.pos);
-        self.pos += copy_len;
+        assert!(start + copy_len <= self.pos);
+        self.output.copy_within(start..(start + wild_len), self.pos);
+        // Safety: assert ensures bytes in `..(start + copy_len)` are all initialized,
+        // bytes in `self.pos..(self.pos + copy_len)` are written above.
+        unsafe {
+            self.bump_pos(copy_len);
+        }
     }
 
     #[inline]
@@ -193,7 +253,10 @@ impl Sink for SliceSink<'_> {
         for i in start + offset..start + offset + num_bytes {
             self.output[i] = self.output[i - offset];
         }
-        self.pos += num_bytes;
+        // Safety: bytes in `self.pos..self.pos + num_bytes` are initialized above
+        unsafe {
+            self.bump_pos(num_bytes);
+        }
     }
 }
 
@@ -235,7 +298,7 @@ impl Sink for PtrSink {
     #[inline]
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
     unsafe fn pos_mut_ptr(&mut self) -> *mut u8 {
-        self.base_mut_ptr().add(self.pos()) as *mut u8
+        self.base_mut_ptr().add(self.pos())
     }
 
     /// Pushes a byte to the end of the Sink.
