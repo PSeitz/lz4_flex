@@ -46,12 +46,12 @@ Compression and decompression uses no unsafe via the default feature flags "safe
 
 Safe:
 ```
-lz4_flex = { version = "0.11" }
+lz4_flex = { version = "0.12" }
 ```
 
 Performance:
 ```
-lz4_flex = { version = "0.11", default-features = false }
+lz4_flex = { version = "0.12", default-features = false }
 ```
 
 ### Block Format
