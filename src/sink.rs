@@ -156,6 +156,7 @@ impl<'a> SliceSink<'a> {
     }
     /// Gets a mutable reference to the initialized portion of this [`SliceSink`]
     #[inline]
+    #[allow(unused)]
     pub fn init_part(&mut self) -> &mut [u8] {
         // Safety: by the construction invariant, all bytes in ..self.pos are guaranteed to be initialized
         unsafe { cast_slice_mut::<MaybeUninit<u8>, u8>(&mut self.output[..self.pos]) }
@@ -167,7 +168,7 @@ impl Sink for SliceSink<'_> {
     #[inline]
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
     unsafe fn pos_mut_ptr(&mut self) -> *mut u8 {
-        self.base_mut_ptr().add(self.pos()) as *mut u8
+        self.base_mut_ptr().add(self.pos())
     }
 
     #[inline]
@@ -187,7 +188,7 @@ impl Sink for SliceSink<'_> {
 
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
     unsafe fn base_mut_ptr(&mut self) -> *mut u8 {
-        self.output.as_mut_ptr()
+        self.output.as_mut_ptr().cast()
     }
 
     #[inline]
@@ -297,7 +298,7 @@ impl Sink for PtrSink {
     #[inline]
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
     unsafe fn pos_mut_ptr(&mut self) -> *mut u8 {
-        self.base_mut_ptr().add(self.pos()) as *mut u8
+        self.base_mut_ptr().add(self.pos())
     }
 
     /// Pushes a byte to the end of the Sink.
