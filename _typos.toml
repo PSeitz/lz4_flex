@@ -1,2 +1,6 @@
 [files]
 extend-exclude = ["benches/*.txt", "benches/*.json", "benches/*.xml", "tests/tests.rs"]
+
+[default.extend-words]
+# Don't correct the surname "Teh"
+teh = "teh"

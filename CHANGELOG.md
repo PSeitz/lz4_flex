@@ -1,6 +1,18 @@
+0.12.0 (2025-11-11)
+==================
+- Fix integer overflows when decoding large payloads [#192](https://github.com/PSeitz/lz4_flex/pull/192) (thanks @teh-cmc)
+```
+This fixes an u32 integer overflow when decoding large payloads in the block format.
+Note: The block format is not suitable for such large payloads, since it
+keeps everything in memory. Consider using the frame format for large data.
+
+This change also removes a unsafe fast-path for write_integer to simplify the code.
+The performance impact is on incompressible data, which is already fast enough.
+```
+
 0.11.5 (2025-06-19)
 ==================
-- Fix incorrect rust-version field name in Cargo.toml [#180](https://github.com/PSeitz/lz4_flex/pull/187)
+- Fix incorrect rust-version field name in Cargo.toml [#187](https://github.com/PSeitz/lz4_flex/pull/187)
 
 0.11.4 (2025-06-14)
 ==================

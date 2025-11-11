@@ -17,7 +17,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
-lzzzz = "1.0.4"
+lzzzz = "2.0.0"
 lz4-compress = "0.1.1"
 more-asserts = "0.3.1"
 snap = "1.1.0"
