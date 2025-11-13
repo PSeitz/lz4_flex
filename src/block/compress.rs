@@ -234,8 +234,8 @@ pub(super) fn write_integer(output: &mut impl Sink, mut n: usize) {
 
 /// Handle the last bytes from the input as literals
 #[cold]
-fn handle_last_literals(output: &mut impl Sink, input: &[u8], start: usize) {
-    let lit_len = input.len() - start;
+pub(crate) fn handle_last_literals(output: &mut impl Sink, input: &[u8]) {
+    let lit_len = input.len();
 
     let token = token_from_literal(lit_len);
     push_byte(output, token);
@@ -243,7 +243,7 @@ fn handle_last_literals(output: &mut impl Sink, input: &[u8], start: usize) {
         write_integer(output, lit_len - 0xF);
     }
     // Now, write the actual literals.
-    output.extend_from_slice(&input[start..]);
+    output.extend_from_slice(input);
 }
 
 /// Moves the cursors back as long as the bytes match, to find additional bytes in a duplicate
@@ -341,7 +341,7 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool, S: Sink>(
 
     let output_start_pos = output.pos();
     if input.len() - input_pos < LZ4_MIN_LENGTH {
-        handle_last_literals(output, input, input_pos);
+        handle_last_literals(output, &input[input_pos..]);
         return Ok(output.pos() - output_start_pos);
     }
 
@@ -379,7 +379,7 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool, S: Sink>(
 
             // Same as cur + MFLIMIT > input.len()
             if cur > end_pos_check {
-                handle_last_literals(output, input, literal_start);
+                handle_last_literals(output, &input[literal_start..]);
                 return Ok(output.pos() - output_start_pos);
             }
             // Find a candidate in the dictionary with the hash of the current four bytes.
@@ -460,32 +460,37 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool, S: Sink>(
         let hash = T::get_hash_at(input, cur - 2);
         dict.put_at(hash, cur - 2 + input_stream_offset);
 
-        let token = token_from_literal_and_match_length(lit_len, duplicate_length);
+        encode_sequence(&input[literal_start..literal_start + lit_len], output, offset, duplicate_length);
 
-        // Push the token to the output stream.
-        push_byte(output, token);
-        // If we were unable to fit the literals length into the token, write the extensional
-        // part.
-        if lit_len >= 0xF {
-            write_integer(output, lit_len - 0xF);
-        }
-
-        // Now, write the actual literals.
-        //
-        // The unsafe version copies blocks of 8bytes, and therefore may copy up to 7bytes more than
-        // needed. This is safe, because the last 12 bytes (MF_LIMIT) are handled in
-        // handle_last_literals.
-        copy_literals_wild(output, input, literal_start, lit_len);
-        // write the offset in little endian.
-        push_u16(output, offset);
-
-        // If we were unable to fit the duplicates length into the token, write the
-        // extensional part.
-        if duplicate_length >= 0xF {
-            write_integer(output, duplicate_length - 0xF);
-        }
         literal_start = cur;
     }
+}
+
+pub(crate) fn encode_sequence<S: Sink>(literal: &[u8], output: &mut S, offset: u16, match_len: usize) {
+    let token = token_from_literal_and_match_length(literal.len(), match_len);
+    // Push the token to the output stream.
+    push_byte(output, token);
+    // If we were unable to fit the literals length into the token, write the extensional
+    // part.
+    if literal.len() >= 0xF {
+        write_integer(output, literal.len() - 0xF);
+    }
+
+    // Now, write the actual literals.
+    //
+    // The unsafe version copies blocks of 8bytes, and therefore may copy up to 7bytes more than
+    // needed. This is safe, because the last 12 bytes (MF_LIMIT) are handled in
+    // handle_last_literals.
+    copy_literals_wild(output, literal, 0, literal.len());
+    // write the offset in little endian.
+    push_u16(output, offset);
+
+    // If we were unable to fit the duplicates length into the token, write the
+    // extensional part.
+    if match_len >= 0xF {
+        write_integer(output, match_len - 0xF);
+    }
+
 }
 
 #[inline]
@@ -527,7 +532,6 @@ fn copy_literals_wild(output: &mut impl Sink, input: &[u8], input_start: usize, 
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
 fn copy_literals_wild(output: &mut impl Sink, input: &[u8], input_start: usize, len: usize) {
-    debug_assert!(input_start + len / 8 * 8 + ((len % 8) != 0) as usize * 8 <= input.len());
     debug_assert!(output.pos() + len / 8 * 8 + ((len % 8) != 0) as usize * 8 <= output.capacity());
     unsafe {
         // Note: This used to be a wild copy loop of 8 bytes, but the compiler consistently
