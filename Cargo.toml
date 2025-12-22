@@ -48,8 +48,8 @@ std = []
 nightly = []
 
 [dependencies]
-# Use local SIMD-optimized twox-hash for xxHash32
-twox-hash = { path = "../twox-hash", default-features = false, features = ["xxhash32"], optional = true }
+# Use SIMD-optimized twox-hash fork for xxHash32
+twox-hash = { git = "https://github.com/addmaple/twox-hash.git", branch = "wasm-simd", default-features = false, features = ["xxhash32"], optional = true }
 
 [profile.bench]
 codegen-units = 1
