@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LZ4 SIMD Benchmark</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 900px; margin: 50px auto; padding: 20px; background: #1a1a2e; color: #eee; }
+        h1 { color: #00d9ff; }
+        .results { background: #16213e; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #333; }
+        th { color: #00d9ff; }
+        .faster { color: #00ff88; font-weight: bold; }
+        .slower { color: #ff6b6b; }
+        button { background: #00d9ff; color: #1a1a2e; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 16px; margin: 10px 5px 10px 0; }
+        button:hover { background: #00b8d4; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        #status { margin: 10px 0; color: #aaa; }
+    </style>
+</head>
+<body>
+    <h1>🚀 LZ4 WASM SIMD Benchmark</h1>
+    <p>Compare LZ4 compression performance: Base vs SIMD-optimized</p>
+    
+    <button id="runBtn" onclick="runBenchmark()">Run Benchmark</button>
+    <button onclick="runDecompressBenchmark()">Run Decompress Benchmark</button>
+    <div id="status"></div>
+    
+    <div class="results">
+        <h2>Results</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Test</th>
+                    <th>Base (ms)</th>
+                    <th>SIMD (ms)</th>
+                    <th>Speedup</th>
+                </tr>
+            </thead>
+            <tbody id="results"></tbody>
+        </table>
+    </div>
+
+    <script>
+        let baseModule = null;
+        let simdModule = null;
+        
+        async function loadModules() {
+            const status = document.getElementById('status');
+            
+            status.textContent = 'Loading base module...';
+            const baseResponse = await fetch('lz4_base.wasm');
+            const baseBuffer = await baseResponse.arrayBuffer();
+            const baseResult = await WebAssembly.instantiate(baseBuffer, {});
+            baseModule = baseResult.instance;
+            
+            status.textContent = 'Loading SIMD module...';
+            const simdResponse = await fetch('lz4_simd.wasm');
+            const simdBuffer = await simdResponse.arrayBuffer();
+            const simdResult = await WebAssembly.instantiate(simdBuffer, {});
+            simdModule = simdResult.instance;
+            
+            status.textContent = 'Modules loaded. Ready to benchmark.';
+            
+            // Verify both work
+            const baseTest = baseModule.exports.test_roundtrip();
+            const simdTest = simdModule.exports.test_roundtrip();
+            console.log('Base roundtrip:', baseTest === 1 ? 'PASS' : 'FAIL');
+            console.log('SIMD roundtrip:', simdTest === 1 ? 'PASS' : 'FAIL');
+        }
+        
+        function generateTestData(size) {
+            // Generate compressible JSON-like data
+            const data = new Uint8Array(size);
+            const pattern = '{"id":1234,"name":"test","values":[1,2,3,4,5],"nested":{"a":1,"b":2}}';
+            for (let i = 0; i < size; i++) {
+                data[i] = pattern.charCodeAt(i % pattern.length);
+            }
+            return data;
+        }
+        
+        function benchmark(module, data, iterations) {
+            const memory = module.exports.memory;
+            const memoryBuffer = new Uint8Array(memory.buffer);
+            
+            // Copy data to WASM memory
+            const inputPtr = 1024 * 1024; // Offset to avoid output buffer
+            memoryBuffer.set(data, inputPtr);
+            
+            // Warmup
+            for (let i = 0; i < 3; i++) {
+                module.exports.compress_data(inputPtr, data.length);
+            }
+            
+            // Benchmark
+            const start = performance.now();
+            for (let i = 0; i < iterations; i++) {
+                module.exports.compress_data(inputPtr, data.length);
+            }
+            const end = performance.now();
+            
+            return (end - start) / iterations;
+        }
+        
+        function benchmarkDecompress(module, compressedData, originalSize, iterations) {
+            const memory = module.exports.memory;
+            const memoryBuffer = new Uint8Array(memory.buffer);
+            
+            const inputPtr = 1024 * 1024;
+            memoryBuffer.set(compressedData, inputPtr);
+            
+            // Warmup
+            for (let i = 0; i < 3; i++) {
+                module.exports.decompress_data(inputPtr, compressedData.length, originalSize);
+            }
+            
+            // Benchmark
+            const start = performance.now();
+            for (let i = 0; i < iterations; i++) {
+                module.exports.decompress_data(inputPtr, compressedData.length, originalSize);
+            }
+            const end = performance.now();
+            
+            return (end - start) / iterations;
+        }
+        
+        async function runBenchmark() {
+            if (!baseModule || !simdModule) {
+                await loadModules();
+            }
+            
+            const status = document.getElementById('status');
+            const results = document.getElementById('results');
+            results.innerHTML = '';
+            
+            const sizes = [
+                { name: '1 KB', size: 1024, iters: 1000 },
+                { name: '10 KB', size: 10 * 1024, iters: 500 },
+                { name: '100 KB', size: 100 * 1024, iters: 100 },
+                { name: '1 MB', size: 1024 * 1024, iters: 20 },
+            ];
+            
+            for (const { name, size, iters } of sizes) {
+                status.textContent = `Benchmarking ${name} compression...`;
+                
+                const data = generateTestData(size);
+                
+                const baseTime = benchmark(baseModule, data, iters);
+                const simdTime = benchmark(simdModule, data, iters);
+                const speedup = baseTime / simdTime;
+                
+                const throughputBase = (size / 1024 / 1024) / (baseTime / 1000);
+                const throughputSimd = (size / 1024 / 1024) / (simdTime / 1000);
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>Compress ${name}</td>
+                    <td>${baseTime.toFixed(3)} (${throughputBase.toFixed(0)} MB/s)</td>
+                    <td>${simdTime.toFixed(3)} (${throughputSimd.toFixed(0)} MB/s)</td>
+                    <td class="${speedup > 1 ? 'faster' : 'slower'}">${speedup.toFixed(2)}x</td>
+                `;
+                results.appendChild(row);
+            }
+            
+            status.textContent = 'Compression benchmark complete!';
+        }
+        
+        async function runDecompressBenchmark() {
+            if (!baseModule || !simdModule) {
+                await loadModules();
+            }
+            
+            const status = document.getElementById('status');
+            const results = document.getElementById('results');
+            
+            const sizes = [
+                { name: '1 KB', size: 1024, iters: 1000 },
+                { name: '10 KB', size: 10 * 1024, iters: 500 },
+                { name: '100 KB', size: 100 * 1024, iters: 100 },
+                { name: '1 MB', size: 1024 * 1024, iters: 20 },
+            ];
+            
+            for (const { name, size, iters } of sizes) {
+                status.textContent = `Benchmarking ${name} decompression...`;
+                
+                const data = generateTestData(size);
+                
+                // Compress first to get compressed data
+                const memory = baseModule.exports.memory;
+                const memoryBuffer = new Uint8Array(memory.buffer);
+                const inputPtr = 1024 * 1024;
+                memoryBuffer.set(data, inputPtr);
+                const compressedLen = baseModule.exports.compress_data(inputPtr, data.length);
+                const outputPtr = baseModule.exports.get_output_ptr();
+                const compressedData = new Uint8Array(memory.buffer, outputPtr, compressedLen).slice();
+                
+                const baseTime = benchmarkDecompress(baseModule, compressedData, size, iters);
+                const simdTime = benchmarkDecompress(simdModule, compressedData, size, iters);
+                const speedup = baseTime / simdTime;
+                
+                const throughputBase = (size / 1024 / 1024) / (baseTime / 1000);
+                const throughputSimd = (size / 1024 / 1024) / (simdTime / 1000);
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>Decompress ${name}</td>
+                    <td>${baseTime.toFixed(3)} (${throughputBase.toFixed(0)} MB/s)</td>
+                    <td>${simdTime.toFixed(3)} (${throughputSimd.toFixed(0)} MB/s)</td>
+                    <td class="${speedup > 1 ? 'faster' : 'slower'}">${speedup.toFixed(2)}x</td>
+                `;
+                results.appendChild(row);
+            }
+            
+            status.textContent = 'Decompression benchmark complete!';
+        }
+        
+        // Load modules on page load
+        loadModules();
+    </script>
+</body>
+</html>
+

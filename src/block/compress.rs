@@ -144,6 +144,57 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
     num
 }
 
+/// Counts the number of same bytes in two byte streams using WASM SIMD128.
+/// Compares 16 bytes at a time for better throughput.
+#[inline]
+#[cfg(all(
+    target_arch = "wasm32",
+    target_feature = "simd128",
+    not(feature = "safe-encode")
+))]
+fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
+    use core::arch::wasm32::*;
+
+    let max_input_match = input.len().saturating_sub(*cur + END_OFFSET);
+    let max_candidate_match = source.len() - candidate;
+    let input_end = *cur + max_input_match.min(max_candidate_match);
+
+    let start = *cur;
+    let input_ptr = input.as_ptr();
+    let source_ptr = source.as_ptr();
+
+    // SIMD: compare 16 bytes at a time
+    while *cur + 16 <= input_end {
+        unsafe {
+            let va = v128_load(input_ptr.add(*cur) as *const v128);
+            let vb = v128_load(source_ptr.add(candidate + (*cur - start)) as *const v128);
+            let eq = i8x16_eq(va, vb);
+            let mask = i8x16_bitmask(eq) as u32;
+
+            if mask == 0xFFFF {
+                // All 16 bytes match
+                *cur += 16;
+            } else {
+                // Find first mismatch
+                *cur += (!mask).trailing_zeros() as usize;
+                return *cur - start;
+            }
+        }
+    }
+
+    // Handle remaining bytes with scalar code
+    let mut src_offset = candidate + (*cur - start);
+    while *cur < input_end {
+        if input[*cur] != source[src_offset] {
+            return *cur - start;
+        }
+        *cur += 1;
+        src_offset += 1;
+    }
+
+    *cur - start
+}
+
 /// Counts the number of same bytes in two byte streams.
 /// `input` is the complete input
 /// `cur` is the current position in the input. it will be incremented by the number of matched
@@ -152,7 +203,10 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
 ///
 /// The function ignores the last END_OFFSET bytes in input as those should be literals.
 #[inline]
-#[cfg(not(feature = "safe-encode"))]
+#[cfg(all(
+    not(all(target_arch = "wasm32", target_feature = "simd128")),
+    not(feature = "safe-encode")
+))]
 fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
     let max_input_match = input.len().saturating_sub(*cur + END_OFFSET);
     let max_candidate_match = source.len() - candidate;
@@ -694,6 +748,7 @@ pub fn compress_prepend_size_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8>
 }
 
 #[inline]
+#[allow(dead_code)]
 #[cfg(not(feature = "safe-encode"))]
 fn read_u16_ptr(input: *const u8) -> u16 {
     let mut num: u16 = 0;

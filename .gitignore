@@ -4,3 +4,4 @@ Cargo.lock
 my-prof.profile
 Session.vim
 /benchmarks/bench_files
+wasm_test/target/

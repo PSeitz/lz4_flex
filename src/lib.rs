@@ -93,6 +93,9 @@ mod fastcpy;
 #[allow(dead_code)]
 mod fastcpy_unsafe;
 
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+pub mod simd;
+
 #[deprecated(
     since = "0.11.0",
     note = "This re-export is deprecated as it can be confused with the frame API and is not suitable for very large data, use block:: instead"
