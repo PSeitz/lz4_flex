@@ -60,3 +60,9 @@ name = "fuzz_decomp_corrupt_frame"
 path = "fuzz_targets/fuzz_decomp_corrupt_frame.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_decomp_no_output_leak"
+path = "fuzz_targets/fuzz_decomp_no_output_leak.rs"
+test = false
+doc = false

@@ -107,13 +107,16 @@ Tested on AMD Ryzen 7 5900HX, rustc 1.69.0 (84c898d65 2023-04-16), Manjaro, CPU 
 `MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-disable-stacked-borrows" cargo +nightly miri test --no-default-features --features frame`
 
 ## Fuzzer
-This fuzz target generates corrupted data for the decompressor. 
+This fuzz target generates corrupted data for the decompressor:\
 `cargo +nightly fuzz run fuzz_decomp_corrupt_block` and `cargo +nightly fuzz run fuzz_decomp_corrupt_frame`
 
-This fuzz target asserts that a compression and decompression roundtrip returns the original input.
+This fuzz target asserts that the decompressor does not leak previous data when reusing an output buffer:\
+`cargo +nightly fuzz run fuzz_decomp_no_output_leak`
+
+This fuzz target asserts that a compression and decompression roundtrip returns the original input:\
 `cargo +nightly fuzz run fuzz_roundtrip` and `cargo +nightly fuzz run fuzz_roundtrip_frame`
 
-This fuzz target asserts compression with cpp and decompression with lz4_flex returns the original input.
+This fuzz target asserts compression with cpp and decompression with lz4_flex returns the original input:\
 `cargo +nightly fuzz run fuzz_roundtrip_cpp_compress`
 
 ## Bindings in other languages

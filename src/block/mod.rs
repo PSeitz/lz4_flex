@@ -91,6 +91,8 @@ pub enum DecompressError {
     LiteralOutOfBounds,
     /// Expected another byte, but none found.
     ExpectedAnotherByte,
+    /// Match offset is 0
+    OffsetZero,
     /// Deduplication offset out of bounds (not in buffer).
     OffsetOutOfBounds,
 }
@@ -119,6 +121,7 @@ impl fmt::Display for DecompressError {
             DecompressError::ExpectedAnotherByte => {
                 f.write_str("expected another byte, found none")
             }
+            DecompressError::OffsetZero => f.write_str("0 is not a valid match offset"),
             DecompressError::OffsetOutOfBounds => {
                 f.write_str("the offset to copy is not contained in the decompressed buffer")
             }

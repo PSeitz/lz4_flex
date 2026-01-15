@@ -220,6 +220,12 @@ impl PtrSink {
     /// Panics if `pos` is out of bounds.
     #[inline]
     pub fn from_vec(output: &mut Vec<u8>, pos: usize) -> Self {
+        assert!(
+            pos <= output.len(),
+            "invalid pos {pos} for vec with len {}",
+            output.len()
+        );
+
         // SAFETY: Bytes behind pointer may be uninitialized.
         Self {
             output: output.as_mut_ptr(),
