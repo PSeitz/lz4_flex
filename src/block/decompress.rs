@@ -59,11 +59,6 @@ unsafe fn duplicate_overlapping(
     mut start: *const u8,
     match_length: usize,
 ) {
-    // There is an edge case when output_ptr == start, which causes the decoder to potentially
-    // expose up to match_length bytes of uninitialized data in the decompression buffer.
-    // To prevent that we write a dummy zero to output, which will zero out output in such cases.
-    // This is the same strategy used by the reference C implementation https://github.com/lz4/lz4/pull/772
-    output_ptr.write(0u8);
     let dst_ptr_end = output_ptr.add(match_length);
 
     while output_ptr.add(1) < dst_ptr_end {
@@ -161,16 +156,21 @@ pub(super) fn read_integer_ptr(
     Ok(n)
 }
 
-/// Read a little-endian 16-bit integer from the input stream.
+/// Read the match offset as a little-endian 16-bit integer from the input stream.
 #[inline]
-fn read_u16_ptr(input_ptr: &mut *const u8) -> u16 {
+fn read_match_offset(input_ptr: &mut *const u8) -> Result<u16, DecompressError> {
     let mut num: u16 = 0;
     unsafe {
         core::ptr::copy_nonoverlapping(*input_ptr, &mut num as *mut u16 as *mut u8, 2);
         *input_ptr = input_ptr.add(2);
     }
 
-    u16::from_le(num)
+    let offset = u16::from_le(num);
+    if offset == 0 {
+        Err(DecompressError::OffsetZero)
+    } else {
+        Ok(offset)
+    }
 }
 
 const FIT_TOKEN_MASK_LITERAL: u8 = 0b00001111;
@@ -281,10 +281,12 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
 
             // input_ptr <= input_ptr_safe should guarantee we have enough space in input
             debug_assert!(input_ptr_end as usize - input_ptr as usize >= 2);
-            let offset = read_u16_ptr(&mut input_ptr) as usize;
+            let offset = read_match_offset(&mut input_ptr)? as usize;
 
             let output_len = unsafe { output_ptr.offset_from(output_base) as usize };
-            let offset = offset.min(output_len + ext_dict.len());
+            if offset > output_len + ext_dict.len() {
+                return Err(DecompressError::OffsetOutOfBounds);
+            }
 
             // Check if part of the match is in the external dict
             if USE_DICT && offset > output_len {
@@ -372,7 +374,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
                 return Err(DecompressError::ExpectedAnotherByte);
             }
         }
-        let offset = read_u16_ptr(&mut input_ptr) as usize;
+        let offset = read_match_offset(&mut input_ptr)? as usize;
         // Obtain the initial match length. The match length is the length of the duplicate segment
         // which will later be copied from data previously decompressed into the output buffer. The
         // initial length is derived from the second part of the token (the lower nibble), we read
@@ -534,10 +536,88 @@ mod test {
         assert_eq!(decompress(&[0x30, b'a', b'4', b'9'], 3).unwrap(), b"a49");
     }
 
-    // this error test is only valid with checked-decode.
+    #[test]
+    fn incomplete_input() {
+        assert!(matches!(
+            decompress(&[], 255),
+            Err(DecompressError::ExpectedAnotherByte)
+        ));
+        assert!(matches!(
+            // incomplete literal len
+            decompress(&[0xF0], 255),
+            Err(DecompressError::ExpectedAnotherByte)
+        ));
+        assert!(matches!(
+            // incomplete match offset
+            decompress(&[0x0F, 0], 255),
+            Err(DecompressError::ExpectedAnotherByte)
+        ));
+        assert!(matches!(
+            // incomplete match len
+            decompress(&[0x0F, 1, 0], 255),
+            Err(DecompressError::ExpectedAnotherByte)
+        ));
+    }
+
+    // this error test is only valid in safe-decode.
     #[test]
     fn offset_oob() {
-        decompress(&[0x10, b'a', 2, 0], 4).unwrap_err();
-        decompress(&[0x40, b'a', 1, 0], 4).unwrap_err();
+        // incomplete literal
+        assert!(matches!(
+            decompress(&[0x40, b'a', 1, 0], 4),
+            Err(DecompressError::LiteralOutOfBounds)
+        ));
+        // literal too large for output
+        assert!(matches!(
+            decompress(&[0x20, b'a', b'a', 1, 0], 1),
+            Err(DecompressError::OutputTooSmall {
+                expected: 2,
+                actual: 1
+            })
+        ));
+        // match too large for output
+        assert!(matches!(
+            decompress(&[0x10, b'a', 1, 0], 4),
+            Err(DecompressError::OutputTooSmall {
+                expected: 5,
+                actual: 4
+            })
+        ));
+
+        // out-of-bounds hot-loop
+        assert!(matches!(
+            decompress(
+                &[0x0E, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                256
+            ),
+            Err(DecompressError::OffsetOutOfBounds)
+        ));
+        // out-of-bounds for dict
+        assert!(matches!(
+            decompress_with_dict(
+                &[0x0E, 255, 0, 0x70, 0, 0, 0, 0, 0, 0, 0],
+                256,
+                &[0_u8; 250]
+            ),
+            Err(DecompressError::OffsetOutOfBounds)
+        ));
+        // out-of-bounds non-hot-loop overlapping
+        assert!(matches!(
+            decompress(&[0x0F, 1, 0, 1, 0x70, 0, 0, 0, 0, 0, 0, 0], 256),
+            Err(DecompressError::OffsetOutOfBounds)
+        ));
+        // out-of-bounds non-hot-loop non-overlapping
+        assert!(matches!(
+            decompress(&[0x40, 0, 0, 0, 0, 255, 0, 0x70, 0, 0, 0, 0, 0, 0, 0], 256),
+            Err(DecompressError::OffsetOutOfBounds)
+        ));
+    }
+
+    #[test]
+    fn offset_0() {
+        assert!(matches!(
+            decompress(&[0x0E, 0, 0, 0x70, 0, 0, 0, 0, 0, 0, 0], 256),
+            Err(DecompressError::OffsetZero)
+        ));
     }
 }

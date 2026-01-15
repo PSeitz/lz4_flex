@@ -16,6 +16,8 @@ jobs:
       uses: dtolnay/rust-toolchain@master
       with:
         toolchain: nightly
+        # 'rust-src' component is needed for fuzzing with `--sanitizer=memory`
+        components: rust-src
     - uses: actions/checkout@v3
     - name: Ensure no_std compiles
       run: cargo build --no-default-features
@@ -47,6 +49,15 @@ jobs:
       run: for fuzz_test in `cargo fuzz list`; do cargo +nightly fuzz run $fuzz_test -- -max_total_time=30 || exit 1; done
     - name: Run fuzz tests (unsafe)
       run: for fuzz_test in `cargo fuzz list`; do cargo +nightly fuzz run $fuzz_test --no-default-features -- -max_total_time=30 || exit 1; done
+    - name: Run decompress fuzz test (unsafe; memory sanitizer)
+      # Only run this single test because this fuzz target is where invalid memory access might occur
+      # (uses decompress functions which create uninitialized `Vec`); running all fuzz tests with MemorySanitizer
+      # might make them less effective due to the slowdown from the sanitizer
+      # Have to run with `--dev` because otherwise memory access might be optimized away
+      # Note that the stack traces reported by MemorySanitizer here are not readable;
+      # that would require llvm-symbolizer, see https://clang.llvm.org/docs/MemorySanitizer.html#report-symbolization
+      # But setting up llvm-symbolizer here might not be worth it; can do that locally when reproducing the issue
+      run: cargo +nightly fuzz run fuzz_decomp_corrupt_block --no-default-features --sanitizer=memory --dev -- -max_total_time=30
 
   semver:
     name: semver
