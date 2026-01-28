@@ -42,8 +42,8 @@ const RUN_MASK: usize = 15;
 
 #[derive(Debug)]
 pub struct HashTableHCU32 {
-    dict: Box<[u32; HASHTABLE_SIZE_HC]>,
-    chain_table: Box<[u16; MAX_DISTANCE_HC]>,
+    dict: Box<[u32; HASHTABLE_SIZE_HC]>,  // Fixed size, hash function bounds to this range
+    chain_table: Box<[u16]>,              // Dynamic size, power of 2 for masking
     next_to_update: usize,
     max_attempts: usize,
 }
@@ -91,41 +91,50 @@ impl Match {
 
 impl HashTableHCU32 {
     #[inline]
-    pub fn new(max_attempts: usize) -> Self {
+    pub fn new(max_attempts: usize, input_len: usize) -> Self {
+        // Dict table: fixed size, hash function already bounds to this range
         let dict = vec![0u32; HASHTABLE_SIZE_HC]
             .into_boxed_slice()
             .try_into()
             .unwrap();
-        let chain_table = vec![0u16; MAX_DISTANCE_HC]
-            .into_boxed_slice()
-            .try_into()
-            .unwrap();
+        
+        // Chain table: dynamically sized based on input length
+        // min(input_len, MAX_DISTANCE_HC), at least 256, must be power of 2
+        let chain_size = input_len
+            .min(MAX_DISTANCE_HC)
+            .max(256)
+            .next_power_of_two();
+        
         Self {
             dict,
-            chain_table,
+            chain_table: vec![0u16; chain_size].into_boxed_slice(),
             next_to_update: 0,
             max_attempts,
         }
+    }
+    
+    /// Mask for chain table indexing (table size is always power of 2)
+    #[inline]
+    fn chain_mask(&self) -> usize {
+        self.chain_table.len() - 1
     }
 
 
     /// Get the next position in the chain for a given offset
     #[inline]
     fn next(&self, pos: usize) -> usize {
-        const MASK: usize = MAX_DISTANCE_HC - 1;
-        pos - (self.chain_table[pos & MASK] as usize)
+        pos - (self.chain_table[pos & self.chain_mask()] as usize)
     }
 
     #[inline]
     fn add_hash(&mut self, hash: usize, pos: usize) {
         let delta = pos - self.dict[hash] as usize;
-        const MASK : usize = MAX_DISTANCE_HC - 1;
-        let delta = if delta >= MAX_DISTANCE_HC {
-            MASK
+        let delta = if delta > self.chain_mask() {
+            self.chain_mask()
         } else {
             delta
         };
-        self.chain_table[pos & MASK] = delta as u16;
+        self.chain_table[pos & self.chain_mask()] = delta as u16;
         self.dict[hash] = pos as u32;
     }
 
@@ -156,12 +165,12 @@ impl HashTableHCU32 {
 
         self.insert(off, input);
 
-        let mut ref_pos = self.dict[Self::get_hash_at(input, off)] as usize;
+        let mut ref_pos = self.dict[Self::get_hash_at(input, off) ] as usize;
 
         // Search for better matches
         for i in 0..=self.max_attempts {
-            // Check distance is within LZ4 format limit (offset must fit in u16)
-            if off - ref_pos > MAX_DISTANCE {
+            // Validate ref_pos is within valid range and LZ4 format limit
+            if ref_pos >= off || off - ref_pos > self.chain_mask() {
                 break;
             }
             
@@ -175,7 +184,7 @@ impl HashTableHCU32 {
                         || input[ref_pos + check_pos + 1] != input[off + check_pos + 1]
                     {
                         let next = self.next(ref_pos);
-                        if next >= off + MAX_DISTANCE_HC || next == ref_pos {
+                        if next > off || off - next > self.chain_mask() || next == ref_pos {
                             break;
                         }
                         ref_pos = next;
@@ -197,7 +206,7 @@ impl HashTableHCU32 {
                 }
             }
             let next = self.next(ref_pos);
-            if next >= off + MAX_DISTANCE_HC || next == ref_pos {
+            if next > off || off - next > self.chain_mask() || next == ref_pos {
                 break;
             }
             ref_pos = next;
@@ -207,17 +216,17 @@ impl HashTableHCU32 {
         if repl != 0 {
             let mut ptr = off;
             let end = off + repl - 3; // MIN_MATCH - 1 = 3
-            const MASK: usize = MAX_DISTANCE_HC - 1;
+            let mask = self.chain_mask();
 
             // possible overlap from off -> ref
             while ptr < end - delta {
-                self.chain_table[ptr & MASK] = delta as u16; // pre load
+                self.chain_table[ptr & mask] = delta as u16; // pre load
                 ptr += 1;
             }
 
             loop {
-                self.chain_table[ptr & MASK] = delta as u16;
-                self.dict[Self::get_hash_at(input, ptr)] = ptr as u32;
+                self.chain_table[ptr & mask] = delta as u16;
+                self.dict[Self::get_hash_at(input, ptr) ] = ptr as u32;
                 ptr += 1;
                 if ptr >= end {
                     break;
@@ -238,11 +247,11 @@ impl HashTableHCU32 {
 
         self.insert(off, input);
 
-        let mut ref_pos = self.dict[Self::get_hash_at(input, off)] as usize;
+        let mut ref_pos = self.dict[Self::get_hash_at(input, off) ] as usize;
 
         for _ in 0..self.max_attempts {
-            // Check distance is within LZ4 format limit (offset must fit in u16)
-            if off - ref_pos > MAX_DISTANCE {
+            // Validate ref_pos is within valid range and LZ4 format limit
+            if ref_pos >= off || off - ref_pos > self.chain_mask() {
                 break;
             }
             
@@ -259,7 +268,7 @@ impl HashTableHCU32 {
                         || input[src_check + 1] != input[match_check + 1]
                     {
                         let next = self.next(ref_pos);
-                        if next >= off + MAX_DISTANCE_HC || next == ref_pos {
+                        if next > off || off - next > self.chain_mask() || next == ref_pos {
                             break;
                         }
                         ref_pos = next;
@@ -280,7 +289,7 @@ impl HashTableHCU32 {
                 }
             }
             let next = self.next(ref_pos);
-            if next >= off + MAX_DISTANCE_HC || next == ref_pos {
+            if next > off || off - next > self.chain_mask() || next == ref_pos {
                 break;
             }
             ref_pos = next;
@@ -400,10 +409,10 @@ impl HashTableHCU32 {
         let mut best_len = min_len;
         let mut best_offset = 0;
 
-        let mut ref_pos = self.dict[Self::get_hash_at(input, off)] as usize;
+        let mut ref_pos = self.dict[Self::get_hash_at(input, off) ] as usize;
 
         for _ in 0..self.max_attempts {
-            if ref_pos >= off || off - ref_pos > MAX_DISTANCE_HC - 1 {
+            if ref_pos >= off || off - ref_pos > self.chain_mask() {
                 break;
             }
 
@@ -416,7 +425,7 @@ impl HashTableHCU32 {
             }
 
             let next = self.next(ref_pos);
-            if next >= ref_pos || ref_pos - next > MAX_DISTANCE_HC - 1 {
+            if next > off || off - next > self.chain_mask() || next == ref_pos {
                 break;
             }
             ref_pos = next;
@@ -766,7 +775,7 @@ fn compress_hc_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Resu
     // let mut d_off = output.pos();
     let mut anchor = 0;
 
-    let mut ht = HashTableHCU32::new(1 << (level - 1));
+    let mut ht = HashTableHCU32::new(1 << (level - 1), input.len());
     let mut match0;
     let mut match1 = Match::new();
     let mut match2 = Match::new();
@@ -946,7 +955,7 @@ fn compress_opt_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Res
     let mut anchor = 0;
     let mut ip = 0;
 
-    let mut ht = HashTableHCU32::new(nb_searches);
+    let mut ht = HashTableHCU32::new(nb_searches, input.len());
 
     // Allocate optimal parsing buffer
     let mut opt = vec![OptimalState::new(); LZ4_OPT_NUM + TRAILING_LITERALS];
