@@ -121,12 +121,22 @@ impl HashTableHCU32 {
 
 
     /// Get the next position in the chain for a given offset
-    #[inline]
+    #[inline(always)]
+    #[cfg(feature = "safe-encode")]
     fn next(&self, pos: usize) -> usize {
         pos - (self.chain_table[pos & self.chain_mask()] as usize)
     }
 
-    #[inline]
+    #[inline(always)]
+    #[cfg(not(feature = "safe-encode"))]
+    fn next(&self, pos: usize) -> usize {
+        let idx = pos & self.chain_mask();
+        let delta = unsafe { *self.chain_table.get_unchecked(idx) } as usize;
+        pos - delta
+    }
+
+    #[inline(always)]
+    #[cfg(feature = "safe-encode")]
     fn add_hash(&mut self, hash: usize, pos: usize) {
         let delta = pos - self.dict[hash] as usize;
         let delta = if delta > self.chain_mask() {
@@ -136,6 +146,63 @@ impl HashTableHCU32 {
         };
         self.chain_table[pos & self.chain_mask()] = delta as u16;
         self.dict[hash] = pos as u32;
+    }
+
+    #[inline(always)]
+    #[cfg(not(feature = "safe-encode"))]
+    fn add_hash(&mut self, hash: usize, pos: usize) {
+        let prev_pos = unsafe { *self.dict.get_unchecked(hash) } as usize;
+        let delta = pos - prev_pos;
+        let delta = if delta > self.chain_mask() {
+            self.chain_mask()
+        } else {
+            delta
+        };
+        let chain_idx = pos & self.chain_mask();
+        unsafe {
+            *self.chain_table.get_unchecked_mut(chain_idx) = delta as u16;
+            *self.dict.get_unchecked_mut(hash) = pos as u32;
+        }
+    }
+
+    /// Get dict value at hash position
+    #[inline(always)]
+    #[cfg(feature = "safe-encode")]
+    fn get_dict(&self, hash: usize) -> usize {
+        self.dict[hash] as usize
+    }
+
+    #[inline(always)]
+    #[cfg(not(feature = "safe-encode"))]
+    fn get_dict(&self, hash: usize) -> usize {
+        unsafe { *self.dict.get_unchecked(hash) as usize }
+    }
+
+    /// Set dict value at hash position
+    #[inline(always)]
+    #[cfg(feature = "safe-encode")]
+    fn set_dict(&mut self, hash: usize, pos: usize) {
+        self.dict[hash] = pos as u32;
+    }
+
+    #[inline(always)]
+    #[cfg(not(feature = "safe-encode"))]
+    fn set_dict(&mut self, hash: usize, pos: usize) {
+        unsafe { *self.dict.get_unchecked_mut(hash) = pos as u32; }
+    }
+
+    /// Set chain value at position
+    #[inline(always)]
+    #[cfg(feature = "safe-encode")]
+    fn set_chain(&mut self, pos: usize, delta: u16) {
+        self.chain_table[pos & self.chain_mask()] = delta;
+    }
+
+    #[inline(always)]
+    #[cfg(not(feature = "safe-encode"))]
+    fn set_chain(&mut self, pos: usize, delta: u16) {
+        let idx = pos & self.chain_mask();
+        unsafe { *self.chain_table.get_unchecked_mut(idx) = delta; }
     }
 
     /// Hash function for high compression
@@ -165,7 +232,7 @@ impl HashTableHCU32 {
 
         self.insert(off, input);
 
-        let mut ref_pos = self.dict[Self::get_hash_at(input, off) ] as usize;
+        let mut ref_pos = self.get_dict(Self::get_hash_at(input, off));
 
         // Search for better matches
         for i in 0..=self.max_attempts {
@@ -216,17 +283,15 @@ impl HashTableHCU32 {
         if repl != 0 {
             let mut ptr = off;
             let end = off + repl - 3; // MIN_MATCH - 1 = 3
-            let mask = self.chain_mask();
-
             // possible overlap from off -> ref
             while ptr < end - delta {
-                self.chain_table[ptr & mask] = delta as u16; // pre load
+                self.set_chain(ptr, delta as u16); // pre load
                 ptr += 1;
             }
 
             loop {
-                self.chain_table[ptr & mask] = delta as u16;
-                self.dict[Self::get_hash_at(input, ptr) ] = ptr as u32;
+                self.set_chain(ptr, delta as u16);
+                self.set_dict(Self::get_hash_at(input, ptr), ptr);
                 ptr += 1;
                 if ptr >= end {
                     break;
@@ -247,7 +312,7 @@ impl HashTableHCU32 {
 
         self.insert(off, input);
 
-        let mut ref_pos = self.dict[Self::get_hash_at(input, off) ] as usize;
+        let mut ref_pos = self.get_dict(Self::get_hash_at(input, off));
 
         for _ in 0..self.max_attempts {
             // Validate ref_pos is within valid range and LZ4 format limit
@@ -409,7 +474,7 @@ impl HashTableHCU32 {
         let mut best_len = min_len;
         let mut best_offset = 0;
 
-        let mut ref_pos = self.dict[Self::get_hash_at(input, off) ] as usize;
+        let mut ref_pos = self.get_dict(Self::get_hash_at(input, off));
 
         for _ in 0..self.max_attempts {
             if ref_pos >= off || off - ref_pos > self.chain_mask() {
