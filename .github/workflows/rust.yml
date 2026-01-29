@@ -25,10 +25,16 @@ jobs:
       run: cargo build --no-default-features --features safe-encode
     - name: Ensure no_std compiles for safe-encode and safe-decode
       run: cargo build --no-default-features --features safe-encode --features safe-decode
+    - name: Ensure no_std compiles for hc
+      run: cargo build --no-default-features --features hc
+    - name: Ensure no_std compiles for hc with safe-encode
+      run: cargo build --no-default-features --features hc --features safe-encode
     - name: Build
       run: cargo build --verbose
     - name: Run tests
       run: cargo test
+    - name: Run tests with hc
+      run: cargo test --features hc
     - name: Run tests with nightly
       run: cargo +nightly test --features nightly
     - name: Run tests safe-encode
@@ -41,12 +47,20 @@ jobs:
       run: cargo +nightly test --no-default-features --features frame --features nightly
     - name: Run tests unsafe with checked-decode and frame
       run: cargo test --no-default-features --features frame
+    - name: Run tests with hc and frame
+      run: cargo test --features hc --features frame
+    - name: Run tests with hc and safe-encode
+      run: cargo test --features hc --features safe-encode
+    - name: Run tests --no-default-features with hc and frame
+      run: cargo test --no-default-features --features hc --features frame
     - name: Install cargo fuzz
       run: cargo install cargo-fuzz
     - name: Run fuzz tests (safe)
       run: for fuzz_test in `cargo fuzz list`; do cargo +nightly fuzz run $fuzz_test -- -max_total_time=30 || exit 1; done
     - name: Run fuzz tests (unsafe)
       run: for fuzz_test in `cargo fuzz list`; do cargo +nightly fuzz run $fuzz_test --no-default-features -- -max_total_time=30 || exit 1; done
+    - name: Run HC fuzz tests (unsafe)
+      run: for fuzz_test in fuzz_roundtrip_hc fuzz_roundtrip_hc_cpp fuzz_roundtrip_frame; do cargo +nightly fuzz run $fuzz_test --no-default-features --features hc -- -max_total_time=30 || exit 1; done
 
   semver:
     name: semver
