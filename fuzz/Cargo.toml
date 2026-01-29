@@ -10,16 +10,17 @@ edition = "2018"
 cargo-fuzz = true
 
 [features]
-default = ["safe-encode", "safe-decode"]
+default = ["safe-encode", "safe-decode", "hc"]
 safe-encode = ["lz4_flex/safe-encode"]
 safe-decode = ["lz4_flex/safe-decode"]
+hc = ["lz4_flex/hc"]
 
 [dependencies]
 arbitrary = { version = "1", features = ["derive"] }
 libfuzzer-sys = "0.4"
 lzzzz = "0.8"
 
-lz4_flex = { path = "..", default-features = false, features=["frame"] }
+lz4_flex = { path = "..", default-features = false, features=["frame", "hc"] }
 
 # Prevent this from interfering with workspaces
 [workspace]
@@ -58,5 +59,17 @@ doc = false
 [[bin]]
 name = "fuzz_decomp_corrupt_frame"
 path = "fuzz_targets/fuzz_decomp_corrupt_frame.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_roundtrip_hc"
+path = "fuzz_targets/fuzz_roundtrip_hc.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_roundtrip_hc_cpp"
+path = "fuzz_targets/fuzz_roundtrip_hc_cpp.rs"
 test = false
 doc = false
