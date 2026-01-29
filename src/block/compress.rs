@@ -104,7 +104,7 @@ fn token_from_literal_and_match_length(lit_len: usize, duplicate_length: usize) 
 /// The function ignores the last END_OFFSET bytes in input as those should be literals.
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
+pub(crate) fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
     const USIZE_SIZE: usize = core::mem::size_of::<usize>();
     let cur_slice = &input[*cur..input.len() - END_OFFSET];
     let cand_slice = &source[candidate..];
@@ -153,7 +153,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
 /// The function ignores the last END_OFFSET bytes in input as those should be literals.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
+pub(crate) fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usize) -> usize {
     let max_input_match = input.len().saturating_sub(*cur + END_OFFSET);
     let max_candidate_match = source.len() - candidate;
     // Considering both limits calc how far we may match in input.
@@ -280,7 +280,7 @@ pub(crate) fn handle_last_literals(output: &mut impl Sink, input: &[u8]) {
 /// Moves the cursors back as long as the bytes match, to find additional bytes in a duplicate
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn backtrack_match(
+pub(crate) fn backtrack_match(
     input: &[u8],
     cur: &mut usize,
     literal_start: usize,
@@ -300,7 +300,7 @@ fn backtrack_match(
 /// Moves the cursors back as long as the bytes match, to find additional bytes in a duplicate
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn backtrack_match(
+pub(crate) fn backtrack_match(
     input: &[u8],
     cur: &mut usize,
     literal_start: usize,

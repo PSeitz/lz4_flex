@@ -8,6 +8,7 @@
 //! - `compress_opt`: The optimal parsing algorithm for maximum compression (levels 10-12)
 
 use crate::block::{encode_sequence, handle_last_literals, CompressError, LAST_LITERALS, MFLIMIT, MINMATCH, MAX_DISTANCE};
+use crate::block::compress::{backtrack_match, count_same_bytes};
 use crate::sink::Sink;
 use crate::sink::SliceSink;
 #[cfg(test)]
@@ -21,6 +22,10 @@ use alloc::vec::Vec;
 
 const HASHTABLE_SIZE_HC: usize = 1 << 15;
 const MAX_DISTANCE_HC: usize = 1 << 16;
+
+// LZ4MID constants (for levels 1-2)
+const LZ4MID_HASH_LOG: usize = 15;
+const LZ4MID_HASHTABLE_SIZE: usize = 1 << LZ4MID_HASH_LOG;
 
 const MIN_MATCH: usize = 4;
 const OPTIMAL_ML: usize = 32;
@@ -507,14 +512,19 @@ fn sequence_price(litlen: usize, mlen: usize) -> i32 {
 /// let size = compress_hc(input, &mut output, 12).unwrap(); // Optimal algorithm
 /// ```
 pub fn compress_hc(input: &[u8], output: &mut impl Sink, level: u8) -> Result<usize, CompressError> {
-    // Clamp level to valid range
-    let level = level.clamp(1, 12);
+    // Clamp level to valid range (0-12, matching C LZ4HC)
+    let level = level.min(12);
 
-    // Use optimal parsing for levels 10-12, HC for levels 1-9
+    // Route to appropriate algorithm based on level (matching C LZ4HC k_clTable)
+    // Levels 0-2: lz4mid (intermediate - two hash tables, better than fast)
+    // Levels 3-9: HC (hash chain algorithm)
+    // Levels 10-12: optimal parsing (best compression)
     if level >= 10 {
         compress_opt_internal(input, output, level)
-    } else {
+    } else if level >= 3 {
         compress_hc_internal(input, output, level)
+    } else {
+        compress_mid_internal(input, output)
     }
 }
 
@@ -544,6 +554,199 @@ pub fn compress_hc_to_vec(input: &[u8], level: u8) -> Vec<u8> {
     let compressed_size = compress_hc(input, &mut sink, level).unwrap();
     output.truncate(compressed_size);
     output
+}
+
+// ============================================================================
+// LZ4MID - Intermediate compression (levels 1-2)
+// Uses two hash tables (4-byte and 8-byte) for better compression than fast
+// algorithm while being faster than HC.
+// ============================================================================
+
+/// Hash table for lz4mid algorithm - contains two tables (4-byte and 8-byte)
+struct HashTableMid {
+    hash4: Box<[u32; LZ4MID_HASHTABLE_SIZE]>,
+    hash8: Box<[u32; LZ4MID_HASHTABLE_SIZE]>,
+}
+
+impl HashTableMid {
+    fn new() -> Self {
+        HashTableMid {
+            hash4: vec![0u32; LZ4MID_HASHTABLE_SIZE].into_boxed_slice().try_into().unwrap(),
+            hash8: vec![0u32; LZ4MID_HASHTABLE_SIZE].into_boxed_slice().try_into().unwrap(),
+        }
+    }
+}
+
+/// 4-byte hash for lz4mid (same multiplier as fast algorithm)
+#[inline]
+fn get_hash4_mid(input: &[u8], pos: usize) -> usize {
+    let v = u32::from_ne_bytes(input[pos..pos + 4].try_into().unwrap());
+    (v.wrapping_mul(2654435761) >> (32 - LZ4MID_HASH_LOG)) as usize
+}
+
+/// 8-byte hash for lz4mid (hashes lower 56 bits for longer match detection)
+#[inline]
+fn get_hash8_mid(input: &[u8], pos: usize) -> usize {
+    let v = u64::from_le_bytes(input[pos..pos + 8].try_into().unwrap());
+    let v56 = v << 8;
+    ((v56.wrapping_mul(58295818150454627)) >> (64 - LZ4MID_HASH_LOG)) as usize
+}
+
+/// Internal lz4mid compression
+fn compress_mid_internal(input: &[u8], output: &mut impl Sink) -> Result<usize, CompressError> {
+    let output_start = output.pos();
+    
+    if input.len() < MFLIMIT + 1 {
+        handle_last_literals(output, input);
+        return Ok(output.pos() - output_start);
+    }
+
+    let mut table = HashTableMid::new();
+    let hash4 = &mut *table.hash4;
+    let hash8 = &mut *table.hash8;
+
+    let mut ip = 0usize;
+    let mut anchor = 0usize;
+    let input_end = input.len();
+    let mflimit = input_end.saturating_sub(MFLIMIT);
+    let ilimit = input_end.saturating_sub(8); // Need 8 bytes to read for hash8
+
+    // Helper to add position to hash8 table
+    #[inline(always)]
+    fn add_hash8(hash8: &mut [u32; LZ4MID_HASHTABLE_SIZE], input: &[u8], pos: usize, input_end: usize) {
+        if pos + 8 <= input_end {
+            hash8[get_hash8_mid(input, pos)] = pos as u32;
+        }
+    }
+
+    // Helper to add position to hash4 table
+    #[inline(always)]
+    fn add_hash4(hash4: &mut [u32; LZ4MID_HASHTABLE_SIZE], input: &[u8], pos: usize, input_end: usize) {
+        if pos + 4 <= input_end {
+            hash4[get_hash4_mid(input, pos)] = pos as u32;
+        }
+    }
+
+    while ip <= mflimit {
+        // Try 8-byte hash first (longer matches)
+        let h8 = get_hash8_mid(input, ip);
+        let pos8 = hash8[h8] as usize;
+        hash8[h8] = ip as u32;
+
+        if ip > pos8 && ip - pos8 <= MAX_DISTANCE {
+            let mut probe = ip;
+            let match_len = count_same_bytes(input, &mut probe, input, pos8);
+            if match_len >= MIN_MATCH {
+                let mut cur = ip;
+                let mut candidate = pos8;
+                backtrack_match(input, &mut cur, anchor, input, &mut candidate);
+                let match_len = count_same_bytes(input, &mut cur, input, candidate);
+                let match_start = cur - match_len;
+                let offset = (match_start - candidate) as u16;
+
+                // Fill hash tables at beginning of match (like C's lz4mid)
+                add_hash8(hash8, input, match_start + 1, input_end);
+                add_hash8(hash8, input, match_start + 2, input_end);
+                add_hash4(hash4, input, match_start + 1, input_end);
+
+                encode_sequence(&input[anchor..match_start], output, offset, match_len - MIN_MATCH);
+
+                ip = cur;
+                anchor = ip;
+
+                // Fill hash tables at end of match (like C's lz4mid)
+                if ip >= 5 && ip <= ilimit {
+                    add_hash8(hash8, input, ip - 5, input_end);
+                }
+                if ip >= 3 && ip <= ilimit {
+                    add_hash8(hash8, input, ip - 3, input_end);
+                    add_hash8(hash8, input, ip - 2, input_end);
+                }
+                if ip >= 2 {
+                    add_hash4(hash4, input, ip - 2, input_end);
+                }
+                if ip >= 1 {
+                    add_hash4(hash4, input, ip - 1, input_end);
+                }
+                continue;
+            }
+        }
+
+        // Try 4-byte hash (shorter matches)
+        let h4 = get_hash4_mid(input, ip);
+        let pos4 = hash4[h4] as usize;
+        hash4[h4] = ip as u32;
+
+        if ip > pos4 && ip - pos4 <= MAX_DISTANCE {
+            let mut probe = ip;
+            let match_len = count_same_bytes(input, &mut probe, input, pos4);
+            if match_len >= MIN_MATCH {
+                // Check ip+1 for potentially longer match
+                let mut best_ip = ip;
+                let mut best_pos = pos4;
+                let mut best_len = match_len;
+
+                if ip + 1 <= mflimit {
+                    let h8_next = get_hash8_mid(input, ip + 1);
+                    let pos8_next = hash8[h8_next] as usize;
+                    if ip + 1 > pos8_next && ip + 1 - pos8_next <= MAX_DISTANCE {
+                        let mut probe_next = ip + 1;
+                        let len_next = count_same_bytes(input, &mut probe_next, input, pos8_next);
+                        if len_next > best_len {
+                            hash8[h8_next] = (ip + 1) as u32;
+                            best_ip = ip + 1;
+                            best_pos = pos8_next;
+                            best_len = len_next;
+                        }
+                    }
+                }
+                let _ = best_len;
+
+                let mut cur = best_ip;
+                let mut candidate = best_pos;
+                backtrack_match(input, &mut cur, anchor, input, &mut candidate);
+                let match_len = count_same_bytes(input, &mut cur, input, candidate);
+                let match_start = cur - match_len;
+                let offset = (match_start - candidate) as u16;
+
+                // Fill hash tables at beginning of match (like C's lz4mid)
+                add_hash8(hash8, input, match_start + 1, input_end);
+                add_hash8(hash8, input, match_start + 2, input_end);
+                add_hash4(hash4, input, match_start + 1, input_end);
+
+                encode_sequence(&input[anchor..match_start], output, offset, match_len - MIN_MATCH);
+
+                ip = cur;
+                anchor = ip;
+
+                // Fill hash tables at end of match (like C's lz4mid)
+                if ip >= 5 && ip <= ilimit {
+                    add_hash8(hash8, input, ip - 5, input_end);
+                }
+                if ip >= 3 && ip <= ilimit {
+                    add_hash8(hash8, input, ip - 3, input_end);
+                    add_hash8(hash8, input, ip - 2, input_end);
+                }
+                if ip >= 2 {
+                    add_hash4(hash4, input, ip - 2, input_end);
+                }
+                if ip >= 1 {
+                    add_hash4(hash4, input, ip - 1, input_end);
+                }
+                continue;
+            }
+        }
+
+        // No match - skip with acceleration
+        ip += 1 + ((ip - anchor) >> 9);
+    }
+
+    // Handle remaining literals
+    if anchor < input_end {
+        handle_last_literals(output, &input[anchor..]);
+    }
+
+    Ok(output.pos() - output_start)
 }
 
 /// Internal HC compression implementation using hash chain algorithm
@@ -1260,5 +1463,28 @@ mod tests {
         let size_level_20 = result.unwrap();
         let decompressed = decompress(&output[..size_level_20], input.len()).unwrap();
         assert_eq!(&input[..], &decompressed[..]);
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn test_lz4mid_debug() {
+    let input = b"The quick brown fox jumps over the lazy dog. The quick brown fox.";
+    println!("Input len: {}", input.len());
+    println!("Input: {:?}", String::from_utf8_lossy(input));
+    
+    let mut output = vec![0u8; input.len() * 2];
+    let mut sink = SliceSink::new(&mut output, 0);
+    let size = compress_mid_internal(input, &mut sink).unwrap();
+    println!("Compressed size: {}", size);
+    println!("Compressed: {:02x?}", &output[..size]);
+    
+    // Try to decompress
+    match decompress(&output[..size], input.len()) {
+        Ok(d) => {
+            println!("Decompressed: {} bytes", d.len());
+            println!("Match: {}", d == input);
+        }
+        Err(e) => println!("Decompress error: {:?}", e),
     }
 }
