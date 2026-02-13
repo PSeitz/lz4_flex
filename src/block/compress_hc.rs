@@ -7,10 +7,13 @@
 //! - `compress_hc`: The standard high compression algorithm (levels 3-9)
 //! - `compress_opt`: The optimal parsing algorithm for maximum compression (levels 10-12)
 
-use crate::block::{encode_sequence, handle_last_literals, CompressError, LAST_LITERALS, MFLIMIT, MINMATCH, MAX_DISTANCE};
+use crate::block::{encode_sequence, handle_last_literals, CompressError, END_OFFSET, LAST_LITERALS, MFLIMIT, MINMATCH, MAX_DISTANCE};
 use crate::block::compress::{backtrack_match, count_same_bytes};
 use crate::sink::Sink;
+#[cfg(feature = "safe-encode")]
 use crate::sink::SliceSink;
+#[cfg(not(feature = "safe-encode"))]
+use crate::sink::PtrSink;
 #[cfg(test)]
 use crate::block::decompress;
 #[allow(unused_imports)]
@@ -48,12 +51,14 @@ pub struct HashTableHCU32 {
     max_attempts: usize,
 }
 
-/// Match structure for storing match information
+/// Match structure for storing match information.
+/// Uses u32 fields (12 bytes total vs 24 with usize) to reduce stack
+/// pressure in the HC inner loop which juggles 4 Match structs.
 #[derive(Debug, Clone, Copy)]
 pub struct Match {
-    pub start: usize,
-    pub len: usize,
-    pub ref_pos: usize,
+    pub start: u32,
+    pub len: u32,
+    pub ref_pos: u32,
 }
 
 impl Match {
@@ -65,28 +70,92 @@ impl Match {
         }
     }
 
+    #[inline(always)]
     pub fn end(&self) -> usize {
-        self.start + self.len
+        self.start as usize + self.len as usize
     }
 
     pub fn fix(&mut self, correction: usize) {
-        self.start += correction;
-        self.ref_pos += correction;
-        self.len = self.len.saturating_sub(correction);
+        self.start += correction as u32;
+        self.ref_pos += correction as u32;
+        self.len = self.len.saturating_sub(correction as u32);
     }
 
+    #[inline(always)]
     pub fn offset(&self) -> u16 {
         (self.start - self.ref_pos) as u16
     }
 
     pub fn encode_to<S: Sink>(&self, input: &[u8], anchor: usize, output: &mut S) {
         encode_sequence(
-            &input[anchor..self.start],
+            &input[anchor..self.start as usize],
             output,
             self.offset(),
-            self.len - MIN_MATCH
+            self.len as usize - MIN_MATCH
         )
     }
+}
+
+/// Count how many bytes starting at `pos` match the repeated 4-byte pattern.
+/// The pattern must be a single repeated byte (length-1 repeat).
+/// Equivalent to C's LZ4HC_countPattern.
+#[inline]
+fn count_pattern(input: &[u8], pos: usize, limit: usize, pattern32: u32) -> usize {
+    let limit = limit.min(input.len());
+    let mut p = pos;
+
+    // Extend 32-bit pattern to usize for batch comparison
+    let pattern: usize = if core::mem::size_of::<usize>() == 8 {
+        (pattern32 as usize) | ((pattern32 as usize) << 32)
+    } else {
+        pattern32 as usize
+    };
+
+    const STEP: usize = core::mem::size_of::<usize>();
+    while p + STEP <= limit {
+        let v = super::compress::get_batch_arch(input, p);
+        let diff = v ^ pattern;
+        if diff != 0 {
+            p += (diff.trailing_zeros() / 8) as usize;
+            return p - pos;
+        }
+        p += STEP;
+    }
+
+    // Byte-by-byte tail
+    let byte_val = (pattern32 & 0xFF) as u8; // single repeated byte
+    while p < limit && input[p] == byte_val {
+        p += 1;
+    }
+
+    p - pos
+}
+
+/// Count how many bytes going backward from `pos` match the repeated 4-byte pattern.
+/// Equivalent to C's LZ4HC_reverseCountPattern.
+#[inline]
+fn reverse_count_pattern(input: &[u8], pos: usize, low_limit: usize, pattern32: u32) -> usize {
+    let mut p = pos;
+
+    while p >= low_limit + 4 {
+        if super::compress::get_batch(input, p - 4) != pattern32 {
+            break;
+        }
+        p -= 4;
+    }
+
+    // Byte-by-byte tail using native endian byte order (matches get_batch)
+    let pattern_bytes = pattern32.to_ne_bytes();
+    let mut byte_idx: usize = 3;
+    while p > low_limit {
+        if input[p - 1] != pattern_bytes[byte_idx] {
+            break;
+        }
+        p -= 1;
+        byte_idx = if byte_idx == 0 { 3 } else { byte_idx - 1 };
+    }
+
+    pos - p
 }
 
 impl HashTableHCU32 {
@@ -112,6 +181,36 @@ impl HashTableHCU32 {
             max_attempts,
         }
     }
+
+    /// Reset the table for reuse, re-zeroing both tables.
+    /// Avoids reallocation if the existing chain table is large enough.
+    #[cfg(all(not(feature = "safe-encode"), feature = "std"))]
+    #[inline]
+    fn reset(&mut self, max_attempts: usize, input_len: usize) {
+        let needed_chain_size = input_len
+            .min(MAX_DISTANCE_HC)
+            .max(256)
+            .next_power_of_two();
+
+        // Zero dict
+        // SAFETY: dict is Box<[u32; HASHTABLE_SIZE_HC]>, filling with 0 is always valid.
+        unsafe {
+            core::ptr::write_bytes(self.dict.as_mut_ptr(), 0, HASHTABLE_SIZE_HC);
+        }
+
+        // Reuse chain table if big enough, otherwise reallocate
+        if self.chain_table.len() >= needed_chain_size {
+            // Zero only what we need
+            unsafe {
+                core::ptr::write_bytes(self.chain_table.as_mut_ptr(), 0, needed_chain_size);
+            }
+        } else {
+            self.chain_table = vec![0u16; needed_chain_size].into_boxed_slice();
+        }
+
+        self.next_to_update = 0;
+        self.max_attempts = max_attempts;
+    }
     
     /// Mask for chain table indexing (table size is always power of 2)
     #[inline]
@@ -122,87 +221,70 @@ impl HashTableHCU32 {
 
     /// Get the next position in the chain for a given offset
     #[inline(always)]
-    #[cfg(feature = "safe-encode")]
-    fn next(&self, pos: usize) -> usize {
-        pos - (self.chain_table[pos & self.chain_mask()] as usize)
-    }
-
-    #[inline(always)]
-    #[cfg(not(feature = "safe-encode"))]
     fn next(&self, pos: usize) -> usize {
         let idx = pos & self.chain_mask();
-        let delta = unsafe { *self.chain_table.get_unchecked(idx) } as usize;
-        pos - delta
+        // SAFETY: chain_table.len() is a power of 2, so idx = pos & (len - 1) < len.
+        #[cfg(not(feature = "safe-encode"))]
+        unsafe { core::hint::assert_unchecked(idx < self.chain_table.len()); }
+        pos - (self.chain_table[idx] as usize)
+    }
+
+    /// Get the raw chain delta at a position (equivalent to C's DELTANEXTU16)
+    #[inline(always)]
+    fn chain_delta(&self, pos: usize) -> u16 {
+        let idx = pos & self.chain_mask();
+        // SAFETY: chain_table.len() is a power of 2, so idx = pos & (len - 1) < len.
+        #[cfg(not(feature = "safe-encode"))]
+        unsafe { core::hint::assert_unchecked(idx < self.chain_table.len()); }
+        self.chain_table[idx]
     }
 
     #[inline(always)]
-    #[cfg(feature = "safe-encode")]
     fn add_hash(&mut self, hash: usize, pos: usize) {
+        let chain_idx = pos & self.chain_mask();
+        // SAFETY: hash comes from hash_hc (u32 >> 17), so hash < 2^15 = HC_DICT_SIZE = dict.len().
+        // chain_idx = pos & (chain_table.len() - 1) < chain_table.len() (power-of-2 mask).
+        #[cfg(not(feature = "safe-encode"))]
+        unsafe {
+            core::hint::assert_unchecked(hash < self.dict.len());
+            core::hint::assert_unchecked(chain_idx < self.chain_table.len());
+        }
         let delta = pos - self.dict[hash] as usize;
         let delta = if delta > self.chain_mask() {
             self.chain_mask()
         } else {
             delta
         };
-        self.chain_table[pos & self.chain_mask()] = delta as u16;
+        self.chain_table[chain_idx] = delta as u16;
         self.dict[hash] = pos as u32;
-    }
-
-    #[inline(always)]
-    #[cfg(not(feature = "safe-encode"))]
-    fn add_hash(&mut self, hash: usize, pos: usize) {
-        let prev_pos = unsafe { *self.dict.get_unchecked(hash) } as usize;
-        let delta = pos - prev_pos;
-        let delta = if delta > self.chain_mask() {
-            self.chain_mask()
-        } else {
-            delta
-        };
-        let chain_idx = pos & self.chain_mask();
-        unsafe {
-            *self.chain_table.get_unchecked_mut(chain_idx) = delta as u16;
-            *self.dict.get_unchecked_mut(hash) = pos as u32;
-        }
     }
 
     /// Get dict value at hash position
     #[inline(always)]
-    #[cfg(feature = "safe-encode")]
     fn get_dict(&self, hash: usize) -> usize {
+        // SAFETY: hash comes from hash_hc (u32 >> 17), so hash < 2^15 = dict.len().
+        #[cfg(not(feature = "safe-encode"))]
+        unsafe { core::hint::assert_unchecked(hash < self.dict.len()); }
         self.dict[hash] as usize
-    }
-
-    #[inline(always)]
-    #[cfg(not(feature = "safe-encode"))]
-    fn get_dict(&self, hash: usize) -> usize {
-        unsafe { *self.dict.get_unchecked(hash) as usize }
     }
 
     /// Set dict value at hash position
     #[inline(always)]
-    #[cfg(feature = "safe-encode")]
     fn set_dict(&mut self, hash: usize, pos: usize) {
+        // SAFETY: hash comes from hash_hc (u32 >> 17), so hash < 2^15 = dict.len().
+        #[cfg(not(feature = "safe-encode"))]
+        unsafe { core::hint::assert_unchecked(hash < self.dict.len()); }
         self.dict[hash] = pos as u32;
-    }
-
-    #[inline(always)]
-    #[cfg(not(feature = "safe-encode"))]
-    fn set_dict(&mut self, hash: usize, pos: usize) {
-        unsafe { *self.dict.get_unchecked_mut(hash) = pos as u32; }
     }
 
     /// Set chain value at position
     #[inline(always)]
-    #[cfg(feature = "safe-encode")]
-    fn set_chain(&mut self, pos: usize, delta: u16) {
-        self.chain_table[pos & self.chain_mask()] = delta;
-    }
-
-    #[inline(always)]
-    #[cfg(not(feature = "safe-encode"))]
     fn set_chain(&mut self, pos: usize, delta: u16) {
         let idx = pos & self.chain_mask();
-        unsafe { *self.chain_table.get_unchecked_mut(idx) = delta; }
+        // SAFETY: chain_table.len() is a power of 2, so idx = pos & (len - 1) < len.
+        #[cfg(not(feature = "safe-encode"))]
+        unsafe { core::hint::assert_unchecked(idx < self.chain_table.len()); }
+        self.chain_table[idx] = delta;
     }
 
     /// Hash function for high compression
@@ -217,25 +299,30 @@ impl HashTableHCU32 {
     }
 
     /// Insert hashes for all positions up to the given offset
-    pub fn insert(&mut self, off: usize, input: &[u8]) {
+    #[inline]
+    pub fn insert(&mut self, off: u32, input: &[u8]) {
+        let off = off as usize;
         for pos in self.next_to_update..off {
             self.add_hash(Self::get_hash_at(input, pos), pos);
         }
         self.next_to_update = off;
     }
 
-    fn insert_and_find_best_match(&mut self, input: &[u8], off: usize, match_limit: usize, match_info: &mut Match) -> bool {
+    fn insert_and_find_best_match(&mut self, input: &[u8], off: u32, match_limit: u32, match_info: &mut Match) -> bool {
         match_info.start = off;
         match_info.len = 0;
-        let mut delta = 0;
-        let mut repl = 0;
+        let mut delta: usize = 0;
+        let mut repl: usize = 0;
 
-        self.insert(off, input);
+        let off = off as usize;
+        let match_limit = match_limit as usize;
+
+        self.insert(off as u32, input);
 
         let mut ref_pos = self.get_dict(Self::get_hash_at(input, off));
 
         // Search for better matches
-        for i in 0..=self.max_attempts {
+        for i in 0..self.max_attempts {
             // Validate ref_pos is within valid range and LZ4 format limit
             if ref_pos >= off || off - ref_pos > self.chain_mask() {
                 break;
@@ -243,28 +330,34 @@ impl HashTableHCU32 {
             
             // Early termination: if we already have a match, check if the last 2 bytes match first
             // This avoids expensive full comparisons for candidates that can't be longer (like C's LZ4_read16 check)
-            if match_info.len >= MIN_MATCH {
-                let check_pos = match_info.len - 1;
-                // Check 2 bytes at position (len - 1), like C does with LZ4_read16
-                if ref_pos + check_pos + 1 < input.len() && off + check_pos + 1 < input.len() {
-                    if input[ref_pos + check_pos] != input[off + check_pos]
-                        || input[ref_pos + check_pos + 1] != input[off + check_pos + 1]
-                    {
-                        let next = self.next(ref_pos);
-                        if next > off || off - next > self.chain_mask() || next == ref_pos {
-                            break;
-                        }
-                        ref_pos = next;
-                        continue;
+            if match_info.len >= MIN_MATCH as u32 {
+                let check_pos = match_info.len as usize - 1;
+                // SAFETY: match_info.len <= match_limit - off (bounded by common_bytes forward limit),
+                // and ref_pos < off (checked above), so:
+                //   off + check_pos + 1 = off + match_info.len <= match_limit < input.len()
+                //   ref_pos + check_pos + 1 < off + match_info.len <= match_limit < input.len()
+                #[cfg(not(feature = "safe-encode"))]
+                unsafe {
+                    core::hint::assert_unchecked(off + check_pos + 1 < input.len());
+                    core::hint::assert_unchecked(ref_pos + check_pos + 1 < input.len());
+                }
+                if input[ref_pos + check_pos] != input[off + check_pos]
+                    || input[ref_pos + check_pos + 1] != input[off + check_pos + 1]
+                {
+                    let next = self.next(ref_pos);
+                    if next > off || off - next > self.chain_mask() || next == ref_pos {
+                        break;
                     }
+                    ref_pos = next;
+                    continue;
                 }
             }
             
             if self.read_min_match_equals(input, ref_pos, off) {
                 let match_len = MIN_MATCH + self.common_bytes(input, ref_pos + MIN_MATCH, off + MIN_MATCH, match_limit);
-                if match_len > match_info.len {
-                    match_info.ref_pos = ref_pos;
-                    match_info.len = match_len;
+                if match_len as u32 > match_info.len {
+                    match_info.ref_pos = ref_pos as u32;
+                    match_info.len = match_len as u32;
                 }
                 // record to deal with possible overlap
                 if i == 0 {
@@ -304,13 +397,17 @@ impl HashTableHCU32 {
     }
 
     /// Insert hashes and find a wider match, similar to Java insertAndFindWiderMatch
-    pub fn insert_and_find_wider_match(&mut self, input: &[u8], off: usize, start_limit: usize, match_limit: usize, min_len: usize, match_info: &mut Match) -> bool {
+    pub fn insert_and_find_wider_match(&mut self, input: &[u8], off: u32, start_limit: u32, match_limit: u32, min_len: u32, match_info: &mut Match) -> bool {
         match_info.len = min_len;
         
+        let off = off as usize;
+        let start_limit = start_limit as usize;
+        let match_limit = match_limit as usize;
+
         // lookBackLength = how much we can extend backward from search position
         let look_back_length = off - start_limit;
 
-        self.insert(off, input);
+        self.insert(off as u32, input);
 
         let mut ref_pos = self.get_dict(Self::get_hash_at(input, off));
 
@@ -325,32 +422,39 @@ impl HashTableHCU32 {
             // iLowLimit = start_limit, matchPtr = ref_pos, so we check:
             // - source: start_limit + longest - 1
             // - match: ref_pos - look_back_length + longest - 1
-            if match_info.len >= MIN_MATCH && ref_pos >= look_back_length {
-                let src_check = start_limit + match_info.len - 1;
-                let match_check = ref_pos - look_back_length + match_info.len - 1;
-                if src_check + 1 < input.len() && match_check + 1 < input.len() {
-                    if input[src_check] != input[match_check]
-                        || input[src_check + 1] != input[match_check + 1]
-                    {
-                        let next = self.next(ref_pos);
-                        if next > off || off - next > self.chain_mask() || next == ref_pos {
-                            break;
-                        }
-                        ref_pos = next;
-                        continue;
+            if match_info.len >= MIN_MATCH as u32 && ref_pos >= look_back_length {
+                let src_check = start_limit + match_info.len as usize - 1;
+                let match_check = ref_pos - look_back_length + match_info.len as usize - 1;
+                // SAFETY: match_info.len <= match_limit - start_limit (bounded by forward + backward),
+                // so src_check + 1 = start_limit + match_info.len <= match_limit < input.len().
+                // ref_pos < off, so match_check + 1 = ref_pos - look_back_length + match_info.len
+                //   < off - look_back_length + match_limit - start_limit = match_limit < input.len().
+                #[cfg(not(feature = "safe-encode"))]
+                unsafe {
+                    core::hint::assert_unchecked(src_check + 1 < input.len());
+                    core::hint::assert_unchecked(match_check + 1 < input.len());
+                }
+                if input[src_check] != input[match_check]
+                    || input[src_check + 1] != input[match_check + 1]
+                {
+                    let next = self.next(ref_pos);
+                    if next > off || off - next > self.chain_mask() || next == ref_pos {
+                        break;
                     }
+                    ref_pos = next;
+                    continue;
                 }
             }
             
             if self.read_min_match_equals(input, ref_pos, off) {
                 let match_len_forward = MIN_MATCH + self.common_bytes(input, ref_pos + MIN_MATCH, off + MIN_MATCH, match_limit);
                 let match_len_backward = Self::common_bytes_backward(input, ref_pos, off, 0, start_limit);
-                let match_len = match_len_backward + match_len_forward;
+                let match_len = (match_len_backward + match_len_forward) as u32;
 
                 if match_len > match_info.len {
                     match_info.len = match_len;
-                    match_info.ref_pos = ref_pos - match_len_backward;
-                    match_info.start = off - match_len_backward;
+                    match_info.ref_pos = (ref_pos - match_len_backward) as u32;
+                    match_info.start = (off - match_len_backward) as u32;
                 }
             }
             let next = self.next(ref_pos);
@@ -371,56 +475,12 @@ impl HashTableHCU32 {
     }
 
     /// Find the number of common bytes between two positions (optimized version)
-    /// Uses usize-sized (8 bytes on 64-bit) batch comparison with XOR for speed
+    /// Count matching bytes forward. Delegates to the shared `count_same_bytes`
+    /// with `input` as both slices (HC always matches within the same buffer).
     #[inline]
     fn common_bytes(&self, input: &[u8], pos1: usize, pos2: usize, limit: usize) -> usize {
-        let limit = input.len().min(limit);
-        let max_len = limit.saturating_sub(pos2);
-        
-        if max_len == 0 {
-            return 0;
-        }
-        
-        let mut len = 0;
-        
-        // Process usize (8 bytes on 64-bit) at a time
-        const STEP_SIZE: usize = core::mem::size_of::<usize>();
-        while len + STEP_SIZE <= max_len {
-            let v1 = super::compress::get_batch_arch(input, pos1 + len);
-            let v2 = super::compress::get_batch_arch(input, pos2 + len);
-            let diff = v1 ^ v2;
-            
-            if diff == 0 {
-                len += STEP_SIZE;
-            } else {
-                // Find first differing byte
-                return len + (diff.to_le().trailing_zeros() / 8) as usize;
-            }
-        }
-        
-        // Process remaining 4 bytes if on 64-bit
-        #[cfg(target_pointer_width = "64")]
-        if len + 4 <= max_len {
-            let v1 = super::compress::get_batch(input, pos1 + len);
-            let v2 = super::compress::get_batch(input, pos2 + len);
-            let diff = v1 ^ v2;
-            
-            if diff == 0 {
-                len += 4;
-            } else {
-                return len + (diff.to_le().trailing_zeros() / 8) as usize;
-            }
-        }
-        
-        // Process remaining bytes one at a time
-        while len < max_len {
-            if input[pos1 + len] != input[pos2 + len] {
-                break;
-            }
-            len += 1;
-        }
-        
-        len
+        let mut cur = pos2;
+        count_same_bytes(input, &mut cur, input, pos1, input.len().min(limit))
     }
 
     /// Find the number of common bytes backward from two positions (optimized)
@@ -431,6 +491,15 @@ impl HashTableHCU32 {
         
         if max_back == 0 {
             return 0;
+        }
+
+        // SAFETY: pos1 and pos2 are valid positions in input (< input.len()),
+        // and max_back <= pos1 - limit1, so pos1 - max_back >= limit1 >= 0.
+        // After batch loop, pos1/pos2 only decrease but stay >= limit1/limit2.
+        #[cfg(not(feature = "safe-encode"))]
+        unsafe {
+            core::hint::assert_unchecked(pos1 < input.len());
+            core::hint::assert_unchecked(pos2 < input.len());
         }
         
         // Process usize (8 bytes on 64-bit) at a time, backwards
@@ -452,27 +521,60 @@ impl HashTableHCU32 {
         pos1 -= len;
         pos2 -= len;
         
-        // Process remaining bytes one at a time
-        while len < max_back {
-            pos1 -= 1;
-            pos2 -= 1;
-            if input[pos1] == input[pos2] {
-                len += 1;
+        // Process remaining 4 bytes if on 64-bit
+        #[cfg(target_pointer_width = "64")]
+        if len + 4 <= max_back {
+            let v1 = super::compress::get_batch(input, pos1 - 4);
+            let v2 = super::compress::get_batch(input, pos2 - 4);
+            let diff = v1 ^ v2;
+            if diff == 0 {
+                len += 4;
+                pos1 -= 4;
+                pos2 -= 4;
             } else {
-                break;
+                return len + (diff.to_be().trailing_zeros() / 8) as usize;
             }
+        }
+
+        // Process remaining 2 bytes
+        if len + 2 <= max_back {
+            if input[pos1 - 2] == input[pos2 - 2] && input[pos1 - 1] == input[pos2 - 1] {
+                len += 2;
+                pos1 -= 2;
+                pos2 -= 2;
+            } else if input[pos1 - 1] == input[pos2 - 1] {
+                return len + 1;
+            } else {
+                return len;
+            }
+        }
+
+        // Process last byte
+        if len < max_back && input[pos1 - 1] == input[pos2 - 1] {
+            len += 1;
         }
         
         len
     }
 
-    /// Find a longer match at the given position for optimal parsing
-    /// Returns (match_length, offset) where match_length is 0 if no match found
-    pub fn find_longer_match(&mut self, input: &[u8], off: usize, match_limit: usize, min_len: usize) -> (usize, usize) {
+    /// Find the longest match at `off`, returning `(match_len_u32, offset_u16)`.
+    /// Uses u32 params to reduce call overhead (LZ4 block max is ~2GB).
+    /// Offset is u16 since LZ4 format limits distance to 16 bits.
+    #[inline]
+    pub fn find_longer_match(&mut self, input: &[u8], off: u32, match_limit: u32, min_len: u32) -> (u32, u16) {
         self.insert(off, input);
 
-        let mut best_len = min_len;
-        let mut best_offset = 0;
+        let off = off as usize;
+        let match_limit = match_limit as usize;
+
+        let mut best_len: usize = min_len as usize;
+        let mut best_offset: u16 = 0;
+        let mut match_chain_pos: usize = 0;
+
+        // Pattern analysis state (persists across loop iterations)
+        // 0 = untested, 1 = confirmed, 2 = not a pattern
+        let mut repeat: u8 = 0;
+        let mut src_pattern_length: usize = 0;
 
         let mut ref_pos = self.get_dict(Self::get_hash_at(input, off));
 
@@ -481,66 +583,187 @@ impl HashTableHCU32 {
                 break;
             }
 
-            if self.read_min_match_equals(input, ref_pos, off) {
-                let match_len = MIN_MATCH + self.common_bytes(input, ref_pos + MIN_MATCH, off + MIN_MATCH, match_limit);
+            let mut match_len: usize = 0;
+
+            // 2-byte pre-check gate: if we already have a match, check if the last 2 bytes
+            // of the best match are present in the candidate before doing full comparison.
+            let pre_check_ok = if best_len >= MIN_MATCH {
+                let check_pos = best_len - 1;
+                // SAFETY: best_len <= match_limit - off (bounded by common_bytes forward limit),
+                // and ref_pos < off (checked above), so:
+                //   off + check_pos + 1 = off + best_len <= match_limit < input.len()
+                //   ref_pos + check_pos + 1 < off + best_len <= match_limit < input.len()
+                #[cfg(not(feature = "safe-encode"))]
+                unsafe {
+                    core::hint::assert_unchecked(off + check_pos + 1 < input.len());
+                    core::hint::assert_unchecked(ref_pos + check_pos + 1 < input.len());
+                }
+                // Use a single 2-byte (u16) read instead of two separate byte comparisons,
+                // matching C's LZ4_read16 pattern for better codegen
+                #[cfg(not(feature = "safe-encode"))]
+                unsafe {
+                    (input.as_ptr().add(ref_pos + check_pos) as *const u16).read_unaligned()
+                        == (input.as_ptr().add(off + check_pos) as *const u16).read_unaligned()
+                }
+                #[cfg(feature = "safe-encode")]
+                { input[ref_pos + check_pos] == input[off + check_pos]
+                    && input[ref_pos + check_pos + 1] == input[off + check_pos + 1] }
+            } else {
+                true
+            };
+
+            if pre_check_ok && self.read_min_match_equals(input, ref_pos, off) {
+                match_len = MIN_MATCH + self.common_bytes(input, ref_pos + MIN_MATCH, off + MIN_MATCH, match_limit);
                 if match_len > best_len {
                     best_len = match_len;
-                    best_offset = off - ref_pos;
+                    best_offset = (off - ref_pos) as u16;
                 }
             }
 
-            let next = self.next(ref_pos);
-            if next > off || off - next > self.chain_mask() || next == ref_pos {
+            // Chain swap: scan matched region for better chain connectivity
+            if match_len == best_len && match_len >= MIN_MATCH && ref_pos + best_len <= off {
+                const K_TRIGGER: i32 = 4;
+                let mut dist_to_next: u16 = 1;
+                let end = (best_len - MIN_MATCH + 1) as i32;
+                let mut accel: i32 = 1 << K_TRIGGER;
+                let mut pos: i32 = 0;
+                while pos < end {
+                    let candidate_dist = self.chain_delta(ref_pos.wrapping_add(pos as usize));
+                    let step = accel >> K_TRIGGER;
+                    accel += 1;
+                    if candidate_dist > dist_to_next {
+                        dist_to_next = candidate_dist;
+                        match_chain_pos = pos as usize;
+                        accel = 1 << K_TRIGGER;
+                    }
+                    pos += step;
+                }
+                if dist_to_next > 1 {
+                    if (dist_to_next as usize) > ref_pos {
+                        break;
+                    }
+                    ref_pos -= dist_to_next as usize;
+                    continue;
+                }
+            }
+
+            // Pattern analysis: detect repeated byte patterns and skip efficiently
+            {
+                let dist_next = self.chain_delta(ref_pos);
+                if dist_next == 1 && match_chain_pos == 0 {
+                    let match_candidate = ref_pos.wrapping_sub(1);
+                    // One-time pattern detection at source position
+                    if repeat == 0 {
+                        let pattern = super::compress::get_batch(input, off);
+                        if (pattern & 0xFFFF) == (pattern >> 16)
+                            && (pattern & 0xFF) == (pattern >> 24)
+                        {
+                            repeat = 1; // confirmed
+                            src_pattern_length = count_pattern(input, off + 4, match_limit, pattern) + 4;
+                        } else {
+                            repeat = 2; // not a pattern
+                        }
+                    }
+                    if repeat == 1
+                        && match_candidate < off
+                        && off - match_candidate <= self.chain_mask()
+                    {
+                        let pattern = super::compress::get_batch(input, off);
+                        if match_candidate + 4 <= input.len()
+                            && super::compress::get_batch(input, match_candidate) == pattern
+                        {
+                            let forward_pattern_len =
+                                count_pattern(input, match_candidate + 4, match_limit, pattern) + 4;
+                            let back_length =
+                                reverse_count_pattern(input, match_candidate, 0, pattern);
+                            let current_segment_len = back_length + forward_pattern_len;
+
+                            if current_segment_len >= src_pattern_length
+                                && forward_pattern_len <= src_pattern_length
+                            {
+                                let new_ref =
+                                    match_candidate + forward_pattern_len - src_pattern_length;
+                                if off > new_ref && off - new_ref <= self.chain_mask() {
+                                    ref_pos = new_ref;
+                                    continue;
+                                }
+                            } else {
+                                let new_ref = match_candidate - back_length;
+                                if off > new_ref && off - new_ref <= self.chain_mask() {
+                                    let max_ml = current_segment_len.min(src_pattern_length);
+                                    if max_ml > best_len {
+                                        best_len = max_ml;
+                                        best_offset = (off - new_ref) as u16;
+                                    }
+                                    let dist = self.chain_delta(new_ref) as usize;
+                                    if dist == 0 || dist > new_ref {
+                                        break;
+                                    }
+                                    ref_pos = new_ref - dist;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Follow current chain using match_chain_pos offset
+            let delta = self.chain_delta(ref_pos + match_chain_pos) as usize;
+            if delta == 0 || delta > ref_pos {
                 break;
             }
-            ref_pos = next;
+            ref_pos -= delta;
         }
 
-        if best_len > min_len {
-            (best_len, best_offset)
+        if best_len > min_len as usize {
+            (best_len as u32, best_offset)
         } else {
             (0, 0)
         }
     }
 }
 
-/// Optimal parsing state for a single position
+/// Optimal parsing state for a single position.
+/// Matches C's LZ4HC_optimal_t layout (4x i32 = 16 bytes).
+/// Using i32 for off/mlen instead of u16 avoids costly widening conversions
+/// on every access in the hot DP loop (15-20% regression with u16).
+/// The 4099-entry opt array is ~64KB.
 #[derive(Debug, Clone, Copy)]
+#[repr(C)]
 struct OptimalState {
     /// Cost in bytes to reach this position
     price: i32,
-    /// Match offset (0 for literal)
-    off: usize,
-    /// Match length (1 for literal)
-    mlen: usize,
     /// Literal length before this position
-    litlen: usize,
+    litlen: i32,
+    /// Match offset (0 for literal)
+    off: i32,
+    /// Match length (1 for literal)
+    mlen: i32,
 }
 
 impl OptimalState {
-    fn new() -> Self {
-        Self {
-            price: i32::MAX,
-            off: 0,
-            mlen: 1,
-            litlen: 0,
-        }
-    }
+    const SENTINEL: Self = Self {
+        price: i32::MAX,
+        litlen: 0,
+        off: 0,
+        mlen: 0,
+    };
 }
 
 /// Calculate the cost in bytes of encoding literals
 #[inline]
-fn literals_price(litlen: usize) -> i32 {
-    let mut price = litlen as i32;
-    if litlen >= RUN_MASK {
-        price += 1 + ((litlen - RUN_MASK) / 255) as i32;
+fn literals_price(litlen: i32) -> i32 {
+    let mut price = litlen;
+    if litlen >= RUN_MASK as i32 {
+        price += 1 + (litlen - RUN_MASK as i32) / 255;
     }
     price
 }
 
 /// Calculate the cost in bytes of encoding a sequence (literals + match)
 #[inline]
-fn sequence_price(litlen: usize, mlen: usize) -> i32 {
+fn sequence_price(litlen: i32, mlen: i32) -> i32 {
     // token + 16-bit offset
     let mut price: i32 = 1 + 2;
 
@@ -548,12 +771,43 @@ fn sequence_price(litlen: usize, mlen: usize) -> i32 {
     price += literals_price(litlen);
 
     // match length encoding (mlen >= MINMATCH)
-    let ml_code = mlen - MIN_MATCH;
+    let ml_code = mlen - MIN_MATCH as i32;
     if ml_code >= 15 {
-        price += 1 + ((ml_code - 15) / 255) as i32;
+        price += 1 + (ml_code - 15) / 255;
     }
 
     price
+}
+
+// Thread-local cached hash table to avoid per-call allocation overhead.
+// State stays in thread-local permanently; we just reset and borrow &mut.
+#[cfg(all(not(feature = "safe-encode"), feature = "std"))]
+std::thread_local! {
+    static CACHED_HT: core::cell::UnsafeCell<Option<HashTableHCU32>> = const { core::cell::UnsafeCell::new(None) };
+}
+
+/// Run `f` with a `&mut HashTableHCU32`, reusing thread-local cached state.
+#[cfg(all(not(feature = "safe-encode"), feature = "std"))]
+#[inline]
+fn with_hc_state<R>(max_attempts: usize, input_len: usize, f: impl FnOnce(&mut HashTableHCU32) -> R) -> R {
+    CACHED_HT.with(|cell| {
+        // SAFETY: thread_local! guarantees single-threaded access,
+        // and compress_hc never recurses.
+        let slot = unsafe { &mut *cell.get() };
+        let ht = match slot {
+            Some(ht) => { ht.reset(max_attempts, input_len); ht }
+            None => slot.insert(HashTableHCU32::new(max_attempts, input_len)),
+        };
+        f(ht)
+    })
+}
+
+/// Fallback: allocate a fresh table per call (safe-encode or no-std).
+#[cfg(any(feature = "safe-encode", not(feature = "std")))]
+#[inline]
+fn with_hc_state<R>(max_attempts: usize, input_len: usize, f: impl FnOnce(&mut HashTableHCU32) -> R) -> R {
+    let mut ht = HashTableHCU32::new(max_attempts, input_len);
+    f(&mut ht)
 }
 
 /// Compress input data using the LZ4 high compression algorithm.
@@ -594,11 +848,22 @@ pub fn compress_hc(input: &[u8], output: &mut impl Sink, level: u8) -> Result<us
     // Levels 3-9: HC (hash chain algorithm)
     // Levels 10-12: optimal parsing (best compression)
     if level >= 10 {
-        compress_opt_internal(input, output, level)
+        let nb_searches = match level {
+            10 => 96,
+            11 => 512,
+            _ => 16384,
+        };
+        with_hc_state(nb_searches, input.len(), |ht| {
+            compress_opt_internal(input, output, level, ht)
+        })
     } else if level >= 3 {
-        compress_hc_internal(input, output, level)
+        with_hc_state(1 << (level - 1), input.len(), |ht| {
+            compress_hc_internal(input, output, ht)
+        })
     } else {
-        compress_mid_internal(input, output)
+        with_mid_state(|table| {
+            compress_mid_internal(input, output, table)
+        })
     }
 }
 
@@ -623,11 +888,22 @@ pub fn compress_hc(input: &[u8], output: &mut impl Sink, level: u8) -> Result<us
 /// ```
 pub fn compress_hc_to_vec(input: &[u8], level: u8) -> Vec<u8> {
     let max_size = crate::block::compress::get_maximum_output_size(input.len());
-    let mut output = vec![0u8; max_size];
-    let mut sink = SliceSink::new(&mut output, 0);
-    let compressed_size = compress_hc(input, &mut sink, level).unwrap();
-    output.truncate(compressed_size);
-    output
+    #[cfg(feature = "safe-encode")]
+    {
+        let mut output = vec![0u8; max_size];
+        let mut sink = SliceSink::new(&mut output, 0);
+        let compressed_size = compress_hc(input, &mut sink, level).unwrap();
+        output.truncate(compressed_size);
+        output
+    }
+    #[cfg(not(feature = "safe-encode"))]
+    {
+        let mut output = Vec::with_capacity(max_size);
+        let compressed_size = compress_hc(input, &mut PtrSink::from_vec(&mut output, 0), level).unwrap();
+        unsafe { output.set_len(compressed_size); }
+        output.shrink_to_fit();
+        output
+    }
 }
 
 // ============================================================================
@@ -649,25 +925,75 @@ impl HashTableMid {
             hash8: vec![0u32; LZ4MID_HASHTABLE_SIZE].into_boxed_slice().try_into().unwrap(),
         }
     }
+
+    /// Reset the table for reuse by zeroing both hash tables.
+    #[cfg(all(not(feature = "safe-encode"), feature = "std"))]
+    fn reset(&mut self) {
+        unsafe {
+            core::ptr::write_bytes(self.hash4.as_mut_ptr(), 0, LZ4MID_HASHTABLE_SIZE);
+            core::ptr::write_bytes(self.hash8.as_mut_ptr(), 0, LZ4MID_HASHTABLE_SIZE);
+        }
+    }
+}
+
+// Thread-local cached hash table for lz4mid to avoid per-call allocation.
+#[cfg(all(not(feature = "safe-encode"), feature = "std"))]
+std::thread_local! {
+    static CACHED_HT_MID: core::cell::UnsafeCell<Option<HashTableMid>> = const { core::cell::UnsafeCell::new(None) };
+}
+
+/// Run `f` with a `&mut HashTableMid`, reusing thread-local cached state.
+#[cfg(all(not(feature = "safe-encode"), feature = "std"))]
+#[inline]
+fn with_mid_state<R>(f: impl FnOnce(&mut HashTableMid) -> R) -> R {
+    CACHED_HT_MID.with(|cell| {
+        // SAFETY: thread_local! guarantees single-threaded access,
+        // and compress_hc never recurses.
+        let slot = unsafe { &mut *cell.get() };
+        let ht = match slot {
+            Some(ht) => { ht.reset(); ht }
+            None => slot.insert(HashTableMid::new()),
+        };
+        f(ht)
+    })
+}
+
+/// Fallback: allocate a fresh table per call (safe-encode or no-std).
+#[cfg(any(feature = "safe-encode", not(feature = "std")))]
+#[inline]
+fn with_mid_state<R>(f: impl FnOnce(&mut HashTableMid) -> R) -> R {
+    let mut ht = HashTableMid::new();
+    f(&mut ht)
 }
 
 /// 4-byte hash for lz4mid (same multiplier as fast algorithm)
 #[inline]
 fn get_hash4_mid(input: &[u8], pos: usize) -> usize {
-    let v = u32::from_ne_bytes(input[pos..pos + 4].try_into().unwrap());
+    let v = super::compress::get_batch(input, pos);
     (v.wrapping_mul(2654435761) >> (32 - LZ4MID_HASH_LOG)) as usize
 }
 
 /// 8-byte hash for lz4mid (hashes lower 56 bits for longer match detection)
 #[inline]
 fn get_hash8_mid(input: &[u8], pos: usize) -> usize {
-    let v = u64::from_le_bytes(input[pos..pos + 8].try_into().unwrap());
-    let v56 = v << 8;
-    ((v56.wrapping_mul(58295818150454627)) >> (64 - LZ4MID_HASH_LOG)) as usize
+    // Use get_batch_arch for the raw read (eliminates bounds check in unsafe mode),
+    // then convert to u64 for the 56-bit hash computation.
+    #[cfg(target_pointer_width = "64")]
+    {
+        let v = super::compress::get_batch_arch(input, pos) as u64;
+        let v56 = v.to_le() << 8;
+        ((v56.wrapping_mul(58295818150454627)) >> (64 - LZ4MID_HASH_LOG)) as usize
+    }
+    #[cfg(not(target_pointer_width = "64"))]
+    {
+        let v = u64::from_le_bytes(input[pos..pos + 8].try_into().unwrap());
+        let v56 = v << 8;
+        ((v56.wrapping_mul(58295818150454627)) >> (64 - LZ4MID_HASH_LOG)) as usize
+    }
 }
 
 /// Internal lz4mid compression
-fn compress_mid_internal(input: &[u8], output: &mut impl Sink) -> Result<usize, CompressError> {
+fn compress_mid_internal(input: &[u8], output: &mut impl Sink, table: &mut HashTableMid) -> Result<usize, CompressError> {
     let output_start = output.pos();
     
     if input.len() < MFLIMIT + 1 {
@@ -675,7 +1001,6 @@ fn compress_mid_internal(input: &[u8], output: &mut impl Sink) -> Result<usize, 
         return Ok(output.pos() - output_start);
     }
 
-    let mut table = HashTableMid::new();
     let hash4 = &mut *table.hash4;
     let hash8 = &mut *table.hash8;
 
@@ -689,7 +1014,11 @@ fn compress_mid_internal(input: &[u8], output: &mut impl Sink) -> Result<usize, 
     #[inline(always)]
     fn add_hash8(hash8: &mut [u32; LZ4MID_HASHTABLE_SIZE], input: &[u8], pos: usize, input_end: usize) {
         if pos + 8 <= input_end {
-            hash8[get_hash8_mid(input, pos)] = pos as u32;
+            let h = get_hash8_mid(input, pos);
+            // SAFETY: hash is computed via >> (64 - LZ4MID_HASH_LOG), so h < LZ4MID_HASHTABLE_SIZE.
+            #[cfg(not(feature = "safe-encode"))]
+            unsafe { core::hint::assert_unchecked(h < hash8.len()); }
+            hash8[h] = pos as u32;
         }
     }
 
@@ -697,24 +1026,31 @@ fn compress_mid_internal(input: &[u8], output: &mut impl Sink) -> Result<usize, 
     #[inline(always)]
     fn add_hash4(hash4: &mut [u32; LZ4MID_HASHTABLE_SIZE], input: &[u8], pos: usize, input_end: usize) {
         if pos + 4 <= input_end {
-            hash4[get_hash4_mid(input, pos)] = pos as u32;
+            let h = get_hash4_mid(input, pos);
+            // SAFETY: hash is computed via >> (32 - LZ4MID_HASH_LOG), so h < LZ4MID_HASHTABLE_SIZE.
+            #[cfg(not(feature = "safe-encode"))]
+            unsafe { core::hint::assert_unchecked(h < hash4.len()); }
+            hash4[h] = pos as u32;
         }
     }
 
     while ip <= mflimit {
         // Try 8-byte hash first (longer matches)
         let h8 = get_hash8_mid(input, ip);
+        // SAFETY: h8 < LZ4MID_HASHTABLE_SIZE (hash shift guarantees this).
+        #[cfg(not(feature = "safe-encode"))]
+        unsafe { core::hint::assert_unchecked(h8 < hash8.len()); }
         let pos8 = hash8[h8] as usize;
         hash8[h8] = ip as u32;
 
         if ip > pos8 && ip - pos8 <= MAX_DISTANCE {
             let mut probe = ip;
-            let match_len = count_same_bytes(input, &mut probe, input, pos8);
+            let match_len = count_same_bytes(input, &mut probe, input, pos8, input.len() - END_OFFSET);
             if match_len >= MIN_MATCH {
                 let mut cur = ip;
                 let mut candidate = pos8;
                 backtrack_match(input, &mut cur, anchor, input, &mut candidate);
-                let match_len = count_same_bytes(input, &mut cur, input, candidate);
+                let match_len = count_same_bytes(input, &mut cur, input, candidate, input.len() - END_OFFSET);
                 let match_start = cur - match_len;
                 let offset = (match_start - candidate) as u16;
 
@@ -748,12 +1084,15 @@ fn compress_mid_internal(input: &[u8], output: &mut impl Sink) -> Result<usize, 
 
         // Try 4-byte hash (shorter matches)
         let h4 = get_hash4_mid(input, ip);
+        // SAFETY: h4 < LZ4MID_HASHTABLE_SIZE (hash shift guarantees this).
+        #[cfg(not(feature = "safe-encode"))]
+        unsafe { core::hint::assert_unchecked(h4 < hash4.len()); }
         let pos4 = hash4[h4] as usize;
         hash4[h4] = ip as u32;
 
         if ip > pos4 && ip - pos4 <= MAX_DISTANCE {
             let mut probe = ip;
-            let match_len = count_same_bytes(input, &mut probe, input, pos4);
+            let match_len = count_same_bytes(input, &mut probe, input, pos4, input.len() - END_OFFSET);
             if match_len >= MIN_MATCH {
                 // Check ip+1 for potentially longer match
                 let mut best_ip = ip;
@@ -762,10 +1101,13 @@ fn compress_mid_internal(input: &[u8], output: &mut impl Sink) -> Result<usize, 
 
                 if ip + 1 <= mflimit {
                     let h8_next = get_hash8_mid(input, ip + 1);
+                    // SAFETY: h8_next < LZ4MID_HASHTABLE_SIZE (hash shift guarantees this).
+                    #[cfg(not(feature = "safe-encode"))]
+                    unsafe { core::hint::assert_unchecked(h8_next < hash8.len()); }
                     let pos8_next = hash8[h8_next] as usize;
                     if ip + 1 > pos8_next && ip + 1 - pos8_next <= MAX_DISTANCE {
                         let mut probe_next = ip + 1;
-                        let len_next = count_same_bytes(input, &mut probe_next, input, pos8_next);
+                        let len_next = count_same_bytes(input, &mut probe_next, input, pos8_next, input.len() - END_OFFSET);
                         if len_next > best_len {
                             hash8[h8_next] = (ip + 1) as u32;
                             best_ip = ip + 1;
@@ -779,7 +1121,7 @@ fn compress_mid_internal(input: &[u8], output: &mut impl Sink) -> Result<usize, 
                 let mut cur = best_ip;
                 let mut candidate = best_pos;
                 backtrack_match(input, &mut cur, anchor, input, &mut candidate);
-                let match_len = count_same_bytes(input, &mut cur, input, candidate);
+                let match_len = count_same_bytes(input, &mut cur, input, candidate, input.len() - END_OFFSET);
                 let match_start = cur - match_len;
                 let offset = (match_start - candidate) as u16;
 
@@ -824,7 +1166,7 @@ fn compress_mid_internal(input: &[u8], output: &mut impl Sink) -> Result<usize, 
 }
 
 /// Internal HC compression implementation using hash chain algorithm
-fn compress_hc_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Result<usize, CompressError> {
+fn compress_hc_internal(input: &[u8], output: &mut impl Sink, ht: &mut HashTableHCU32) -> Result<usize, CompressError> {
     let output_start_pos = output.pos();
     if input.len() < MFLIMIT + 1 {
         // Input too small to compress
@@ -839,15 +1181,13 @@ fn compress_hc_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Resu
     let mut s_off = 1;
     // let mut d_off = output.pos();
     let mut anchor = 0;
-
-    let mut ht = HashTableHCU32::new(1 << (level - 1), input.len());
     let mut match0;
     let mut match1 = Match::new();
     let mut match2 = Match::new();
     let mut match3 = Match::new();
 
     'main: while s_off < mf_limit {
-        if !ht.insert_and_find_best_match(input, s_off, match_limit, &mut match1) {
+        if !ht.insert_and_find_best_match(input, s_off as u32, match_limit as u32, &mut match1) {
             s_off += 1;
             continue;
         }
@@ -856,13 +1196,13 @@ fn compress_hc_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Resu
         match0 = match1;
 
         'search2: loop {
-            debug_assert!(match1.start >= anchor);
+            debug_assert!(match1.start as usize >= anchor);
             if match1.end() > mf_limit
                 || !ht.insert_and_find_wider_match(
                     input,
-                    match1.end() - 2,
+                    (match1.end() - 2) as u32,
                     match1.start,
-                    match_limit,
+                    match_limit as u32,
                     match1.len,
                     &mut match2,
                 )
@@ -875,47 +1215,47 @@ fn compress_hc_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Resu
             }
 
             if match0.start < match1.start {
-                if match2.start < match1.start + match0.len {
+                if (match2.start as usize) < match1.start as usize + match0.len as usize {
                     // Empirical optimization
                     match1 = match0;
                 }
             }
             debug_assert!(match2.start >= match1.start);
 
-            if match2.start - match1.start < 3 {
+            if (match2.start - match1.start) < 3 {
                 // First match too small: removed
                 match1 = match2;
                 continue 'search2;
             }
 
             'search3: loop {
-                if match2.start - match1.start < OPTIMAL_ML {
-                    let mut new_match_len = match1.len;
+                if (match2.start - match1.start) < OPTIMAL_ML as u32 {
+                    let mut new_match_len = match1.len as usize;
                     if new_match_len > OPTIMAL_ML {
                         new_match_len = OPTIMAL_ML;
                     }
-                    if match1.start + new_match_len > match2.end().saturating_sub(MINMATCH) {
-                        new_match_len = (match2.start - match1.start) + match2.len.saturating_sub(MINMATCH);
+                    if match1.start as usize + new_match_len > match2.end().saturating_sub(MINMATCH) {
+                        new_match_len = (match2.start - match1.start) as usize + (match2.len as usize).saturating_sub(MINMATCH);
                     }
-                    let correction = new_match_len.saturating_sub(match2.start - match1.start);
+                    let correction = new_match_len.saturating_sub((match2.start - match1.start) as usize);
                     if correction > 0 {
                         match2.fix(correction);
                     }
                 }
 
-                if match2.start + match2.len > mf_limit  // C uses <=, so we use >
+                if match2.end() > mf_limit  // C uses <=, so we use >
                     || !ht.insert_and_find_wider_match(
                         input,
-                        match2.end() - 3,
+                        (match2.end() - 3) as u32,
                         match2.start,
-                        match_limit,
+                        match_limit as u32,
                         match2.len,
                         &mut match3,
                     )
                 {
                     // No better match -> 2 sequences to encode
-                    if match2.start < match1.end() {
-                        match1.len = match2.start - match1.start;
+                    if (match2.start as usize) < match1.end() {
+                        match1.len = (match2.start - match1.start) as u32;
                     }
                     // Encode seq 1
                     match1.encode_to(input, anchor, output);
@@ -928,14 +1268,14 @@ fn compress_hc_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Resu
                     continue 'main;
                 }
 
-                if match3.start < match1.end() + 3 {
+                if (match3.start as usize) < match1.end() + 3 {
                     // Not enough space for match 2: remove it
-                    if match3.start >= match1.end() {
+                    if match3.start as usize >= match1.end() {
                         // Can write Seq1 immediately ==> Seq2 is removed, so Seq3 becomes Seq1
-                        if match2.start < match1.end() {
-                            let correction = match1.end() - match2.start;
+                        if (match2.start as usize) < match1.end() {
+                            let correction = match1.end() - match2.start as usize;
                             match2.fix(correction);
-                            if match2.len < MINMATCH {
+                            if (match2.len as usize) < MINMATCH {
                                 match2 = match3;
                             }
                         }
@@ -959,18 +1299,18 @@ fn compress_hc_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Resu
                 }
 
                 // OK, now we have 3 ascending matches; let's write at least the first one
-                if match2.start < match1.end() {
-                    if match2.start - match1.start < ML_MASK {
-                        if match1.len > OPTIMAL_ML {
-                            match1.len = OPTIMAL_ML;
+                if (match2.start as usize) < match1.end() {
+                    if (match2.start - match1.start) < ML_MASK as u32 {
+                        if match1.len as usize > OPTIMAL_ML {
+                            match1.len = OPTIMAL_ML as u32;
                         }
                         if match1.end() > match2.end() - MINMATCH {
-                            match1.len = match2.end() - match1.start - MINMATCH;
+                            match1.len = (match2.end() - match1.start as usize - MINMATCH) as u32;
                         }
-                        let correction = match1.end() - match2.start;
+                        let correction = match1.end() - match2.start as usize;
                         match2.fix(correction);
                     } else {
-                        match1.len = match2.start - match1.start;
+                        match1.len = (match2.start - match1.start) as u32;
                     }
                 }
 
@@ -995,7 +1335,7 @@ fn compress_hc_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Resu
 }
 
 /// Internal optimal parsing compression implementation
-fn compress_opt_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Result<usize, CompressError> {
+fn compress_opt_internal(input: &[u8], output: &mut impl Sink, level: u8, ht: &mut HashTableHCU32) -> Result<usize, CompressError> {
     let output_start_pos = output.pos();
 
     if input.len() < MFLIMIT + 1 {
@@ -1009,10 +1349,10 @@ fn compress_opt_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Res
     let match_limit = src_end - LAST_LITERALS;
 
     // Determine search parameters based on level
-    let (nb_searches, sufficient_len) = match level {
-        10 => (96, 64),
-        11 => (512, 128),
-        _ => (16384, LZ4_OPT_NUM), // level 12+
+    let sufficient_len = match level {
+        10 => 64,
+        11 => 128,
+        _ => LZ4_OPT_NUM, // level 12+
     };
 
     let full_update = level >= 12;
@@ -1020,28 +1360,30 @@ fn compress_opt_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Res
     let mut anchor = 0;
     let mut ip = 0;
 
-    let mut ht = HashTableHCU32::new(nb_searches, input.len());
+    // Allocate optimal parsing buffer (12 bytes per entry, ~48KB total = fits in L1 cache)
+    let mut opt = vec![OptimalState::SENTINEL; LZ4_OPT_NUM + TRAILING_LITERALS];
 
-    // Allocate optimal parsing buffer
-    let mut opt = vec![OptimalState::new(); LZ4_OPT_NUM + TRAILING_LITERALS];
+    // Cap sufficient_len as C does (must fit in u16 for opt array mlen field)
+    let sufficient_len = sufficient_len.min(LZ4_OPT_NUM - 1);
 
     // Main loop
     'main_loop: while ip <= mf_limit {
-        let llen = ip - anchor;
+        let llen = (ip - anchor) as i32;
 
         // Find first match
-        let (first_len, first_off) = ht.find_longer_match(input, ip, match_limit, MIN_MATCH - 1);
+        let (first_len, first_off) = ht.find_longer_match(input, ip as u32, match_limit as u32, (MIN_MATCH - 1) as u32);
         if first_len == 0 {
             ip += 1;
             continue;
         }
+        let first_len = first_len as usize;
 
         // If match is good enough, encode immediately
         if first_len >= sufficient_len {
             encode_sequence(
                 &input[anchor..ip],
                 output,
-                first_off as u16,
+                first_off,
                 first_len - MIN_MATCH,
             );
             ip += first_len;
@@ -1050,20 +1392,20 @@ fn compress_opt_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Res
         }
 
         // Initialize optimal parsing state for literals
-        for rpos in 0..MIN_MATCH {
+        for rpos in 0..MIN_MATCH as i32 {
             let cost = literals_price(llen + rpos);
-            opt[rpos].mlen = 1;
-            opt[rpos].off = 0;
-            opt[rpos].litlen = llen + rpos;
-            opt[rpos].price = cost;
+            opt[rpos as usize].mlen = 1;
+            opt[rpos as usize].off = 0;
+            opt[rpos as usize].litlen = llen + rpos;
+            opt[rpos as usize].price = cost;
         }
 
         // Set prices using initial match
         let match_ml = first_len.min(LZ4_OPT_NUM - 1);
         for mlen in MIN_MATCH..=match_ml {
-            let cost = sequence_price(llen, mlen);
-            opt[mlen].mlen = mlen;
-            opt[mlen].off = first_off;
+            let cost = sequence_price(llen, mlen as i32);
+            opt[mlen].mlen = mlen as i32;
+            opt[mlen].off = first_off as i32;
             opt[mlen].litlen = llen;
             opt[mlen].price = cost;
         }
@@ -1076,13 +1418,13 @@ fn compress_opt_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Res
             if pos < opt.len() {
                 opt[pos].mlen = 1; // literal
                 opt[pos].off = 0;
-                opt[pos].litlen = add_lit;
-                opt[pos].price = opt[last_match_pos].price + literals_price(add_lit);
+                opt[pos].litlen = add_lit as i32;
+                opt[pos].price = opt[last_match_pos].price + literals_price(add_lit as i32);
             }
         }
 
         // Check further positions
-        let mut cur = 1;
+        let mut cur: usize = 1;
         while cur < last_match_pos {
             let cur_ptr = ip + cur;
 
@@ -1090,11 +1432,19 @@ fn compress_opt_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Res
                 break;
             }
 
+            // SAFETY: cur < last_match_pos < LZ4_OPT_NUM, so:
+            //   cur + MIN_MATCH <= LZ4_OPT_NUM + MIN_MATCH - 2 < opt.len() (= LZ4_OPT_NUM + TRAILING_LITERALS)
+            //   since MIN_MATCH(4) - 2 = 2 < TRAILING_LITERALS(3)
+            #[cfg(not(feature = "safe-encode"))]
+            unsafe {
+                core::hint::assert_unchecked(cur + MIN_MATCH < opt.len());
+                core::hint::assert_unchecked(last_match_pos + TRAILING_LITERALS < opt.len());
+            }
+
             if full_update {
                 // Not useful to search here if next position has same (or lower) cost
                 if opt[cur + 1].price <= opt[cur].price
-                    && cur + MIN_MATCH < opt.len()
-                    && opt[cur + MIN_MATCH].price < opt[cur].price.saturating_add(3)
+                    && opt[cur + MIN_MATCH].price < opt[cur].price + 3
                 {
                     cur += 1;
                     continue;
@@ -1108,61 +1458,48 @@ fn compress_opt_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Res
             }
 
             // Find longer match at current position
-            let min_len_search = if full_update {
-                MIN_MATCH - 1
+            let min_len_search: u32 = if full_update {
+                (MIN_MATCH - 1) as u32
             } else {
-                last_match_pos.saturating_sub(cur)
+                (last_match_pos - cur) as u32
             };
 
-            let (new_len, new_off) = ht.find_longer_match(input, cur_ptr, match_limit, min_len_search);
+            let (new_len, new_off) = ht.find_longer_match(input, cur_ptr as u32, match_limit as u32, min_len_search);
             if new_len == 0 {
                 cur += 1;
                 continue;
             }
+            let new_len = new_len as usize;
 
             // If match is good enough or extends beyond buffer, encode immediately
             if new_len >= sufficient_len || new_len + cur >= LZ4_OPT_NUM {
-                // In C code: best_mlen = newMatch.len; best_off = newMatch.off; 
-                // last_match_pos = cur + 1; goto encode;
-                // At encode: candidate_pos = cur; selected = best;
-                
-                // DON'T store at opt[cur] before traversal - C code doesn't do this!
-                // The reverse traversal will write the immediate match values to opt[cur]
-                // while reading the OLD forward-pass values.
-                
+                let capped_len = new_len;
+
                 // Set last_match_pos = cur + 1 as in C code
                 last_match_pos = cur + 1;
-                
+
                 // Reverse traversal starting from cur
-                // selected values start with the immediate match (new_len, new_off)
-                let mut selected_mlen = new_len;
-                let mut selected_off = new_off;
+                let mut selected_mlen = capped_len as i32;
+                let mut selected_off = new_off as i32;
                 let mut candidate_pos = cur;
                 loop {
-                    // Read OLD values from forward pass
                     let next_mlen = opt[candidate_pos].mlen;
                     let next_off = opt[candidate_pos].off;
-                    // Write the selected values (from immediate match or previous iteration)
                     opt[candidate_pos].mlen = selected_mlen;
                     opt[candidate_pos].off = selected_off;
-                    // Move selected to the old values for next iteration
                     selected_mlen = next_mlen;
                     selected_off = next_off;
-                    if next_mlen > candidate_pos {
+                    if (next_mlen as usize) > candidate_pos {
                         break;
                     }
-                    candidate_pos -= next_mlen;
+                    candidate_pos -= next_mlen as usize;
                 }
-                
-                // Skip the normal reverse traversal section below
-                // by jumping directly to encoding
-                // (We've already done reverse traversal inline above)
-                
+
                 // Encode all recorded sequences in order
-                let mut rpos = 0;
+                let mut rpos: usize = 0;
                 while rpos < last_match_pos {
-                    let ml = opt[rpos].mlen;
-                    let offset = opt[rpos].off;
+                    let ml = opt[rpos].mlen as usize;
+                    let offset = opt[rpos].off as u16;
 
                     if ml == 1 {
                         ip += 1;
@@ -1173,7 +1510,7 @@ fn compress_opt_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Res
                     encode_sequence(
                         &input[anchor..ip],
                         output,
-                        offset as u16,
+                        offset,
                         ml - MIN_MATCH,
                     );
 
@@ -1182,127 +1519,118 @@ fn compress_opt_internal(input: &[u8], output: &mut impl Sink, level: u8) -> Res
                     rpos += ml;
                 }
 
-                // Reset opt array
-                for state in opt.iter_mut().take(last_match_pos + TRAILING_LITERALS + 1) {
-                    *state = OptimalState::new();
-                }
-                
-                continue 'main_loop; // Continue OUTER main loop, skip the normal encoding path
+                continue 'main_loop;
             }
 
             // Update prices for literals before the match
-            let base_litlen = opt[cur].litlen;
-            if opt[cur].price != i32::MAX {
-                for litlen in 1..MIN_MATCH {
-                    let pos = cur + litlen;
-                    if pos < opt.len() {
-                        let price = opt[cur].price - literals_price(base_litlen) + literals_price(base_litlen + litlen);
-                        if price < opt[pos].price {
-                            opt[pos].mlen = 1; // literal
-                            opt[pos].off = 0;
-                            opt[pos].litlen = base_litlen + litlen;
-                            opt[pos].price = price;
-                        }
+            {
+                let base_litlen = opt[cur].litlen;
+                for litlen in 1..MIN_MATCH as i32 {
+                    let pos = cur + litlen as usize;
+                    // SAFETY: pos = cur + litlen < cur + MIN_MATCH < opt.len() (asserted above)
+                    #[cfg(not(feature = "safe-encode"))]
+                    unsafe { core::hint::assert_unchecked(pos < opt.len()); }
+                    let price = opt[cur].price - literals_price(base_litlen) + literals_price(base_litlen + litlen);
+                    if price < opt[pos].price {
+                        opt[pos].mlen = 1; // literal
+                        opt[pos].off = 0;
+                        opt[pos].litlen = base_litlen + litlen;
+                        opt[pos].price = price;
                     }
                 }
             }
 
             // Set prices using match at current position
-            let match_ml = new_len.min(LZ4_OPT_NUM - cur - 1);
-            for ml in MIN_MATCH..=match_ml {
-                let pos = cur + ml;
-                if pos >= opt.len() {
-                    break;
-                }
+            {
+                let match_ml = new_len.min(LZ4_OPT_NUM - cur - 1);
+                // SAFETY: pos = cur + ml <= cur + LZ4_OPT_NUM - cur - 1 = LZ4_OPT_NUM - 1 < opt.len()
+                for ml in MIN_MATCH..=match_ml {
+                    let pos = cur + ml;
+                    #[cfg(not(feature = "safe-encode"))]
+                    unsafe { core::hint::assert_unchecked(pos < opt.len()); }
 
-                let (ll, price) = if opt[cur].mlen == 1 {
-                    let ll = opt[cur].litlen;
-                    let base_price = if cur > ll { opt[cur - ll].price } else { 0 };
-                    if base_price == i32::MAX {
-                        continue;
-                    }
-                    (ll, base_price.saturating_add(sequence_price(ll, ml)))
-                } else {
-                    if opt[cur].price == i32::MAX {
-                        continue;
-                    }
-                    (0, opt[cur].price.saturating_add(sequence_price(0, ml)))
-                };
+                    let (ll, price) = if opt[cur].mlen == 1 {
+                        let ll = opt[cur].litlen;
+                        let base_price = if cur as i32 > ll { opt[cur - ll as usize].price } else { 0 };
+                        (ll, base_price + sequence_price(ll, ml as i32))
+                    } else {
+                        (0, opt[cur].price + sequence_price(0, ml as i32))
+                    };
 
-                if pos > last_match_pos + TRAILING_LITERALS || price <= opt[pos].price {
-                    if ml == match_ml && last_match_pos < pos {
-                        last_match_pos = pos;
+                    if pos > last_match_pos + TRAILING_LITERALS || price <= opt[pos].price {
+                        if ml == match_ml && last_match_pos < pos {
+                            last_match_pos = pos;
+                        }
+                        opt[pos].mlen = ml as i32;
+                        opt[pos].off = new_off as i32;
+                        opt[pos].litlen = ll;
+                        opt[pos].price = price;
                     }
-                    opt[pos].mlen = ml;
-                    opt[pos].off = new_off;
-                    opt[pos].litlen = ll;
-                    opt[pos].price = price;
                 }
             }
 
             // Complete following positions with literals
-            for add_lit in 1..=TRAILING_LITERALS {
-                let pos = last_match_pos + add_lit;
-                if pos < opt.len() && opt[last_match_pos].price != i32::MAX {
-                    opt[pos].mlen = 1; // literal
-                    opt[pos].off = 0;
-                    opt[pos].litlen = add_lit;
-                    opt[pos].price = opt[last_match_pos].price.saturating_add(literals_price(add_lit));
-                }
+            // SAFETY: pos = last_match_pos + add_lit <= last_match_pos + TRAILING_LITERALS < opt.len()
+            for add_lit in 1..=TRAILING_LITERALS as i32 {
+                let pos = last_match_pos + add_lit as usize;
+                #[cfg(not(feature = "safe-encode"))]
+                unsafe { core::hint::assert_unchecked(pos < opt.len()); }
+                opt[pos].mlen = 1; // literal
+                opt[pos].off = 0;
+                opt[pos].litlen = add_lit;
+                opt[pos].price = opt[last_match_pos].price + literals_price(add_lit);
             }
 
             cur += 1;
         }
 
         // Reverse traversal to find the optimal path
-        let mut best_mlen = opt[last_match_pos].mlen;
-        let mut best_off = opt[last_match_pos].off;
-        let mut candidate_pos = last_match_pos.saturating_sub(best_mlen);
+        {
+            let mut best_mlen = opt[last_match_pos].mlen;
+            let mut best_off = opt[last_match_pos].off;
+            let mut candidate_pos = last_match_pos - best_mlen as usize;
 
-        // Trace back through the optimal path and reverse the links
-        loop {
-            let next_mlen = opt[candidate_pos].mlen;
-            let next_off = opt[candidate_pos].off;
-            opt[candidate_pos].mlen = best_mlen;
-            opt[candidate_pos].off = best_off;
-            best_mlen = next_mlen;
-            best_off = next_off;
-            if next_mlen > candidate_pos {
-                break; // First match
+            loop {
+                let next_mlen = opt[candidate_pos].mlen;
+                let next_off = opt[candidate_pos].off;
+                opt[candidate_pos].mlen = best_mlen;
+                opt[candidate_pos].off = best_off;
+                best_mlen = next_mlen;
+                best_off = next_off;
+                if (next_mlen as usize) > candidate_pos {
+                    break;
+                }
+                candidate_pos -= next_mlen as usize;
             }
-            candidate_pos -= next_mlen;
         }
 
         // Encode all recorded sequences in order
-        let mut rpos = 0;
-        while rpos < last_match_pos {
-            let ml = opt[rpos].mlen;
-            let offset = opt[rpos].off;
+        {
+            let mut rpos: usize = 0;
+            while rpos < last_match_pos {
+                let ml = opt[rpos].mlen as usize;
+                let offset = opt[rpos].off as u16;
 
-            if ml == 1 {
-                // Literal
-                ip += 1;
-                rpos += 1;
-                continue;
+                if ml == 1 {
+                    ip += 1;
+                    rpos += 1;
+                    continue;
+                }
+
+                encode_sequence(
+                    &input[anchor..ip],
+                    output,
+                    offset,
+                    ml - MIN_MATCH,
+                );
+
+                ip += ml;
+                anchor = ip;
+                rpos += ml;
             }
-
-            // Encode the sequence
-            encode_sequence(
-                &input[anchor..ip],
-                output,
-                offset as u16,
-                ml - MIN_MATCH,
-            );
-
-            ip += ml;
-            anchor = ip;
-            rpos += ml;
         }
 
-        // Reset opt array for next iteration
-        for state in opt.iter_mut().take(last_match_pos + TRAILING_LITERALS + 1) {
-            *state = OptimalState::new();
-        }
+        // No opt array reset needed (matches C behavior)
     }
 
     // Handle remaining literals
@@ -1543,13 +1871,15 @@ mod tests {
 #[cfg(test)]
 #[test]
 fn test_lz4mid_debug() {
+    use crate::sink::SliceSink;
     let input = b"The quick brown fox jumps over the lazy dog. The quick brown fox.";
     println!("Input len: {}", input.len());
     println!("Input: {:?}", String::from_utf8_lossy(input));
     
     let mut output = vec![0u8; input.len() * 2];
     let mut sink = SliceSink::new(&mut output, 0);
-    let size = compress_mid_internal(input, &mut sink).unwrap();
+    let mut table = HashTableMid::new();
+    let size = compress_mid_internal(input, &mut sink, &mut table).unwrap();
     println!("Compressed size: {}", size);
     println!("Compressed: {:02x?}", &output[..size]);
     
