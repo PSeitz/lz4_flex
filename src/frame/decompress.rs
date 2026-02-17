@@ -451,7 +451,7 @@ impl<R: fmt::Debug + io::Read> fmt::Debug for FrameDecoder<R> {
 /// # Example
 ///
 /// ```no_run
-/// use std::io::Read;
+/// use std::{fs, io::{Read, self}};
 /// use lz4_flex::frame::MultiFrameDecoder;
 ///
 /// let file = fs::File::open("concatenated.lz4")?;
