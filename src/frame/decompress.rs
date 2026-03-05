@@ -18,6 +18,10 @@ use crate::{
 
 /// A reader for decompressing the LZ4 frame format
 ///
+/// Reading from will return `EOF` when a frame ends, keep reading for
+/// subsequent frames, if you don't care about detecting frame boundaries check
+/// out [`MultiFrameDecoder`].
+///
 /// This Decoder wraps any other reader that implements `io::Read`.
 /// Bytes read will be decompressed according to the [LZ4 frame format](
 /// https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md).
@@ -434,6 +438,73 @@ impl<R: fmt::Debug + io::Read> fmt::Debug for FrameDecoder<R> {
             .field("ext_dict_offset", &self.ext_dict_offset)
             .field("ext_dict_len", &self.ext_dict_len)
             .field("current_frame_info", &self.current_frame_info)
+            .finish()
+    }
+}
+
+/// A wrapper around `FrameDecoder` for decoding multiple frames.
+///
+/// Reading from this will only return `EOF` when the last frame is read, if
+/// you need to detect the `EOF` of each frame individually, use `FrameDecoder`
+/// directly.
+///
+/// # Example
+///
+/// ```no_run
+/// use std::{fs, io::{Read, self}};
+/// use lz4_flex::frame::MultiFrameDecoder;
+///
+/// let file = fs::File::open("concatenated.lz4")?;
+/// let mut decoder = MultiFrameDecoder::new(file);
+///
+/// let output = fs::File::open("output")?;
+/// io::copy(&mut decoder, &mut output)?;
+/// ```
+pub struct MultiFrameDecoder<R: io::Read> {
+    decoder: FrameDecoder<R>,
+}
+
+impl<R: io::Read> MultiFrameDecoder<R> {
+    /// Creates a new `MultiFrameDecoder` for the specified reader.
+    pub fn new(reader: R) -> Self {
+        Self {
+            decoder: FrameDecoder::new(reader),
+        }
+    }
+
+    /// Gets a reference to the underlying reader.
+    pub fn get_ref(&self) -> &R {
+        self.decoder.get_ref()
+    }
+
+    /// Gets a mutable reference to the underlying reader in this decoder.
+    ///
+    /// Note that mutation of the stream may result in surprising results if
+    /// this decoder is continued to be used.
+    pub fn get_mut(&mut self) -> &mut R {
+        self.decoder.get_mut()
+    }
+
+    /// Consumes the `MultiFrameDecoder` and returns the underlying reader.
+    pub fn into_inner(self) -> R {
+        self.decoder.into_inner()
+    }
+}
+
+impl<R: io::Read> io::Read for MultiFrameDecoder<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.decoder.read(buf)? {
+            // Got EOF from current frame, try reading the next frame
+            0 => self.decoder.read(buf),
+            bytes => Ok(bytes),
+        }
+    }
+}
+
+impl<R: fmt::Debug + io::Read> fmt::Debug for MultiFrameDecoder<R> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("MultiFrameDecoder")
+            .field("decoder", &self.decoder)
             .finish()
     }
 }
