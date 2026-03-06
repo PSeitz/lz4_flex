@@ -20,8 +20,8 @@ use alloc::vec;
 #[allow(unused_imports)]
 use alloc::vec::Vec;
 
-pub use super::hashtable::HashTable4K;
-pub use super::hashtable::HashTable4KU16;
+pub(crate) use super::hashtable::HashTable4K;
+pub(crate) use super::hashtable::HashTable4KU16;
 use super::{CompressError, WINDOW_SIZE};
 
 /// Increase step size after 1<<INCREASE_STEPSIZE_BITSHIFT non matches
