@@ -720,7 +720,43 @@ impl Default for CompressTable {
     }
 }
 
+impl HashTable for CompressTable {
+    #[inline]
+    fn get_at(&self, pos: usize) -> usize {
+        match self {
+            CompressTable::Small(t) => t.get_at(pos),
+            CompressTable::Large(t) => t.get_at(pos),
+        }
+    }
+
+    #[inline]
+    fn put_at(&mut self, pos: usize, val: usize) {
+        match self {
+            CompressTable::Small(t) => t.put_at(pos, val),
+            CompressTable::Large(t) => t.put_at(pos, val),
+        }
+    }
+
+    #[inline]
+    fn clear(&mut self) {
+        match self {
+            CompressTable::Small(t) => t.clear(),
+            CompressTable::Large(t) => t.clear(),
+        }
+    }
+}
+
 impl CompressTable {
+    /// Shifts all entries down by `offset`, clamping at zero.
+    ///
+    /// Only supported for `Large` tables; panics if called on a `Small` table.
+    pub fn reposition(&mut self, offset: u32) {
+        match self {
+            CompressTable::Large(t) => t.reposition(offset),
+            CompressTable::Small(_) => panic!("reposition is not supported on small tables"),
+        }
+    }
+
     /// Create a small table (16-bit entries). More memory efficient, but only usable when the
     /// total input size is less than 65535 bytes.
     pub fn small() -> Self {
