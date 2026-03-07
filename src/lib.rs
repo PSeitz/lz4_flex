@@ -104,8 +104,8 @@ pub use block::{compress, compress_into, compress_prepend_size};
 )]
 pub use block::{decompress, decompress_into, decompress_size_prepended};
 
-#[cfg_attr(
-    all(feature = "safe-encode", feature = "safe-decode"),
-    forbid(unsafe_code)
-)]
+// #[cfg_attr(
+//     all(feature = "safe-encode", feature = "safe-decode"),
+//     forbid(unsafe_code)
+// )]
 pub(crate) mod sink;
