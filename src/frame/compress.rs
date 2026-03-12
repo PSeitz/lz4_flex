@@ -13,6 +13,9 @@ use crate::{
     sink::vec_sink_for_compression,
 };
 
+#[cfg(feature = "hc")]
+use crate::block::compress_hc::compress_hc;
+
 use super::Error;
 use super::{
     header::{BlockInfo, BlockMode, FrameInfo, BLOCK_INFO_SIZE, MAX_FRAME_INFO_SIZE},
@@ -73,8 +76,8 @@ pub struct FrameEncoder<W: io::Write> {
     /// Counter of bytes already compressed to the compression_table
     /// _Not_ the same as `content_len` as this is reset every to 2GB.
     src_stream_offset: usize,
-    /// Encoder table
-    compression_table: HashTable4K,
+    /// Encoder table (used for fast compression, None when using HC)
+    compression_table: Option<HashTable4K>,
     /// The underlying writer.
     w: W,
     /// Xxhash32 used when content checksum is enabled.
@@ -90,6 +93,9 @@ pub struct FrameEncoder<W: io::Write> {
     data_to_frame_written: bool,
     /// The frame information to be used in this encoder.
     frame_info: FrameInfo,
+    /// Compression level (1 = fast, 2 = mid, 3-9 = HC, 10-12 = optimal)
+    #[cfg(feature = "hc")]
+    compression_level: u8,
 }
 
 impl<W: io::Write> FrameEncoder<W> {
@@ -137,7 +143,7 @@ impl<W: io::Write> FrameEncoder<W> {
             src: Vec::new(),
             w: wtr,
             // 16 KB hash table for matches, same as the reference implementation.
-            compression_table: HashTable4K::new(),
+            compression_table: Some(HashTable4K::new()),
             content_hasher: XxHash32::with_seed(0),
             content_len: 0,
             dst: Vec::new(),
@@ -149,12 +155,87 @@ impl<W: io::Write> FrameEncoder<W> {
             ext_dict_offset: 0,
             ext_dict_len: 0,
             src_stream_offset: 0,
+            #[cfg(feature = "hc")]
+            compression_level: 1,
         }
     }
 
     /// Creates a new Encoder with the default settings.
     pub fn new(wtr: W) -> Self {
         Self::with_frame_info(Default::default(), wtr)
+    }
+
+    /// Creates a new Encoder with the specified compression level.
+    ///
+    /// The compression level ranges from 1 to 12 (matching C LZ4 CLI behavior):
+    /// - Level 1: Fast algorithm (same as default, supports linked blocks)
+    /// - Level 2: lz4mid intermediate algorithm
+    /// - Levels 3-9: HC algorithm with increasing search depth
+    /// - Levels 10-12: Optimal parsing algorithm for maximum compression
+    ///
+    /// Levels 2+ force independent block mode (linked blocks are not supported
+    /// for HC/mid compression).
+    ///
+    /// # Example
+    /// ```no_run
+    /// use std::io::Write;
+    /// let compressed_file = std::fs::File::create("datafile").unwrap();
+    /// let mut compressor = lz4_flex::frame::FrameEncoder::with_compression_level(
+    ///     lz4_flex::frame::FrameInfo::new(),
+    ///     compressed_file,
+    ///     9, // HC level 9
+    /// );
+    /// compressor.write_all(b"data to compress").unwrap();
+    /// compressor.finish().unwrap();
+    /// ```
+    #[cfg(feature = "hc")]
+    pub fn with_compression_level(mut frame_info: FrameInfo, wtr: W, level: u8) -> Self {
+        let level = level.clamp(1, 12);
+
+        // Level 1: fast algorithm (supports linked blocks, like C)
+        // Level 2+: compress_hc (lz4mid for 2, HC for 3-9, optimal for 10-12)
+        //           requires independent blocks
+        if level == 1 {
+            // Level 1: fast algorithm with linked block support (like C)
+            FrameEncoder {
+                src: Vec::new(),
+                w: wtr,
+                compression_table: Some(HashTable4K::new()),
+                content_hasher: XxHash32::with_seed(0),
+                content_len: 0,
+                dst: Vec::new(),
+                is_frame_open: false,
+                data_to_frame_written: false,
+                frame_info,
+                src_start: 0,
+                src_end: 0,
+                ext_dict_offset: 0,
+                ext_dict_len: 0,
+                src_stream_offset: 0,
+                compression_level: level,
+            }
+        } else {
+            // Levels 2+: use compress_hc (requires independent blocks)
+            frame_info.block_mode = BlockMode::Independent;
+
+            FrameEncoder {
+                src: Vec::new(),
+                w: wtr,
+                compression_table: None,
+                content_hasher: XxHash32::with_seed(0),
+                content_len: 0,
+                dst: Vec::new(),
+                is_frame_open: false,
+                data_to_frame_written: false,
+                frame_info,
+                src_start: 0,
+                src_end: 0,
+                ext_dict_offset: 0,
+                ext_dict_len: 0,
+                src_stream_offset: 0,
+                compression_level: level,
+            }
+        }
     }
 
     /// The frame information used by this Encoder.
@@ -251,9 +332,56 @@ impl<W: io::Write> FrameEncoder<W> {
             self.src_end = 0;
             self.ext_dict_len = 0;
             self.content_hasher = XxHash32::with_seed(0);
-            self.compression_table.clear();
+            if let Some(ref mut table) = self.compression_table {
+                table.clear();
+            }
         }
         Ok(())
+    }
+
+    /// Compress a block using the fast algorithm
+    fn compress_block_fast(
+        &mut self,
+        dst_required_size: usize,
+    ) -> Result<usize, crate::block::CompressError> {
+        let max_block_size = self.frame_info.block_size.get_size();
+
+        // Reposition the compression table if we're anywhere near an overflowing hazard
+        if self.src_stream_offset + max_block_size + WINDOW_SIZE >= u32::MAX as usize / 2 {
+            if let Some(ref mut table) = self.compression_table {
+                table.reposition((self.src_stream_offset - self.ext_dict_len) as _);
+            }
+            self.src_stream_offset = self.ext_dict_len;
+        }
+
+        let compression_table = self
+            .compression_table
+            .as_mut()
+            .expect("compression_table must be provided when using fast compression");
+
+        // input to the compressor, which may include a prefix when blocks are linked
+        let input = &self.src[..self.src_end];
+
+        if self.ext_dict_len != 0 {
+            debug_assert_eq!(self.frame_info.block_mode, BlockMode::Linked);
+            compress_internal::<_, true, _>(
+                input,
+                self.src_start,
+                &mut vec_sink_for_compression(&mut self.dst, 0, 0, dst_required_size),
+                compression_table,
+                &self.src[self.ext_dict_offset..self.ext_dict_offset + self.ext_dict_len],
+                self.src_stream_offset,
+            )
+        } else {
+            compress_internal::<_, false, _>(
+                input,
+                self.src_start,
+                &mut vec_sink_for_compression(&mut self.dst, 0, 0, dst_required_size),
+                compression_table,
+                b"",
+                self.src_stream_offset,
+            )
+        }
     }
 
     /// Consumes the src contents between src_start and src_end,
@@ -263,66 +391,71 @@ impl<W: io::Write> FrameEncoder<W> {
         let max_block_size = self.frame_info.block_size.get_size();
         debug_assert!(self.src_end - self.src_start <= max_block_size);
 
-        // Reposition the compression table if we're anywhere near an overflowing hazard
-        if self.src_stream_offset + max_block_size + WINDOW_SIZE >= u32::MAX as usize / 2 {
-            self.compression_table
-                .reposition((self.src_stream_offset - self.ext_dict_len) as _);
-            self.src_stream_offset = self.ext_dict_len;
-        }
+        let src_start = self.src_start;
+        let src_end = self.src_end;
+        let src_len = src_end - src_start;
+        let dst_required_size = crate::block::compress::get_maximum_output_size(src_len);
 
-        // input to the compressor, which may include a prefix when blocks are linked
-        let input = &self.src[..self.src_end];
-        // the contents of the block are between src_start and src_end
-        let src = &input[self.src_start..];
-
-        let dst_required_size = crate::block::compress::get_maximum_output_size(src.len());
-
-        let compress_result = if self.ext_dict_len != 0 {
-            debug_assert_eq!(self.frame_info.block_mode, BlockMode::Linked);
-            compress_internal::<_, true, _>(
-                input,
-                self.src_start,
-                &mut vec_sink_for_compression(&mut self.dst, 0, 0, dst_required_size),
-                &mut self.compression_table,
-                &self.src[self.ext_dict_offset..self.ext_dict_offset + self.ext_dict_len],
-                self.src_stream_offset,
-            )
+        // Select compression algorithm:
+        // - If compression_table is Some (level 1): use fast algorithm (supports linked blocks)
+        // - If compression_table is None (levels 2+): use compress_hc
+        //   - Level 2: lz4mid
+        //   - Levels 3-9: HC hash chain
+        //   - Levels 10-12: optimal parsing
+        #[cfg(feature = "hc")]
+        let compress_result = if self.compression_table.is_some() {
+            // Fast algorithm with linked block support
+            self.compress_block_fast(dst_required_size)
         } else {
-            compress_internal::<_, false, _>(
-                input,
-                self.src_start,
+            // HC mode (independent blocks only)
+            compress_hc(
+                &self.src[src_start..src_end],
                 &mut vec_sink_for_compression(&mut self.dst, 0, 0, dst_required_size),
-                &mut self.compression_table,
-                b"",
-                self.src_stream_offset,
+                self.compression_level,
             )
         };
 
-        let (block_info, block_data) = match compress_result.map_err(Error::CompressionError)? {
-            comp_len if comp_len < src.len() => {
-                (BlockInfo::Compressed(comp_len as _), &self.dst[..comp_len])
-            }
-            _ => (BlockInfo::Uncompressed(src.len() as _), src),
+        #[cfg(not(feature = "hc"))]
+        let compress_result = self.compress_block_fast(dst_required_size);
+
+        let compressed_len = compress_result.map_err(Error::CompressionError)?;
+
+        // Determine if compression was beneficial
+        let (block_info, use_compressed) = if compressed_len < src_len {
+            (BlockInfo::Compressed(compressed_len as u32), true)
+        } else {
+            (BlockInfo::Uncompressed(src_len as u32), false)
         };
 
         // Write the (un)compressed block to the writer and the block checksum (if applicable).
         let mut block_info_buffer = [0u8; BLOCK_INFO_SIZE];
         block_info.write(&mut block_info_buffer[..])?;
         self.w.write_all(&block_info_buffer[..])?;
-        self.w.write_all(block_data)?;
-        if self.frame_info.block_checksums {
-            let block_checksum = XxHash32::oneshot(0, block_data);
-            self.w.write_all(&block_checksum.to_le_bytes())?;
+
+        if use_compressed {
+            let block_data = &self.dst[..compressed_len];
+            self.w.write_all(block_data)?;
+            if self.frame_info.block_checksums {
+                let block_checksum = XxHash32::oneshot(0, block_data);
+                self.w.write_all(&block_checksum.to_le_bytes())?;
+            }
+        } else {
+            let block_data = &self.src[src_start..src_end];
+            self.w.write_all(block_data)?;
+            if self.frame_info.block_checksums {
+                let block_checksum = XxHash32::oneshot(0, block_data);
+                self.w.write_all(&block_checksum.to_le_bytes())?;
+            }
         }
 
         // Content checksum, if applicable
         if self.frame_info.content_checksum {
-            self.content_hasher.write(src);
+            self.content_hasher.write(&self.src[src_start..src_end]);
         }
 
         // Buffer and offsets maintenance
-        self.content_len += src.len() as u64;
-        self.src_start += src.len();
+        self.content_len += src_len as u64;
+        self.src_start += src_len;
         debug_assert_eq!(self.src_start, self.src_end);
         if self.frame_info.block_mode == BlockMode::Linked {
             // In linked mode we consume the input (bumping src_start) but leave the
@@ -363,7 +496,7 @@ impl<W: io::Write> FrameEncoder<W> {
             self.src_end = 0;
             // Advance stream offset so we don't have to reset the match dict
             // for the next block.
-            self.src_stream_offset += src.len();
+            self.src_stream_offset += src_len;
         }
         debug_assert!(self.src_start <= self.src_end);
         debug_assert!(self.src_start + max_block_size <= self.src.capacity());

@@ -20,6 +20,15 @@ struct Options {
     /// force decompress
     decompress: bool,
 
+    #[cfg(feature = "hc")]
+    #[argh(option, short = 'l')]
+    /// compression level 1-12 (1=fast, 2=mid, 3-9=HC, 10-12=optimal)
+    level: Option<u8>,
+
+    #[argh(option, short = 'B')]
+    /// block size: 4=64KB, 5=256KB, 6=1MB, 7=4MB (default: 7)
+    block_size: Option<u8>,
+
     #[argh(positional)]
     /// file to compress/decompress
     input_file: Option<PathBuf>,
@@ -34,6 +43,11 @@ const LZ_EXTENSION: &str = ".lz4";
 fn main() -> Result<()> {
     let opts: Options = argh::from_env();
 
+    #[cfg(feature = "hc")]
+    let level = opts.level;
+    #[cfg(not(feature = "hc"))]
+    let level: Option<u8> = None;
+
     let input_file = opts.input_file.filter(|f| f.as_os_str() != "-");
 
     if let Some(file) = input_file {
@@ -43,6 +57,8 @@ fn main() -> Result<()> {
             opts.clean,
             opts.force,
             opts.decompress,
+            level,
+            opts.block_size,
             true,
         )?;
     } else {
@@ -63,13 +79,14 @@ fn main() -> Result<()> {
                 Err(stdout) => io::copy(&mut decoder, stdout)?,
             };
         } else {
+            let frame_info = create_frame_info(opts.block_size);
             match &mut out {
                 Ok(f) => {
-                    let mut wtr = lz4_flex::frame::FrameEncoder::new(f);
+                    let mut wtr = create_encoder(frame_info, f, level);
                     io::copy(&mut stdin, &mut wtr)?;
                 }
                 Err(stdout) => {
-                    let mut wtr = lz4_flex::frame::FrameEncoder::new(stdout);
+                    let mut wtr = create_encoder(frame_info, stdout, level);
                     io::copy(&mut stdin, &mut wtr)?;
                 }
             };
@@ -79,12 +96,43 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+fn create_frame_info(block_size: Option<u8>) -> lz4_flex::frame::FrameInfo {
+    use lz4_flex::frame::BlockSize;
+    let mut frame_info = lz4_flex::frame::FrameInfo::new();
+    if let Some(bs) = block_size {
+        frame_info.block_size = match bs {
+            4 => BlockSize::Max64KB,
+            5 => BlockSize::Max256KB,
+            6 => BlockSize::Max1MB,
+            7 => BlockSize::Max4MB,
+            _ => BlockSize::Max4MB, // default to 4MB
+        };
+    } else {
+        frame_info.block_size = BlockSize::Max4MB; // default to 4MB like C lz4
+    }
+    frame_info
+}
+
+fn create_encoder<W: io::Write>(
+    frame_info: lz4_flex::frame::FrameInfo,
+    wtr: W,
+    level: Option<u8>,
+) -> lz4_flex::frame::FrameEncoder<W> {
+    match level {
+        #[cfg(feature = "hc")]
+        Some(lvl) => lz4_flex::frame::FrameEncoder::with_compression_level(frame_info, wtr, lvl),
+        _ => lz4_flex::frame::FrameEncoder::with_frame_info(frame_info, wtr),
+    }
+}
+
 fn handle_file(
     file: &Path,
     out: Option<PathBuf>,
     clean: bool,
     force: bool,
     force_decompress: bool,
+    level: Option<u8>,
+    block_size: Option<u8>,
     print_info: bool,
 ) -> Result<()> {
     let decompress = file.extension() == Some(LZ_ENDING.as_ref());
@@ -144,7 +192,8 @@ fn handle_file(
         let mut in_file = File::open(file)?;
 
         let out_file = File::create(&output)?;
-        let mut compressor = lz4_flex::frame::FrameEncoder::new(TrackWriteSize::new(out_file));
+        let frame_info = create_frame_info(block_size);
+        let mut compressor = create_encoder(frame_info, TrackWriteSize::new(out_file), level);
         let input_size = io::copy(&mut in_file, &mut compressor)?;
 
         let output_size = compressor.finish()?.written;
@@ -202,7 +251,6 @@ pub fn lz4_flex_frame_compress_with(
     Ok(enc.finish()?)
 }
 
-#[cfg(feature = "frame")]
 pub fn lz4_flex_frame_decompress(input: &[u8]) -> Result<Vec<u8>, lz4_flex::frame::Error> {
     let mut de = lz4_flex::frame::FrameDecoder::new(input);
     let mut out = Vec::new();
