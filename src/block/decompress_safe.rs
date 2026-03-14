@@ -138,8 +138,11 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
             output.extend_from_slice_wild(input, literal_length);
             input_pos += literal_length;
 
-            // clone as we don't want to mutate
-            let offset = read_u16(input, &mut literal_length.clone())? as usize;
+            // Read the offset directly from the input array.
+            // `input` is &[u8; 16] and `literal_length` is at most 14 (guaranteed by
+            // does_token_fit), so literal_length + 1 <= 15 is always in bounds.
+            let offset =
+                u16::from_le_bytes([input[literal_length], input[literal_length + 1]]) as usize;
             input_pos += 2;
 
             let mut match_length = MINMATCH + (token & 0xF) as usize;
