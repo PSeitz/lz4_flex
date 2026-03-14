@@ -521,7 +521,14 @@ fn push_u16(output: &mut impl Sink, el: u16) {
 #[inline(always)] // (always) necessary otherwise compiler fails to inline it
 #[cfg(feature = "safe-encode")]
 fn copy_literals_wild(output: &mut impl Sink, input: &[u8], input_start: usize, len: usize) {
-    output.extend_from_slice_wild(&input[input_start..input_start + len], len)
+    // Pass a wider slice (+8 bytes) so that slice_copy can use efficient fixed-size copy
+    // paths for small literals, matching the unsafe version's behavior of unconditionally
+    // copying 8/16/24 bytes. This is safe because:
+    // - MFLIMIT guarantees at least 12 bytes of input after `input_start + len`
+    // - get_maximum_output_size provides sufficient output capacity margin
+    debug_assert!(input_start + len + 8 <= input.len());
+    debug_assert!(output.pos() + len + 8 <= output.capacity());
+    output.extend_from_slice_wild(&input[input_start..input_start + len + 8], len)
 }
 
 #[inline]
