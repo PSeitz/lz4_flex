@@ -526,6 +526,8 @@ fn copy_literals_wild(output: &mut impl Sink, input: &[u8], input_start: usize, 
     // copying 8/16/24 bytes. This is safe because:
     // - MFLIMIT guarantees at least 12 bytes of input after `input_start + len`
     // - get_maximum_output_size provides sufficient output capacity margin
+    debug_assert!(input_start + len + 8 <= input.len());
+    debug_assert!(output.pos() + len + 8 <= output.capacity());
     output.extend_from_slice_wild(&input[input_start..input_start + len + 8], len)
 }
 
