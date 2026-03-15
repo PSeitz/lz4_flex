@@ -19,6 +19,8 @@ jobs:
         # 'rust-src' component is needed for fuzzing with `--sanitizer=memory`
         components: rust-src
     - uses: actions/checkout@v3
+    - name: Install fmt
+      run: rustup component add rustfmt
     - name: Ensure no_std compiles
       run: cargo build --no-default-features
     - name: Ensure no_std compiles for safe-decode
@@ -29,6 +31,8 @@ jobs:
       run: cargo build --no-default-features --features safe-encode --features safe-decode
     - name: Build
       run: cargo build --verbose
+    - name: Check Formatting
+      run: cargo +nightly fmt --all -- --check
     - name: Run tests
       run: cargo test
     - name: Run tests with nightly
