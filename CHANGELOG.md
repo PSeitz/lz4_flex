@@ -1,3 +1,32 @@
+0.13.0 (2026-03-15)
+==================
+### Features
+- Add option to reuse compression dict [#207](https://github.com/PSeitz/lz4_flex/pull/207)  (thanks @matthewfollegot)
+
+### Fixes
+- Fix handling of invalid match offsets during decompression [#055502e](https://github.com/PSeitz/lz4_flex/commit/055502e) (thanks @Marcono1234)
+```
+Invalid match offsets (offset == 0) during decompression were not properly
+handled, which could lead to invalid memory reads. This is a security fix
+that was also backported to 0.12.1 and 0.11.6.
+```
+- Fix `get_maximum_output_size` overflow on 32-bit targets [#205](https://github.com/PSeitz/lz4_flex/pull/205) (thanks @dglittle)
+```
+Cast input_len to u64 before multiplying by 110, avoiding overflow on
+32-bit targets (e.g. wasm32) where input_len * 110 overflows usize
+when input_len > ~39MB.
+```
+
+0.12.1 (2026-03-14)
+==================
+### Security Fix
+- Fix handling of invalid match offsets during decompression [#a0b9154](https://github.com/PSeitz/lz4_flex/commit/a0b9154) (thanks @Marcono1234)
+```
+Invalid match offsets (offset == 0) during decompression were not properly
+handled, which could lead to invalid memory reads on untrusted input.
+Users on 0.12.x should upgrade to 0.12.1.
+```
+
 0.12.0 (2025-11-11)
 ==================
 - Fix integer overflows when decoding large payloads [#192](https://github.com/PSeitz/lz4_flex/pull/192) (thanks @teh-cmc)
@@ -8,6 +37,16 @@ keeps everything in memory. Consider using the frame format for large data.
 
 This change also removes a unsafe fast-path for write_integer to simplify the code.
 The performance impact is on incompressible data, which is already fast enough.
+```
+
+0.11.6 (2026-03-14)
+==================
+### Security Fix
+- Fix handling of invalid match offsets during decompression [#84cdafb](https://github.com/PSeitz/lz4_flex/commit/84cdafb) (thanks @Marcono1234)
+```
+Invalid match offsets (offset == 0) during decompression were not properly
+handled, which could lead to invalid memory reads on untrusted input.
+Users on 0.11.x should upgrade to 0.11.6.
 ```
 
 0.11.5 (2025-06-19)
