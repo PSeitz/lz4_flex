@@ -268,6 +268,40 @@ fn read_u32_from_two_slices(primary: &[u8], pos: usize, secondary: &[u8]) -> u32
     }
 }
 
+/// Try to match at a candidate position in `ext_dict`.
+/// Returns the total match length (>= MINMATCH) if the first 4 bytes match, or 0.
+/// Handles boundary-crossing reads when the candidate is near the end of `ext_dict`.
+#[inline]
+fn try_ext_dict_match(
+    input: &[u8],
+    off: usize,
+    match_limit: usize,
+    ext_dict: &[u8],
+    candidate_local: usize,
+) -> usize {
+    let min_match_ok = if candidate_local + 4 <= ext_dict.len() {
+        super::compress::get_batch(ext_dict, candidate_local)
+            == super::compress::get_batch(input, off)
+    } else if candidate_local < ext_dict.len() {
+        read_u32_from_two_slices(ext_dict, candidate_local, input)
+            == super::compress::get_batch(input, off)
+    } else {
+        false
+    };
+    if min_match_ok {
+        MINMATCH
+            + count_forward_ext_dict(
+                input,
+                off + MINMATCH,
+                ext_dict,
+                candidate_local + MINMATCH,
+                match_limit,
+            )
+    } else {
+        0
+    }
+}
+
 /// Count matching bytes forward with the reference starting in `ext_dict` and
 /// potentially continuing into `input[0..]` (the prefix) when ext_dict is exhausted.
 /// `reference_position` may already be past `ext_dict` (when the min-match check crossed the boundary).
@@ -527,57 +561,19 @@ impl HashTableHCU32 {
             } else if !ext_dict.is_empty()
                 && candidate >= ext_dict_stream_offset
             {
-                let candidate_local =
-                    candidate - ext_dict_stream_offset;
-
-                if candidate_local + 4 <= ext_dict.len() {
-                    if super::compress::get_batch(ext_dict, candidate_local)
-                        == super::compress::get_batch(input, off)
-                    {
-                        let match_len = MINMATCH
-                            + count_forward_ext_dict(
-                                input,
-                                off + MINMATCH,
-                                ext_dict,
-                                candidate_local + MINMATCH,
-                                match_limit,
-                            );
-                        if match_len as u32 > match_info.match_length {
-                            let distance = cur_absolute - candidate;
-                            match_info.reference_position =
-                                (off as u32).wrapping_sub(distance as u32);
-                            match_info.match_length = match_len as u32;
-                        }
-                        if i == 0 {
-                            first_match_len = match_len;
-                            delta = cur_absolute - candidate;
-                        }
+                let candidate_local = candidate - ext_dict_stream_offset;
+                let match_len =
+                    try_ext_dict_match(input, off, match_limit, ext_dict, candidate_local);
+                if match_len > 0 {
+                    if match_len as u32 > match_info.match_length {
+                        let distance = cur_absolute - candidate;
+                        match_info.reference_position =
+                            (off as u32).wrapping_sub(distance as u32);
+                        match_info.match_length = match_len as u32;
                     }
-                } else if candidate_local < ext_dict.len() {
-                    if read_u32_from_two_slices(
-                        ext_dict,
-                        candidate_local,
-                        input,
-                    ) == super::compress::get_batch(input, off)
-                    {
-                        let match_len = MINMATCH
-                            + count_forward_ext_dict(
-                                input,
-                                off + MINMATCH,
-                                ext_dict,
-                                candidate_local + MINMATCH,
-                                match_limit,
-                            );
-                        if match_len as u32 > match_info.match_length {
-                            let distance = cur_absolute - candidate;
-                            match_info.reference_position =
-                                (off as u32).wrapping_sub(distance as u32);
-                            match_info.match_length = match_len as u32;
-                        }
-                        if i == 0 {
-                            first_match_len = match_len;
-                            delta = cur_absolute - candidate;
-                        }
+                    if i == 0 {
+                        first_match_len = match_len;
+                        delta = cur_absolute - candidate;
                     }
                 }
             }
@@ -704,37 +700,15 @@ impl HashTableHCU32 {
             } else if !ext_dict.is_empty()
                 && candidate >= ext_dict_stream_offset
             {
-                let candidate_local =
-                    candidate - ext_dict_stream_offset;
-
-                let min_match_ok = if candidate_local + 4 <= ext_dict.len() {
-                    super::compress::get_batch(ext_dict, candidate_local)
-                        == super::compress::get_batch(input, off)
-                } else if candidate_local < ext_dict.len() {
-                    read_u32_from_two_slices(ext_dict, candidate_local, input)
-                        == super::compress::get_batch(input, off)
-                } else {
-                    false
-                };
-
-                if min_match_ok {
-                    let match_len_forward = MINMATCH
-                        + count_forward_ext_dict(
-                            input,
-                            off + MINMATCH,
-                            ext_dict,
-                            candidate_local + MINMATCH,
-                            match_limit,
-                        );
-                    // No backward extension for ext_dict matches
-                    let match_len = match_len_forward as u32;
-
-                    if match_len > match_info.match_length {
-                        match_info.match_length = match_len;
-                        let distance = cur_absolute - candidate;
-                        match_info.reference_position = (off as u32).wrapping_sub(distance as u32);
-                        match_info.start_position = off as u32;
-                    }
+                let candidate_local = candidate - ext_dict_stream_offset;
+                // No backward extension for ext_dict matches
+                let match_len =
+                    try_ext_dict_match(input, off, match_limit, ext_dict, candidate_local);
+                if match_len as u32 > match_info.match_length {
+                    match_info.match_length = match_len as u32;
+                    let distance = cur_absolute - candidate;
+                    match_info.reference_position = (off as u32).wrapping_sub(distance as u32);
+                    match_info.start_position = off as u32;
                 }
             }
 
@@ -1052,32 +1026,12 @@ impl HashTableHCU32 {
             } else if !ext_dict.is_empty()
                 && candidate >= ext_dict_stream_offset
             {
-                let candidate_local =
-                    candidate - ext_dict_stream_offset;
-
-                let min_match_ok = if candidate_local + 4 <= ext_dict.len() {
-                    super::compress::get_batch(ext_dict, candidate_local)
-                        == super::compress::get_batch(input, off)
-                } else if candidate_local < ext_dict.len() {
-                    read_u32_from_two_slices(ext_dict, candidate_local, input)
-                        == super::compress::get_batch(input, off)
-                } else {
-                    false
-                };
-
-                if min_match_ok {
-                    match_len = MINMATCH
-                        + count_forward_ext_dict(
-                            input,
-                            off + MINMATCH,
-                            ext_dict,
-                            candidate_local + MINMATCH,
-                            match_limit,
-                        );
-                    if match_len > best_len {
-                        best_len = match_len;
-                        best_offset = (cur_absolute - candidate) as u16;
-                    }
+                let candidate_local = candidate - ext_dict_stream_offset;
+                match_len =
+                    try_ext_dict_match(input, off, match_limit, ext_dict, candidate_local);
+                if match_len > best_len {
+                    best_len = match_len;
+                    best_offset = (cur_absolute - candidate) as u16;
                 }
                 // Skip chain swap and pattern analysis for ext_dict matches
             }
