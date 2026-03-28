@@ -1827,8 +1827,11 @@ fn compress_hc_internal(
 
         match0 = match1;
 
-        loop {
+        // Lazy match evaluation: try to find better matches ahead
+        'lazy: loop {
             debug_assert!(match1.start_position as usize >= literal_start);
+
+            // Try to find a wider match starting near the end of match1
             if match1.end() > end_pos_check
                 || !ht.insert_and_find_wider_match(
                     input,
@@ -1841,12 +1844,14 @@ fn compress_hc_internal(
                     stream_offset,
                 )
             {
+                // No better match found — encode match1
                 match1.encode_to(&input, literal_start, output);
                 scan_pos = match1.end();
                 literal_start = scan_pos;
                 break;
             }
 
+            // Prefer match0 over match1 if match2 overlaps with match0's range
             if match0.start_position < match1.start_position
                 && (match2.start_position as usize)
                     < match1.start_position as usize + match0.match_length as usize
@@ -1855,30 +1860,31 @@ fn compress_hc_internal(
             }
             debug_assert!(match2.start_position >= match1.start_position);
 
+            // If match2 is very close to match1, just use match2 and retry
             if (match2.start_position - match1.start_position) < 3 {
                 match1 = match2;
                 continue;
             }
 
-            let restart = loop {
+            // Three-match resolution: resolve overlaps between match1, match2, match3
+            'resolve: loop {
+                // Adjust match2 if it overlaps with match1
                 if (match2.start_position - match1.start_position) < OPTIMAL_ML as u32 {
-                    let mut new_match_len = match1.match_length as usize;
-                    if new_match_len > OPTIMAL_ML {
-                        new_match_len = OPTIMAL_ML;
-                    }
-                    if match1.start_position as usize + new_match_len
+                    let mut ml = (match1.match_length as usize).min(OPTIMAL_ML);
+                    if match1.start_position as usize + ml
                         > match2.end().saturating_sub(MINMATCH)
                     {
-                        new_match_len = (match2.start_position - match1.start_position) as usize
+                        ml = (match2.start_position - match1.start_position) as usize
                             + (match2.match_length as usize).saturating_sub(MINMATCH);
                     }
-                    let correction = new_match_len
+                    let correction = ml
                         .saturating_sub((match2.start_position - match1.start_position) as usize);
                     if correction > 0 {
                         match2.fix(correction);
                     }
                 }
 
+                // Try to find match3 near the end of match2
                 if match2.end() > end_pos_check
                     || !ht.insert_and_find_wider_match(
                         input,
@@ -1891,6 +1897,7 @@ fn compress_hc_internal(
                         stream_offset,
                     )
                 {
+                    // No match3 — encode match1 + match2
                     if (match2.start_position as usize) < match1.end() {
                         match1.match_length =
                             (match2.start_position - match1.start_position) as u32;
@@ -1901,11 +1908,13 @@ fn compress_hc_internal(
                     match2.encode_to(input, literal_start, output);
                     scan_pos = match2.end();
                     literal_start = scan_pos;
-                    break false;
+                    break 'lazy;
                 }
 
+                // match3 is close to match1's end — special overlap handling
                 if (match3.start_position as usize) < match1.end() + 3 {
                     if match3.start_position as usize >= match1.end() {
+                        // match3 starts right after match1 — encode match1, restart with match3
                         if (match2.start_position as usize) < match1.end() {
                             let correction = match1.end() - match2.start_position as usize;
                             match2.fix(correction);
@@ -1913,21 +1922,19 @@ fn compress_hc_internal(
                                 match2 = match3;
                             }
                         }
-
                         match1.encode_to(input, literal_start, output);
                         scan_pos = match1.end();
                         literal_start = scan_pos;
-
                         match1 = match3;
                         match0 = match2;
-
-                        break true;
+                        continue 'lazy;
                     }
-
+                    // match3 overlaps with match1 — demote to match2 and retry
                     match2 = match3;
-                    continue;
+                    continue 'resolve;
                 }
 
+                // Resolve overlap between match1 and match2
                 if (match2.start_position as usize) < match1.end() {
                     if (match2.start_position - match1.start_position) < ML_MASK as u32 {
                         if match1.match_length as usize > OPTIMAL_ML {
@@ -1945,20 +1952,13 @@ fn compress_hc_internal(
                     }
                 }
 
+                // Encode match1, shift match2→match1, match3→match2, continue resolving
                 match1.encode_to(input, literal_start, output);
                 scan_pos = match1.end();
                 literal_start = scan_pos;
-
                 match1 = match2;
                 match2 = match3;
-
-                continue;
-            };
-
-            if restart {
-                continue;
             }
-            break;
         }
     }
 
