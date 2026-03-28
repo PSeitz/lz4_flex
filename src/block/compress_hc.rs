@@ -1479,6 +1479,24 @@ impl HashTableMid {
             *entry = entry.saturating_sub(delta32);
         }
     }
+
+    /// Insert a 4-byte hash entry at `pos` if within bounds.
+    #[inline]
+    fn add_hash4(&mut self, input: &[u8], pos: usize, input_end: usize, stream_offset: usize) {
+        if pos + 4 <= input_end {
+            let h = get_hash4_mid(input, pos);
+            self.hash4[h] = (pos + stream_offset) as u32;
+        }
+    }
+
+    /// Insert an 8-byte hash entry at `pos` if within bounds.
+    #[inline]
+    fn add_hash8(&mut self, input: &[u8], pos: usize, input_end: usize, stream_offset: usize) {
+        if pos + 8 <= input_end {
+            let h = get_hash8_mid(input, pos);
+            self.hash8[h] = (pos + stream_offset) as u32;
+        }
+    }
 }
 
 /// 4-byte hash for lz4mid (same multiplier as fast algorithm)
@@ -1507,6 +1525,32 @@ fn get_hash8_mid(input: &[u8], pos: usize) -> usize {
     }
 }
 
+/// Resolve an absolute hash table position to a source slice and local index.
+/// Returns `(source, local_index, distance_from_cursor)`.
+#[inline]
+fn resolve_mid_candidate<'a>(
+    candidate: usize,
+    cur_absolute: usize,
+    input: &'a [u8],
+    stream_offset: usize,
+    ext_dict: &'a [u8],
+    ext_dict_stream_offset: usize,
+) -> Option<(&'a [u8], usize, usize)> {
+    let distance = cur_absolute.wrapping_sub(candidate);
+    if distance == 0 || distance > MAX_DISTANCE {
+        return None;
+    }
+    if candidate >= stream_offset {
+        let local = candidate - stream_offset;
+        Some((input, local, distance))
+    } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
+        let local = candidate - ext_dict_stream_offset;
+        Some((ext_dict, local, distance))
+    } else {
+        None
+    }
+}
+
 /// Internal lz4mid compression.
 /// `input_pos` is where the current block starts (positions before it are prefix).
 /// `ext_dict` and `stream_offset` support linked block mode.
@@ -1525,9 +1569,6 @@ fn compress_mid_internal(
         return Ok(output.pos() - output_start);
     }
 
-    let hash4 = &mut *table.hash4;
-    let hash8 = &mut *table.hash8;
-
     let ext_dict_stream_offset = stream_offset - ext_dict.len();
 
     let mut cur = input_pos;
@@ -1540,105 +1581,31 @@ fn compress_mid_internal(
     // Exclusive end for extending matches: last `END_OFFSET` bytes are handled as literals/trailer.
     let match_limit = input_end - END_OFFSET;
 
-    #[inline]
-    fn add_hash8(
-        hash8: &mut [u32; LZ4MID_HASHTABLE_SIZE],
-        input: &[u8],
-        pos: usize,
-        input_end: usize,
-        stream_offset: usize,
-    ) {
-        if pos + 8 <= input_end {
-            let h = get_hash8_mid(input, pos);
-            hash8[h] = (pos + stream_offset) as u32;
-        }
-    }
-
-    #[inline]
-    fn add_hash4(
-        hash4: &mut [u32; LZ4MID_HASHTABLE_SIZE],
-        input: &[u8],
-        pos: usize,
-        input_end: usize,
-        stream_offset: usize,
-    ) {
-        if pos + 4 <= input_end {
-            let h = get_hash4_mid(input, pos);
-            hash4[h] = (pos + stream_offset) as u32;
-        }
-    }
-
-    /// Resolve an absolute hash table position to a source slice and local index.
-    /// Returns `(source, local_index, distance_from_cursor)`.
-    #[inline]
-    fn resolve_candidate<'a>(
-        candidate: usize,
-        cur_absolute: usize,
-        input: &'a [u8],
-        stream_offset: usize,
-        ext_dict: &'a [u8],
-        ext_dict_stream_offset: usize,
-    ) -> Option<(&'a [u8], usize, usize)> {
-        let distance = cur_absolute.wrapping_sub(candidate);
-        if distance == 0 || distance > MAX_DISTANCE {
-            return None;
-        }
-        if candidate >= stream_offset {
-            let local = candidate - stream_offset;
-            Some((input, local, distance))
-        } else if !ext_dict.is_empty()
-            && candidate >= ext_dict_stream_offset
-        {
-            let local = candidate - ext_dict_stream_offset;
-            Some((ext_dict, local, distance))
-        } else {
-            None
-        }
-    }
-
     while cur <= end_pos_check {
         let cur_absolute = cur + stream_offset;
 
         // Try 8-byte hash first
         let h8 = get_hash8_mid(input, cur);
-        let candidate8 = hash8[h8] as usize;
-        hash8[h8] = cur_absolute as u32;
+        let candidate8 = table.hash8[h8] as usize;
+        table.hash8[h8] = cur_absolute as u32;
 
-        if let Some((src8, cand8, dist8)) = resolve_candidate(
-            candidate8,
-            cur_absolute,
-            input,
-            stream_offset,
-            ext_dict,
-            ext_dict_stream_offset,
+        if let Some((src8, cand8, dist8)) = resolve_mid_candidate(
+            candidate8, cur_absolute, input, stream_offset, ext_dict, ext_dict_stream_offset,
         ) {
             let mut probe = cur;
-            let match_len =
-                count_same_bytes(input, &mut probe, src8, cand8, match_limit);
+            let match_len = count_same_bytes(input, &mut probe, src8, cand8, match_limit);
             if match_len >= MINMATCH {
                 let mut match_cur = cur;
                 let mut candidate = cand8;
-                let cand_src = src8;
-                backtrack_match(
-                    input,
-                    &mut match_cur,
-                    literal_start,
-                    cand_src,
-                    &mut candidate,
-                );
-                let match_len = count_same_bytes(
-                    input,
-                    &mut match_cur,
-                    cand_src,
-                    candidate,
-                    match_limit,
-                );
+                backtrack_match(input, &mut match_cur, literal_start, src8, &mut candidate);
+                let match_len =
+                    count_same_bytes(input, &mut match_cur, src8, candidate, match_limit);
                 let match_start = match_cur - match_len;
                 let offset = dist8 as u16;
 
-                add_hash8(hash8, input, match_start + 1, input_end, stream_offset);
-                add_hash8(hash8, input, match_start + 2, input_end, stream_offset);
-                add_hash4(hash4, input, match_start + 1, input_end, stream_offset);
+                table.add_hash8(input, match_start + 1, input_end, stream_offset);
+                table.add_hash8(input, match_start + 2, input_end, stream_offset);
+                table.add_hash4(input, match_start + 1, input_end, stream_offset);
 
                 encode_sequence(
                     &input[literal_start..match_start],
@@ -1651,17 +1618,17 @@ fn compress_mid_internal(
                 literal_start = cur;
 
                 if cur >= 5 && cur <= max_h8_pos {
-                    add_hash8(hash8, input, cur - 5, input_end, stream_offset);
+                    table.add_hash8(input, cur - 5, input_end, stream_offset);
                 }
                 if cur >= 3 && cur <= max_h8_pos {
-                    add_hash8(hash8, input, cur - 3, input_end, stream_offset);
-                    add_hash8(hash8, input, cur - 2, input_end, stream_offset);
+                    table.add_hash8(input, cur - 3, input_end, stream_offset);
+                    table.add_hash8(input, cur - 2, input_end, stream_offset);
                 }
                 if cur >= 2 {
-                    add_hash4(hash4, input, cur - 2, input_end, stream_offset);
+                    table.add_hash4(input, cur - 2, input_end, stream_offset);
                 }
                 if cur >= 1 {
-                    add_hash4(hash4, input, cur - 1, input_end, stream_offset);
+                    table.add_hash4(input, cur - 1, input_end, stream_offset);
                 }
                 continue;
             }
@@ -1669,20 +1636,14 @@ fn compress_mid_internal(
 
         // Try 4-byte hash
         let h4 = get_hash4_mid(input, cur);
-        let candidate4 = hash4[h4] as usize;
-        hash4[h4] = cur_absolute as u32;
+        let candidate4 = table.hash4[h4] as usize;
+        table.hash4[h4] = cur_absolute as u32;
 
-        if let Some((src4, cand4, dist4)) = resolve_candidate(
-            candidate4,
-            cur_absolute,
-            input,
-            stream_offset,
-            ext_dict,
-            ext_dict_stream_offset,
+        if let Some((src4, cand4, dist4)) = resolve_mid_candidate(
+            candidate4, cur_absolute, input, stream_offset, ext_dict, ext_dict_stream_offset,
         ) {
             let mut probe = cur;
-            let match_len =
-                count_same_bytes(input, &mut probe, src4, cand4, match_limit);
+            let match_len = count_same_bytes(input, &mut probe, src4, cand4, match_limit);
             if match_len >= MINMATCH {
                 let mut best_cur = cur;
                 let mut best_src: &[u8] = src4;
@@ -1692,25 +1653,17 @@ fn compress_mid_internal(
 
                 if cur + 1 <= end_pos_check {
                     let h8_next = get_hash8_mid(input, cur + 1);
-                    let candidate8_next = hash8[h8_next] as usize;
-                    if let Some((src8n, cand8n, dist8n)) = resolve_candidate(
-                        candidate8_next,
-                        cur_absolute + 1,
-                        input,
-                        stream_offset,
-                        ext_dict,
-                        ext_dict_stream_offset,
+                    let candidate8_next = table.hash8[h8_next] as usize;
+                    if let Some((src8n, cand8n, dist8n)) = resolve_mid_candidate(
+                        candidate8_next, cur_absolute + 1, input, stream_offset,
+                        ext_dict, ext_dict_stream_offset,
                     ) {
                         let mut probe_next = cur + 1;
                         let len_next = count_same_bytes(
-                            input,
-                            &mut probe_next,
-                            src8n,
-                            cand8n,
-                            match_limit,
+                            input, &mut probe_next, src8n, cand8n, match_limit,
                         );
                         if len_next > best_len {
-                            hash8[h8_next] = (cur + 1 + stream_offset) as u32;
+                            table.hash8[h8_next] = (cur + 1 + stream_offset) as u32;
                             best_cur = cur + 1;
                             best_src = src8n;
                             best_cand = cand8n;
@@ -1723,26 +1676,15 @@ fn compress_mid_internal(
 
                 let mut match_cur = best_cur;
                 let mut candidate = best_cand;
-                backtrack_match(
-                    input,
-                    &mut match_cur,
-                    literal_start,
-                    best_src,
-                    &mut candidate,
-                );
-                let match_len = count_same_bytes(
-                    input,
-                    &mut match_cur,
-                    best_src,
-                    candidate,
-                    match_limit,
-                );
+                backtrack_match(input, &mut match_cur, literal_start, best_src, &mut candidate);
+                let match_len =
+                    count_same_bytes(input, &mut match_cur, best_src, candidate, match_limit);
                 let match_start = match_cur - match_len;
                 let offset = best_dist as u16;
 
-                add_hash8(hash8, input, match_start + 1, input_end, stream_offset);
-                add_hash8(hash8, input, match_start + 2, input_end, stream_offset);
-                add_hash4(hash4, input, match_start + 1, input_end, stream_offset);
+                table.add_hash8(input, match_start + 1, input_end, stream_offset);
+                table.add_hash8(input, match_start + 2, input_end, stream_offset);
+                table.add_hash4(input, match_start + 1, input_end, stream_offset);
 
                 encode_sequence(
                     &input[literal_start..match_start],
@@ -1755,17 +1697,17 @@ fn compress_mid_internal(
                 literal_start = cur;
 
                 if cur >= 5 && cur <= max_h8_pos {
-                    add_hash8(hash8, input, cur - 5, input_end, stream_offset);
+                    table.add_hash8(input, cur - 5, input_end, stream_offset);
                 }
                 if cur >= 3 && cur <= max_h8_pos {
-                    add_hash8(hash8, input, cur - 3, input_end, stream_offset);
-                    add_hash8(hash8, input, cur - 2, input_end, stream_offset);
+                    table.add_hash8(input, cur - 3, input_end, stream_offset);
+                    table.add_hash8(input, cur - 2, input_end, stream_offset);
                 }
                 if cur >= 2 {
-                    add_hash4(hash4, input, cur - 2, input_end, stream_offset);
+                    table.add_hash4(input, cur - 2, input_end, stream_offset);
                 }
                 if cur >= 1 {
-                    add_hash4(hash4, input, cur - 1, input_end, stream_offset);
+                    table.add_hash4(input, cur - 1, input_end, stream_offset);
                 }
                 continue;
             }
