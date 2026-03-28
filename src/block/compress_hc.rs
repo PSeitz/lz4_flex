@@ -77,7 +77,7 @@ pub(crate) struct HcLevelParams {
 #[inline]
 pub(crate) const fn hc_level_params(level: u8) -> HcLevelParams {
     match level {
-        0 | 1 | 2 => HcLevelParams {
+        0..=2 => HcLevelParams {
             strategy: HcCompressionStrategy::Mid,
             max_attempts: 0,
             sufficient_match_len: 0,
@@ -357,7 +357,7 @@ impl HashTableHCU32 {
 
         // Chain table: dynamically sized based on input length
         // min(input_len, MAX_DISTANCE_HC), at least 256, must be power of 2
-        let chain_size = input_len.min(MAX_DISTANCE_HC).max(256).next_power_of_two();
+        let chain_size = input_len.clamp(256, MAX_DISTANCE_HC).next_power_of_two();
 
         Self {
             dictionary,
@@ -371,7 +371,7 @@ impl HashTableHCU32 {
     /// Avoids reallocation if the existing chain table is large enough.
     #[inline]
     fn reset(&mut self, max_attempts: usize, input_len: usize) {
-        let needed_chain_size = input_len.min(MAX_DISTANCE_HC).max(256).next_power_of_two();
+        let needed_chain_size = input_len.clamp(256, MAX_DISTANCE_HC).next_power_of_two();
 
         self.dictionary.fill(0);
 
@@ -637,6 +637,7 @@ impl HashTableHCU32 {
     /// `stream_offset` is the logical position of `input[0]` in the stream.
     ///
     /// Returns `true` if a match longer than `min_len` was found.
+    #[allow(clippy::too_many_arguments)]
     fn insert_and_find_wider_match(
         &mut self,
         input: &[u8],
@@ -820,6 +821,7 @@ impl HashTableHCU32 {
 
     /// Pattern / repeat chain optimization when `chain_delta(candidate) == 1` and
     /// `chain_pos == 0`. Returns an action for the outer search loop.
+    #[allow(clippy::too_many_arguments)]
     fn pattern_chain_action(
         &self,
         input: &[u8],
@@ -1143,6 +1145,12 @@ pub struct CompressTableHC {
 enum CompressTableHCInner {
     Mid(HashTableMid),
     HC(HashTableHCU32),
+}
+
+impl Default for CompressTableHC {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CompressTableHC {
@@ -1683,7 +1691,7 @@ fn compress_mid_internal(
                 let mut best_len = match_len;
                 let mut best_dist = dist4;
 
-                if cur + 1 <= end_pos_check {
+                if cur < end_pos_check {
                     let h8_next = get_hash8_mid(input, cur + 1);
                     let candidate8_next = table.hash8[h8_next] as usize;
                     if let Some((src8n, cand8n, dist8n)) = resolve_mid_candidate(
@@ -1819,7 +1827,7 @@ fn compress_hc_internal(
                 )
             {
                 // No better match found — encode match1
-                match1.encode_to(&input, literal_start, output);
+                match1.encode_to(input, literal_start, output);
                 scan_pos = match1.end();
                 literal_start = scan_pos;
                 break;
@@ -1874,7 +1882,7 @@ fn compress_hc_internal(
                     // No match3 — encode match1 + match2
                     if (match2.start_position as usize) < match1.end() {
                         match1.match_length =
-                            (match2.start_position - match1.start_position) as u32;
+                            match2.start_position - match1.start_position;
                     }
                     match1.encode_to(input, literal_start, output);
                     scan_pos = match1.end();
@@ -1922,7 +1930,7 @@ fn compress_hc_internal(
                         match2.fix(correction);
                     } else {
                         match1.match_length =
-                            (match2.start_position - match1.start_position) as u32;
+                            match2.start_position - match1.start_position;
                     }
                 }
 
@@ -2057,6 +2065,7 @@ fn compress_opt_internal(
 
         // Set prices using initial match
         let first_ml_cap = first_match_length.min(LZ4_OPT_NUM - 1);
+        #[allow(clippy::needless_range_loop)]
         for match_length in MINMATCH..=first_ml_cap {
             let cost = sequence_price(lit_len, match_length as i32);
             opt[match_length].match_len = match_length as i32;
