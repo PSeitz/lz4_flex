@@ -77,6 +77,9 @@ pub(crate) struct HcLevelParams {
 #[inline]
 pub(crate) const fn hc_level_params(level: u8) -> HcLevelParams {
     match level {
+        // The C reference (v1.10.0+) remaps level 0 to 9 (default) and only
+        // exposes level 2 as the lz4mid entry point (LZ4HC_CLEVEL_MIN = 2).
+        // We treat 0–2 uniformly as Mid for a simpler "0 = fastest" mapping.
         0..=2 => HcLevelParams {
             strategy: HcCompressionStrategy::Mid,
             max_attempts: 0,
