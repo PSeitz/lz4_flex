@@ -875,11 +875,7 @@ mod hc_linked {
     #[test]
     fn hc_linked_roundtrip_all_levels() {
         for level in 1..=12 {
-            for input in [
-                COMPRESSION1K,
-                COMPRESSION34K,
-                COMPRESSION65,
-            ] {
+            for input in [COMPRESSION1K, COMPRESSION34K, COMPRESSION65] {
                 let compressed = compress_with_level(input, level, BlockMode::Linked);
                 let decompressed = decompress_frame(&compressed);
                 assert_eq!(

@@ -271,6 +271,12 @@ fn read_u32_from_two_slices(primary: &[u8], pos: usize, secondary: &[u8]) -> u32
     }
 }
 
+/// Check if two 4-byte sequences starting at the given positions are equal.
+#[inline]
+fn read_min_match_equals(input: &[u8], pos1: usize, pos2: usize) -> bool {
+    super::compress::get_batch(input, pos1) == super::compress::get_batch(input, pos2)
+}
+
 /// Try to match at a candidate position in `ext_dict`.
 /// Returns the total match length (>= MINMATCH) if the first 4 bytes match, or 0.
 /// Handles boundary-crossing reads when the candidate is near the end of `ext_dict`.
@@ -323,13 +329,7 @@ fn count_forward_ext_dict(
         return count_same_bytes(input, &mut cur, input, prefix_pos, match_limit);
     }
 
-    let matched1 = count_same_bytes(
-        input,
-        &mut cur,
-        ext_dict,
-        reference_position,
-        match_limit,
-    );
+    let matched1 = count_same_bytes(input, &mut cur, ext_dict, reference_position, match_limit);
 
     if reference_position + matched1 >= ext_dict.len() && cur < match_limit {
         matched1 + count_same_bytes(input, &mut cur, input, 0, match_limit)
@@ -565,7 +565,7 @@ impl HashTableHCU32 {
                     }
                 }
 
-                if self.read_min_match_equals(input, candidate_local, off) {
+                if read_min_match_equals(input, candidate_local, off) {
                     MINMATCH
                         + self.common_bytes(
                             input,
@@ -612,10 +612,7 @@ impl HashTableHCU32 {
             loop {
                 self.set_chain(ptr_pos, delta as u16);
                 let local_ptr = ptr_pos - stream_offset;
-                self.set_dictionary_at(
-                    Self::get_hash_at(input, local_ptr),
-                    ptr_pos,
-                );
+                self.set_dictionary_at(Self::get_hash_at(input, local_ptr), ptr_pos);
                 ptr_pos += 1;
                 if ptr_pos >= end_pos {
                     break;
@@ -675,13 +672,11 @@ impl HashTableHCU32 {
                 let candidate_local = candidate - stream_offset;
 
                 // Early skip: check tail bytes of current best match
-                if match_info.match_length >= MINMATCH as u32
-                    && candidate_local >= look_back_length
+                if match_info.match_length >= MINMATCH as u32 && candidate_local >= look_back_length
                 {
                     let src_check = start_limit + match_info.match_length as usize - 1;
-                    let ref_check = candidate_local - look_back_length
-                        + match_info.match_length as usize
-                        - 1;
+                    let ref_check =
+                        candidate_local - look_back_length + match_info.match_length as usize - 1;
                     if input[src_check] != input[ref_check]
                         || input[src_check + 1] != input[ref_check + 1]
                     {
@@ -693,7 +688,7 @@ impl HashTableHCU32 {
                     }
                 }
 
-                if self.read_min_match_equals(input, candidate_local, off) {
+                if read_min_match_equals(input, candidate_local, off) {
                     let fwd = MINMATCH
                         + self.common_bytes(
                             input,
@@ -733,13 +728,6 @@ impl HashTableHCU32 {
         }
 
         match_info.match_length > min_len
-    }
-
-    /// Check if two 4-byte sequences starting at the given positions are equal
-    #[inline]
-    fn read_min_match_equals(&self, input: &[u8], pos1: usize, pos2: usize) -> bool {
-        // Fast u32 comparison instead of slice comparison
-        super::compress::get_batch(input, pos1) == super::compress::get_batch(input, pos2)
     }
 
     /// Find the number of common bytes between two positions (optimized version)
@@ -876,21 +864,16 @@ impl HashTableHCU32 {
         let back_length = reverse_count_pattern(input, mc_local, 0, pattern);
         let seg_len = back_length + forward_pattern_len;
 
-        if seg_len >= *src_pat_len && forward_pattern_len <= *src_pat_len
-        {
+        if seg_len >= *src_pat_len && forward_pattern_len <= *src_pat_len {
             let new_candidate_local = mc_local + forward_pattern_len - *src_pat_len;
             let new_ref_abs = new_candidate_local + stream_offset;
-            if cur_absolute > new_ref_abs
-                && cur_absolute - new_ref_abs <= self.chain_mask()
-            {
+            if cur_absolute > new_ref_abs && cur_absolute - new_ref_abs <= self.chain_mask() {
                 return PatternChainAction::RetryCandidate(new_ref_abs);
             }
         } else {
             let new_candidate_local = mc_local - back_length;
             let new_ref_abs = new_candidate_local + stream_offset;
-            if cur_absolute > new_ref_abs
-                && cur_absolute - new_ref_abs <= self.chain_mask()
-            {
+            if cur_absolute > new_ref_abs && cur_absolute - new_ref_abs <= self.chain_mask() {
                 let max_ml = seg_len.min(*src_pat_len);
                 if max_ml > *best_len {
                     *best_len = max_ml;
@@ -966,16 +949,13 @@ impl HashTableHCU32 {
                     #[cfg(feature = "safe-encode")]
                     {
                         input[candidate_local + check_pos] == input[off + check_pos]
-                            && input[candidate_local + check_pos + 1]
-                                == input[off + check_pos + 1]
+                            && input[candidate_local + check_pos + 1] == input[off + check_pos + 1]
                     }
                 } else {
                     true
                 };
 
-                if tail_matches_past_best
-                    && self.read_min_match_equals(input, candidate_local, off)
-                {
+                if tail_matches_past_best && read_min_match_equals(input, candidate_local, off) {
                     match_len = MINMATCH
                         + self.common_bytes(
                             input,
@@ -1000,8 +980,7 @@ impl HashTableHCU32 {
                     let mut accel: i32 = 1 << K_TRIGGER;
                     let mut pos: i32 = 0;
                     while pos < end {
-                        let candidate_dist = self
-                            .chain_delta(candidate.wrapping_add(pos as usize));
+                        let candidate_dist = self.chain_delta(candidate.wrapping_add(pos as usize));
                         let step = accel >> K_TRIGGER;
                         accel += 1;
                         if candidate_dist > dist_to_next {
@@ -1040,12 +1019,9 @@ impl HashTableHCU32 {
                     PatternChainAction::StopSearch => break,
                     PatternChainAction::Noop => {}
                 }
-            } else if !ext_dict.is_empty()
-                && candidate >= ext_dict_stream_offset
-            {
+            } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
                 let candidate_local = candidate - ext_dict_stream_offset;
-                match_len =
-                    try_ext_dict_match(input, off, match_limit, ext_dict, candidate_local);
+                match_len = try_ext_dict_match(input, off, match_limit, ext_dict, candidate_local);
                 if match_len > best_len {
                     best_len = match_len;
                     best_offset = (cur_absolute - candidate) as u16;
@@ -1164,17 +1140,40 @@ impl CompressTableHC {
         }
     }
 
+    /// Get (or create) the Mid table, resetting it for a fresh block.
+    fn reset_mid(&mut self) -> &mut HashTableMid {
+        if !matches!(self.inner, CompressTableHCInner::Mid(_)) {
+            self.inner = CompressTableHCInner::Mid(HashTableMid::new());
+        }
+        match &mut self.inner {
+            CompressTableHCInner::Mid(mid) => {
+                mid.reset();
+                mid
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// Get (or create) the HC table, resetting it for a fresh block.
+    fn reset_hc(&mut self, max_attempts: usize, input_len: usize) -> &mut HashTableHCU32 {
+        if let CompressTableHCInner::HC(ht) = &mut self.inner {
+            ht.reset(max_attempts, input_len);
+        } else {
+            self.inner = CompressTableHCInner::HC(HashTableHCU32::new(max_attempts, input_len));
+        }
+        match &mut self.inner {
+            CompressTableHCInner::HC(ht) => ht,
+            _ => unreachable!(),
+        }
+    }
+
     /// Prepare the table for a new linked block without clearing existing entries.
     /// Called by `FrameEncoder` between blocks in linked mode.
     ///
     /// `params` must be [`hc_level_params`] with the same clamped level used for the following
     /// [`compress_hc_linked`] call (typically `hc_level_params(level.min(12))`).
     #[cfg(feature = "frame")]
-    pub(crate) fn prepare_linked_block(
-        &mut self,
-        params: HcLevelParams,
-        block_start: usize,
-    ) {
+    pub(crate) fn prepare_linked_block(&mut self, params: HcLevelParams, block_start: usize) {
         match params.strategy {
             HcCompressionStrategy::Mid => match &mut self.inner {
                 CompressTableHCInner::Mid(mid) => {
@@ -1281,44 +1280,16 @@ pub fn compress_hc_with_table(
 
     match params.strategy {
         HcCompressionStrategy::Mid => {
-            let mid = match &mut table.inner {
-                CompressTableHCInner::Mid(mid) => {
-                    mid.reset();
-                    mid
-                }
-                _ => {
-                    table.inner = CompressTableHCInner::Mid(HashTableMid::new());
-                    match &mut table.inner {
-                        CompressTableHCInner::Mid(mid) => mid,
-                        _ => unreachable!(),
-                    }
-                }
-            };
+            let mid = table.reset_mid();
             compress_mid_internal(input, 0, output, mid, &[], 0)
         }
-        HcCompressionStrategy::HashChain | HcCompressionStrategy::Optimal => {
-            let ht = match &mut table.inner {
-                CompressTableHCInner::HC(ht) => {
-                    ht.reset(params.max_attempts, input.len());
-                    ht
-                }
-                _ => {
-                    table.inner = CompressTableHCInner::HC(HashTableHCU32::new(
-                        params.max_attempts,
-                        input.len(),
-                    ));
-                    match &mut table.inner {
-                        CompressTableHCInner::HC(ht) => ht,
-                        _ => unreachable!(),
-                    }
-                }
-            };
-
-            if matches!(params.strategy, HcCompressionStrategy::Optimal) {
-                compress_opt_internal(input, 0, output, params, ht, &[], 0)
-            } else {
-                compress_hc_internal(input, 0, output, ht, &[], 0)
-            }
+        HcCompressionStrategy::HashChain => {
+            let ht = table.reset_hc(params.max_attempts, input.len());
+            compress_hc_internal(input, 0, output, ht, &[], 0)
+        }
+        HcCompressionStrategy::Optimal => {
+            let ht = table.reset_hc(params.max_attempts, input.len());
+            compress_opt_internal(input, 0, output, params, ht, &[], 0)
         }
     }
 }
@@ -1345,14 +1316,7 @@ pub(crate) fn compress_hc_linked(
                     "prepare_linked_block should have ensured Mid variant for mid levels"
                 ),
             };
-            compress_mid_internal(
-                input,
-                input_pos,
-                output,
-                mid,
-                ext_dict,
-                stream_offset,
-            )
+            compress_mid_internal(input, input_pos, output, mid, ext_dict, stream_offset)
         }
         HcCompressionStrategy::HashChain => {
             let ht = match &mut table.inner {
@@ -1361,14 +1325,7 @@ pub(crate) fn compress_hc_linked(
                     "prepare_linked_block should have ensured HC variant for HC levels"
                 ),
             };
-            compress_hc_internal(
-                input,
-                input_pos,
-                output,
-                ht,
-                ext_dict,
-                stream_offset,
-            )
+            compress_hc_internal(input, input_pos, output, ht, ext_dict, stream_offset)
         }
         HcCompressionStrategy::Optimal => {
             let ht = match &mut table.inner {
@@ -1540,6 +1497,37 @@ impl HashTableMid {
             self.hash8[h] = (pos + stream_offset) as u32;
         }
     }
+
+    /// Insert hashes near a match start and at trailing positions after emitting a match.
+    /// Called after encoding a sequence to populate the hash tables for future searches.
+    fn insert_match_hashes(
+        &mut self,
+        input: &[u8],
+        match_start: usize,
+        cur: usize,
+        input_end: usize,
+        stream_offset: usize,
+    ) {
+        let max_h8_pos = input_end.saturating_sub(8);
+
+        self.add_hash8(input, match_start + 1, input_end, stream_offset);
+        self.add_hash8(input, match_start + 2, input_end, stream_offset);
+        self.add_hash4(input, match_start + 1, input_end, stream_offset);
+
+        if cur >= 5 && cur <= max_h8_pos {
+            self.add_hash8(input, cur - 5, input_end, stream_offset);
+        }
+        if cur >= 3 && cur <= max_h8_pos {
+            self.add_hash8(input, cur - 3, input_end, stream_offset);
+            self.add_hash8(input, cur - 2, input_end, stream_offset);
+        }
+        if cur >= 2 {
+            self.add_hash4(input, cur - 2, input_end, stream_offset);
+        }
+        if cur >= 1 {
+            self.add_hash4(input, cur - 1, input_end, stream_offset);
+        }
+    }
 }
 
 /// 4-byte hash for lz4mid (same multiplier as fast algorithm)
@@ -1619,8 +1607,6 @@ fn compress_mid_internal(
     let input_end = input.len();
     // Inclusive max main-loop `cur`: at least `MFLIMIT` bytes remain from `cur` to `input_end`.
     let end_pos_check = input_end.saturating_sub(MFLIMIT);
-    // Inclusive max `cur` for inserting 8-byte hashes (`cur + 8 <= input_end`).
-    let max_h8_pos = input_end.saturating_sub(8);
     // Exclusive end for extending matches: last `END_OFFSET` bytes are handled as literals/trailer.
     let match_limit = input_end - END_OFFSET;
 
@@ -1633,7 +1619,12 @@ fn compress_mid_internal(
         table.hash8[h8] = cur_absolute as u32;
 
         if let Some((src8, cand8, dist8)) = resolve_mid_candidate(
-            candidate8, cur_absolute, input, stream_offset, ext_dict, ext_dict_stream_offset,
+            candidate8,
+            cur_absolute,
+            input,
+            stream_offset,
+            ext_dict,
+            ext_dict_stream_offset,
         ) {
             let mut probe = cur;
             let match_len = count_same_bytes(input, &mut probe, src8, cand8, match_limit);
@@ -1646,10 +1637,7 @@ fn compress_mid_internal(
                 let match_start = match_cur - match_len;
                 let offset = dist8 as u16;
 
-                table.add_hash8(input, match_start + 1, input_end, stream_offset);
-                table.add_hash8(input, match_start + 2, input_end, stream_offset);
-                table.add_hash4(input, match_start + 1, input_end, stream_offset);
-
+                table.insert_match_hashes(input, match_start, match_cur, input_end, stream_offset);
                 encode_sequence(
                     &input[literal_start..match_start],
                     output,
@@ -1659,20 +1647,6 @@ fn compress_mid_internal(
 
                 cur = match_cur;
                 literal_start = cur;
-
-                if cur >= 5 && cur <= max_h8_pos {
-                    table.add_hash8(input, cur - 5, input_end, stream_offset);
-                }
-                if cur >= 3 && cur <= max_h8_pos {
-                    table.add_hash8(input, cur - 3, input_end, stream_offset);
-                    table.add_hash8(input, cur - 2, input_end, stream_offset);
-                }
-                if cur >= 2 {
-                    table.add_hash4(input, cur - 2, input_end, stream_offset);
-                }
-                if cur >= 1 {
-                    table.add_hash4(input, cur - 1, input_end, stream_offset);
-                }
                 continue;
             }
         }
@@ -1683,7 +1657,12 @@ fn compress_mid_internal(
         table.hash4[h4] = cur_absolute as u32;
 
         if let Some((src4, cand4, dist4)) = resolve_mid_candidate(
-            candidate4, cur_absolute, input, stream_offset, ext_dict, ext_dict_stream_offset,
+            candidate4,
+            cur_absolute,
+            input,
+            stream_offset,
+            ext_dict,
+            ext_dict_stream_offset,
         ) {
             let mut probe = cur;
             let match_len = count_same_bytes(input, &mut probe, src4, cand4, match_limit);
@@ -1698,13 +1677,16 @@ fn compress_mid_internal(
                     let h8_next = get_hash8_mid(input, cur + 1);
                     let candidate8_next = table.hash8[h8_next] as usize;
                     if let Some((src8n, cand8n, dist8n)) = resolve_mid_candidate(
-                        candidate8_next, cur_absolute + 1, input, stream_offset,
-                        ext_dict, ext_dict_stream_offset,
+                        candidate8_next,
+                        cur_absolute + 1,
+                        input,
+                        stream_offset,
+                        ext_dict,
+                        ext_dict_stream_offset,
                     ) {
                         let mut probe_next = cur + 1;
-                        let len_next = count_same_bytes(
-                            input, &mut probe_next, src8n, cand8n, match_limit,
-                        );
+                        let len_next =
+                            count_same_bytes(input, &mut probe_next, src8n, cand8n, match_limit);
                         if len_next > best_len {
                             table.hash8[h8_next] = (cur + 1 + stream_offset) as u32;
                             best_cur = cur + 1;
@@ -1719,16 +1701,19 @@ fn compress_mid_internal(
 
                 let mut match_cur = best_cur;
                 let mut candidate = best_cand;
-                backtrack_match(input, &mut match_cur, literal_start, best_src, &mut candidate);
+                backtrack_match(
+                    input,
+                    &mut match_cur,
+                    literal_start,
+                    best_src,
+                    &mut candidate,
+                );
                 let match_len =
                     count_same_bytes(input, &mut match_cur, best_src, candidate, match_limit);
                 let match_start = match_cur - match_len;
                 let offset = best_dist as u16;
 
-                table.add_hash8(input, match_start + 1, input_end, stream_offset);
-                table.add_hash8(input, match_start + 2, input_end, stream_offset);
-                table.add_hash4(input, match_start + 1, input_end, stream_offset);
-
+                table.insert_match_hashes(input, match_start, match_cur, input_end, stream_offset);
                 encode_sequence(
                     &input[literal_start..match_start],
                     output,
@@ -1738,20 +1723,6 @@ fn compress_mid_internal(
 
                 cur = match_cur;
                 literal_start = cur;
-
-                if cur >= 5 && cur <= max_h8_pos {
-                    table.add_hash8(input, cur - 5, input_end, stream_offset);
-                }
-                if cur >= 3 && cur <= max_h8_pos {
-                    table.add_hash8(input, cur - 3, input_end, stream_offset);
-                    table.add_hash8(input, cur - 2, input_end, stream_offset);
-                }
-                if cur >= 2 {
-                    table.add_hash4(input, cur - 2, input_end, stream_offset);
-                }
-                if cur >= 1 {
-                    table.add_hash4(input, cur - 1, input_end, stream_offset);
-                }
                 continue;
             }
         }
@@ -1856,14 +1827,12 @@ fn compress_hc_internal(
                 // Adjust match2 if it overlaps with match1
                 if (match2.start_position - match1.start_position) < OPTIMAL_ML as u32 {
                     let mut ml = (match1.match_length as usize).min(OPTIMAL_ML);
-                    if match1.start_position as usize + ml
-                        > match2.end().saturating_sub(MINMATCH)
-                    {
+                    if match1.start_position as usize + ml > match2.end().saturating_sub(MINMATCH) {
                         ml = (match2.start_position - match1.start_position) as usize
                             + (match2.match_length as usize).saturating_sub(MINMATCH);
                     }
-                    let correction = ml
-                        .saturating_sub((match2.start_position - match1.start_position) as usize);
+                    let correction =
+                        ml.saturating_sub((match2.start_position - match1.start_position) as usize);
                     if correction > 0 {
                         match2.fix(correction);
                     }
@@ -1884,8 +1853,7 @@ fn compress_hc_internal(
                 {
                     // No match3 — encode match1 + match2
                     if (match2.start_position as usize) < match1.end() {
-                        match1.match_length =
-                            match2.start_position - match1.start_position;
+                        match1.match_length = match2.start_position - match1.start_position;
                     }
                     match1.encode_to(input, literal_start, output);
                     scan_pos = match1.end();
@@ -1932,8 +1900,7 @@ fn compress_hc_internal(
                         let correction = match1.end() - match2.start_position as usize;
                         match2.fix(correction);
                     } else {
-                        match1.match_length =
-                            match2.start_position - match1.start_position;
+                        match1.match_length = match2.start_position - match1.start_position;
                     }
                 }
 
@@ -1949,6 +1916,26 @@ fn compress_hc_internal(
 
     handle_last_literals(output, &input[literal_start..input_end]);
     Ok(output.pos() - output_start_pos)
+}
+
+/// Reverse the DP path: walk backward from `start`, swapping each state's
+/// `(match_len, match_offset)` with the values from the next step forward.
+/// After this, `opt[0..last_match_pos)` can be read forward to emit sequences.
+#[inline]
+fn reverse_optimal_path(opt: &mut [OptimalState], start: usize, mut ml: i32, mut off: i32) {
+    let mut cp = start;
+    loop {
+        let next_ml = opt[cp].match_len;
+        let next_off = opt[cp].match_offset;
+        opt[cp].match_len = ml;
+        opt[cp].match_offset = off;
+        ml = next_ml;
+        off = next_off;
+        if (next_ml as usize) > cp {
+            break;
+        }
+        cp -= next_ml as usize;
+    }
 }
 
 /// Emit LZ4 sequences from DP states `opt[0..last_match_pos)` (`match_len == 1` is one literal step).
@@ -2061,8 +2048,7 @@ fn compress_opt_internal(
             let cost = literals_price(lit_len + j);
             opt[j as usize].match_len = 1;
             opt[j as usize].match_offset = 0;
-            opt[j as usize].lit_len =
-                lit_len + j;
+            opt[j as usize].lit_len = lit_len + j;
             opt[j as usize].path_cost = cost;
         }
 
@@ -2086,8 +2072,7 @@ fn compress_opt_internal(
                 opt[si].match_len = 1; // literal
                 opt[si].match_offset = 0;
                 opt[si].lit_len = trail as i32;
-                opt[si].path_cost = opt[last_match_pos].path_cost
-                    + literals_price(trail as i32);
+                opt[si].path_cost = opt[last_match_pos].path_cost + literals_price(trail as i32);
             }
         }
 
@@ -2103,19 +2088,15 @@ fn compress_opt_internal(
 
             if full_optimal_update {
                 // Not useful to search here if next position has same (or lower) cost
-                if opt[i + 1].path_cost
-                    <= opt[i].path_cost
-                    && opt[i + MINMATCH].path_cost
-                        < opt[i].path_cost + 3
+                if opt[i + 1].path_cost <= opt[i].path_cost
+                    && opt[i + MINMATCH].path_cost < opt[i].path_cost + 3
                 {
                     i += 1;
                     continue;
                 }
             } else {
                 // Not useful to search here if next position has same (or lower) cost
-                if opt[i + 1].path_cost
-                    <= opt[i].path_cost
-                {
+                if opt[i + 1].path_cost <= opt[i].path_cost {
                     i += 1;
                     continue;
                 }
@@ -2143,30 +2124,13 @@ fn compress_opt_internal(
             let new_match_length = new_match_length as usize;
 
             // If match is good enough or extends beyond buffer, encode immediately
-            if new_match_length >= sufficient_match_len
-                || new_match_length + i >= LZ4_OPT_NUM
-            {
+            if new_match_length >= sufficient_match_len || new_match_length + i >= LZ4_OPT_NUM {
                 let capped_ml = new_match_length;
 
                 // Set last_match_pos = i + 1 as in C code
                 last_match_pos = i + 1;
 
-                // Reverse traversal starting from i
-                let mut sel_ml = capped_ml as i32;
-                let mut sel_off = new_match_offset as i32;
-                let mut cp = i;
-                loop {
-                    let next_ml = opt[cp].match_len;
-                    let next_off = opt[cp].match_offset;
-                    opt[cp].match_len = sel_ml;
-                    opt[cp].match_offset = sel_off;
-                    sel_ml = next_ml;
-                    sel_off = next_off;
-                    if (next_ml as usize) > cp {
-                        break;
-                    }
-                    cp -= next_ml as usize;
-                }
+                reverse_optimal_path(&mut opt, i, capped_ml as i32, new_match_offset as i32);
 
                 encode_optimal_path_from_dp(
                     &opt,
@@ -2183,18 +2147,15 @@ fn compress_opt_internal(
 
             // Update prices for literals before the match
             {
-                let base_lit_len =
-                    opt[i].lit_len;
+                let base_lit_len = opt[i].lit_len;
                 for lit_step in 1..MINMATCH as i32 {
                     let si = i + lit_step as usize;
-                    let price = opt[i].path_cost
-                        - literals_price(base_lit_len)
+                    let price = opt[i].path_cost - literals_price(base_lit_len)
                         + literals_price(base_lit_len + lit_step);
                     if price < opt[si].path_cost {
                         opt[si].match_len = 1; // literal
                         opt[si].match_offset = 0;
-                        opt[si].lit_len =
-                            base_lit_len + lit_step;
+                        opt[si].lit_len = base_lit_len + lit_step;
                         opt[si].path_cost = price;
                     }
                 }
@@ -2202,16 +2163,11 @@ fn compress_opt_internal(
 
             // Set prices using match at current position
             {
-                let new_ml_cap =
-                    new_match_length.min(LZ4_OPT_NUM - i - 1);
+                let new_ml_cap = new_match_length.min(LZ4_OPT_NUM - i - 1);
                 for match_length in MINMATCH..=new_ml_cap {
                     let si = i + match_length;
-                    let (lit_prefix, price) = if opt[i]
-                        .match_len
-                        == 1
-                    {
-                        let lit_len =
-                            opt[i].lit_len;
+                    let (lit_prefix, price) = if opt[i].match_len == 1 {
+                        let lit_len = opt[i].lit_len;
                         let base_price = if i as i32 > lit_len {
                             opt[i - lit_len as usize].path_cost
                         } else {
@@ -2222,25 +2178,16 @@ fn compress_opt_internal(
                             base_price + sequence_price(lit_len, match_length as i32),
                         )
                     } else {
-                        (
-                            0,
-                            opt[i].path_cost
-                                + sequence_price(0, match_length as i32),
-                        )
+                        (0, opt[i].path_cost + sequence_price(0, match_length as i32))
                     };
 
-                    if si > last_match_pos + TRAILING_LITERALS
-                        || price <= opt[si].path_cost
-                    {
-                        if match_length == new_ml_cap
-                            && last_match_pos < si
-                        {
+                    if si > last_match_pos + TRAILING_LITERALS || price <= opt[si].path_cost {
+                        if match_length == new_ml_cap && last_match_pos < si {
                             last_match_pos = si;
                         }
                         opt[si].match_len = match_length as i32;
                         opt[si].match_offset = new_match_offset as i32;
-                        opt[si].lit_len =
-                            lit_prefix;
+                        opt[si].lit_len = lit_prefix;
                         opt[si].path_cost = price;
                     }
                 }
@@ -2252,8 +2199,7 @@ fn compress_opt_internal(
                 opt[si].match_len = 1; // literal
                 opt[si].match_offset = 0;
                 opt[si].lit_len = trail;
-                opt[si].path_cost = opt[last_match_pos].path_cost
-                    + literals_price(trail);
+                opt[si].path_cost = opt[last_match_pos].path_cost + literals_price(trail);
             }
 
             i += 1;
@@ -2265,22 +2211,9 @@ fn compress_opt_internal(
 
         // Reverse traversal to find the optimal path
         {
-            let mut best_ml = opt[last_match_pos].match_len;
-            let mut best_off = opt[last_match_pos].match_offset;
-            let mut cp = last_match_pos - best_ml as usize;
-
-            loop {
-                let next_ml = opt[cp].match_len;
-                let next_off = opt[cp].match_offset;
-                opt[cp].match_len = best_ml;
-                opt[cp].match_offset = best_off;
-                best_ml = next_ml;
-                best_off = next_off;
-                if (next_ml as usize) > cp {
-                    break;
-                }
-                cp -= next_ml as usize;
-            }
+            let ml = opt[last_match_pos].match_len;
+            let off = opt[last_match_pos].match_offset;
+            reverse_optimal_path(&mut opt, last_match_pos - ml as usize, ml, off);
         }
 
         encode_optimal_path_from_dp(
@@ -2535,4 +2468,3 @@ mod tests {
         assert_eq!(&input[..], &decompressed[..]);
     }
 }
-
