@@ -63,14 +63,14 @@ pub(crate) enum HcCompressionStrategy {
 /// helpers so level is not re-mapped repeatedly.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct HcLevelParams {
-    pub strategy: HcCompressionStrategy,
+    pub(crate) strategy: HcCompressionStrategy,
     /// Hash-chain search budget for [`HcCompressionStrategy::HashChain`] and [`HcCompressionStrategy::Optimal`]
     /// (same meaning as [`HashTableHCU32::max_attempts`]). Zero in [`HcCompressionStrategy::Mid`].
-    pub max_attempts: usize,
+    pub(crate) max_attempts: usize,
     /// Only for [`HcCompressionStrategy::Optimal`]: encode immediately when the first match is at least this long.
-    pub sufficient_match_len: usize,
+    pub(crate) sufficient_match_len: usize,
     /// Only for [`HcCompressionStrategy::Optimal`]: exhaustive refinement (level 12).
-    pub full_optimal_update: bool,
+    pub(crate) full_optimal_update: bool,
 }
 
 /// Map a compression level to strategy and parameters. `level` should be clamped with `min(12)` first.
@@ -117,7 +117,7 @@ pub(crate) const fn hc_level_params(level: u8) -> HcLevelParams {
 /// position, and `chain_table` links older positions with the same hash via
 /// stored deltas, forming an implicit linked list per hash bucket.
 #[derive(Debug)]
-pub struct HashTableHCU32 {
+struct HashTableHCU32 {
     /// Primary hash table: maps a 15-bit hash of each 4-byte sequence to the
     /// most recent input position (as `u32`) where that hash was seen.
     /// Fixed size of 2^15 entries, matching the output range of `hash_hc`.
@@ -142,18 +142,18 @@ pub struct HashTableHCU32 {
 /// Uses `u32` fields (12 bytes total vs 24 with `usize` on 64-bit) to reduce
 /// stack pressure in the HC inner loop, which juggles up to 4 `Match` structs.
 #[derive(Debug, Clone, Copy)]
-pub struct Match {
+struct Match {
     /// Byte position in the input where this match starts (the "current" cursor).
-    pub start_position: u32,
+    start_position: u32,
     /// Length of the match in bytes (including the mandatory 4-byte minimum).
-    pub match_length: u32,
+    match_length: u32,
     /// Byte position of the earlier occurrence being referenced.
     /// The encoded offset/distance is `start_position - reference_position`.
-    pub reference_position: u32,
+    reference_position: u32,
 }
 
 impl Match {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             start_position: 0,
             match_length: 0,
@@ -162,22 +162,22 @@ impl Match {
     }
 
     #[inline]
-    pub fn end(&self) -> usize {
+    fn end(&self) -> usize {
         self.start_position as usize + self.match_length as usize
     }
 
-    pub fn fix(&mut self, correction: usize) {
+    fn fix(&mut self, correction: usize) {
         self.start_position += correction as u32;
         self.reference_position += correction as u32;
         self.match_length = self.match_length.saturating_sub(correction as u32);
     }
 
     #[inline]
-    pub fn offset(&self) -> u16 {
+    fn offset(&self) -> u16 {
         self.start_position.wrapping_sub(self.reference_position) as u16
     }
 
-    pub fn encode_to<S: Sink>(&self, input: &[u8], literal_start: usize, output: &mut S) {
+    fn encode_to<S: Sink>(&self, input: &[u8], literal_start: usize, output: &mut S) {
         encode_sequence(
             &input[literal_start..self.start_position as usize],
             output,
@@ -348,7 +348,7 @@ enum PatternChainAction {
 
 impl HashTableHCU32 {
     #[inline]
-    pub fn new(max_attempts: usize, input_len: usize) -> Self {
+    fn new(max_attempts: usize, input_len: usize) -> Self {
         // Dict table: fixed size, hash function already bounds to this range
         let dictionary = vec![0u32; HASHTABLE_SIZE_HC]
             .into_boxed_slice()
@@ -497,7 +497,7 @@ impl HashTableHCU32 {
     /// Insert hashes for all positions up to the given local offset.
     /// Positions stored in the hash table are absolute (`local_pos + stream_offset`).
     #[inline]
-    pub fn insert(&mut self, off: u32, input: &[u8], stream_offset: usize) {
+    fn insert(&mut self, off: u32, input: &[u8], stream_offset: usize) {
         let cur_absolute = off as usize + stream_offset;
         for absolute_position in self.next_to_update..cur_absolute {
             let local_pos = absolute_position - stream_offset;
@@ -614,7 +614,7 @@ impl HashTableHCU32 {
     }
 
     /// Insert hashes and find a wider match, similar to Java insertAndFindWiderMatch
-    pub fn insert_and_find_wider_match(
+    fn insert_and_find_wider_match(
         &mut self,
         input: &[u8],
         off: u32,
@@ -883,7 +883,7 @@ impl HashTableHCU32 {
     /// Uses u32 params to reduce call overhead (LZ4 block max is ~2GB).
     /// Offset is u16 since LZ4 format limits distance to 16 bits.
     #[inline]
-    pub fn find_longer_match(
+    fn find_longer_match(
         &mut self,
         input: &[u8],
         off: u32,
@@ -1437,7 +1437,7 @@ pub fn compress_hc_to_vec_with_table(
 // ============================================================================
 
 /// Hash table for lz4mid algorithm - contains two tables (4-byte and 8-byte)
-pub(crate) struct HashTableMid {
+struct HashTableMid {
     hash4: Box<[u32; LZ4MID_HASHTABLE_SIZE]>,
     hash8: Box<[u32; LZ4MID_HASHTABLE_SIZE]>,
 }
@@ -2492,27 +2492,3 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-#[test]
-fn test_lz4mid_debug() {
-    use crate::sink::SliceSink;
-    let input = b"The quick brown fox jumps over the lazy dog. The quick brown fox.";
-    println!("Input len: {}", input.len());
-    println!("Input: {:?}", String::from_utf8_lossy(input));
-
-    let mut output = vec![0u8; input.len() * 2];
-    let mut sink = SliceSink::new(&mut output, 0);
-    let mut table = HashTableMid::new();
-    let size = compress_mid_internal(input, 0, &mut sink, &mut table, &[], 0).unwrap();
-    println!("Compressed size: {}", size);
-    println!("Compressed: {:02x?}", &output[..size]);
-
-    // Try to decompress
-    match decompress(&output[..size], input.len()) {
-        Ok(d) => {
-            println!("Decompressed: {} bytes", d.len());
-            println!("Match: {}", d == input);
-        }
-        Err(e) => println!("Decompress error: {:?}", e),
-    }
-}
