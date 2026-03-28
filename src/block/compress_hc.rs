@@ -506,6 +506,17 @@ impl HashTableHCU32 {
         self.next_to_update = cur_absolute;
     }
 
+    /// Insert `off` into the hash/chain tables, then search the chain for the
+    /// longest match starting at `off`.
+    ///
+    /// `input` is the full input buffer (prefix + block).
+    /// `off` is the local position in `input` to search at.
+    /// `match_limit` is the exclusive end position — matches must not extend past this.
+    /// `match_info` is filled with the best match found (length 0 if none).
+    /// `ext_dict` is the external dictionary for linked-block mode (empty if unused).
+    /// `stream_offset` is the logical position of `input[0]` in the stream.
+    ///
+    /// Returns `true` if a match of at least `MINMATCH` bytes was found.
     fn insert_and_find_best_match(
         &mut self,
         input: &[u8],
@@ -613,7 +624,19 @@ impl HashTableHCU32 {
         match_info.match_length != 0
     }
 
-    /// Insert hashes and find a wider match, similar to Java insertAndFindWiderMatch
+    /// Insert `off` into the hash/chain tables, then search the chain for a match
+    /// longer than `min_len`, extending both forward and backward.
+    ///
+    /// `input` is the full input buffer (prefix + block).
+    /// `off` is the local position in `input` to search at.
+    /// `start_limit` is the earliest position the match may extend backward to.
+    /// `match_limit` is the exclusive end position — matches must not extend past this.
+    /// `min_len` is the minimum match length to beat (current best).
+    /// `match_info` is filled with the best match found if it exceeds `min_len`.
+    /// `ext_dict` is the external dictionary for linked-block mode (empty if unused).
+    /// `stream_offset` is the logical position of `input[0]` in the stream.
+    ///
+    /// Returns `true` if a match longer than `min_len` was found.
     fn insert_and_find_wider_match(
         &mut self,
         input: &[u8],
@@ -879,9 +902,18 @@ impl HashTableHCU32 {
         PatternChainAction::Noop
     }
 
-    /// Find the longest match at `off`, returning `(match_len_u32, offset_u16)`.
-    /// Uses u32 params to reduce call overhead (LZ4 block max is ~2GB).
-    /// Offset is u16 since LZ4 format limits distance to 16 bits.
+    /// Insert `off` into the hash/chain tables, then search the chain for a match
+    /// longer than `min_len`. Used by the optimal parser.
+    ///
+    /// `input` is the full input buffer (prefix + block).
+    /// `off` is the local position in `input` to search at.
+    /// `match_limit` is the exclusive end position — matches must not extend past this.
+    /// `min_len` is the minimum match length to beat (current best).
+    /// `ext_dict` is the external dictionary for linked-block mode (empty if unused).
+    /// `stream_offset` is the logical position of `input[0]` in the stream.
+    ///
+    /// Returns `(match_length, offset)`. Length is 0 if no match beats `min_len`.
+    /// Offset is `u16` since the LZ4 format limits back-reference distance to 16 bits.
     #[inline]
     fn find_longer_match(
         &mut self,
