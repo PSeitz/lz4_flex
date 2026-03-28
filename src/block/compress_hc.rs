@@ -420,6 +420,23 @@ impl HashTableHCU32 {
         self.chain_table.len() - 1
     }
 
+    /// Check if a candidate is within reachable range
+    #[inline]
+    fn in_range(&self, candidate: usize, cur_absolute: usize) -> bool {
+        candidate < cur_absolute && cur_absolute - candidate <= self.chain_mask()
+    }
+
+    /// Advance to next candidate in chain, returning None if exhausted
+    #[inline]
+    fn advance(&self, candidate: usize, cur_absolute: usize) -> Option<usize> {
+        let next = self.next(candidate);
+        if next == candidate || !self.in_range(next, cur_absolute) {
+            None
+        } else {
+            Some(next)
+        }
+    }
+
     /// Get the next position in the chain for a given offset
     #[inline]
     fn next(&self, pos: usize) -> usize {
@@ -513,79 +530,61 @@ impl HashTableHCU32 {
         let mut candidate = self.get_dictionary_at(Self::get_hash_at(input, off));
 
         for i in 0..self.max_attempts {
-            if candidate >= cur_absolute
-                || cur_absolute - candidate > self.chain_mask()
-            {
+            if !self.in_range(candidate, cur_absolute) {
                 break;
             }
 
-            if candidate >= stream_offset {
+            let match_len = if candidate >= stream_offset {
                 let candidate_local = candidate - stream_offset;
 
+                // Early skip: check tail bytes of current best match
                 if match_info.match_length >= MINMATCH as u32 {
                     let check_pos = match_info.match_length as usize - 1;
                     if input[candidate_local + check_pos] != input[off + check_pos]
-                        || input[candidate_local + check_pos + 1]
-                            != input[off + check_pos + 1]
+                        || input[candidate_local + check_pos + 1] != input[off + check_pos + 1]
                     {
-                        let next = self.next(candidate);
-                        if next >= cur_absolute
-                            || cur_absolute - next > self.chain_mask()
-                            || next == candidate
-                        {
-                            break;
-                        }
-                        candidate = next;
+                        candidate = match self.advance(candidate, cur_absolute) {
+                            Some(next) => next,
+                            None => break,
+                        };
                         continue;
                     }
                 }
 
                 if self.read_min_match_equals(input, candidate_local, off) {
-                    let match_len = MINMATCH
+                    MINMATCH
                         + self.common_bytes(
                             input,
                             candidate_local + MINMATCH,
                             off + MINMATCH,
                             match_limit,
-                        );
-                    if match_len as u32 > match_info.match_length {
-                        let distance = cur_absolute - candidate;
-                        match_info.reference_position = (off as u32).wrapping_sub(distance as u32);
-                        match_info.match_length = match_len as u32;
-                    }
-                    if i == 0 {
-                        first_match_len = match_len;
-                        delta = cur_absolute - candidate;
-                    }
+                        )
+                } else {
+                    0
                 }
-            } else if !ext_dict.is_empty()
-                && candidate >= ext_dict_stream_offset
-            {
+            } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
                 let candidate_local = candidate - ext_dict_stream_offset;
-                let match_len =
-                    try_ext_dict_match(input, off, match_limit, ext_dict, candidate_local);
-                if match_len > 0 {
-                    if match_len as u32 > match_info.match_length {
-                        let distance = cur_absolute - candidate;
-                        match_info.reference_position =
-                            (off as u32).wrapping_sub(distance as u32);
-                        match_info.match_length = match_len as u32;
-                    }
-                    if i == 0 {
-                        first_match_len = match_len;
-                        delta = cur_absolute - candidate;
-                    }
+                try_ext_dict_match(input, off, match_limit, ext_dict, candidate_local)
+            } else {
+                0
+            };
+
+            if match_len > 0 {
+                if match_len as u32 > match_info.match_length {
+                    let distance = cur_absolute - candidate;
+                    match_info.reference_position = (off as u32).wrapping_sub(distance as u32);
+                    match_info.match_length = match_len as u32;
+                }
+                if i == 0 {
+                    first_match_len = match_len;
+                    delta = cur_absolute - candidate;
                 }
             }
 
-            let next = self.next(candidate);
-            if next >= cur_absolute
-                || cur_absolute - next > self.chain_mask()
-                || next == candidate
-            {
-                break;
-            }
-            candidate = next;
+            candidate = match self.advance(candidate, cur_absolute) {
+                Some(next) => next,
+                None => break,
+            };
         }
 
         // Handle pre hash (positions are absolute for hash table, local for input reads)
@@ -641,65 +640,53 @@ impl HashTableHCU32 {
         let mut candidate = self.get_dictionary_at(Self::get_hash_at(input, off));
 
         for _ in 0..self.max_attempts {
-            if candidate >= cur_absolute
-                || cur_absolute - candidate > self.chain_mask()
-            {
+            if !self.in_range(candidate, cur_absolute) {
                 break;
             }
 
             if candidate >= stream_offset {
                 let candidate_local = candidate - stream_offset;
 
+                // Early skip: check tail bytes of current best match
                 if match_info.match_length >= MINMATCH as u32
                     && candidate_local >= look_back_length
                 {
-                    let source_check_position = start_limit + match_info.match_length as usize - 1;
-                    let match_check_position = candidate_local - look_back_length
+                    let src_check = start_limit + match_info.match_length as usize - 1;
+                    let ref_check = candidate_local - look_back_length
                         + match_info.match_length as usize
                         - 1;
-                    if input[source_check_position] != input[match_check_position]
-                        || input[source_check_position + 1] != input[match_check_position + 1]
+                    if input[src_check] != input[ref_check]
+                        || input[src_check + 1] != input[ref_check + 1]
                     {
-                        let next = self.next(candidate);
-                        if next >= cur_absolute
-                            || cur_absolute - next > self.chain_mask()
-                            || next == candidate
-                        {
-                            break;
-                        }
-                        candidate = next;
+                        candidate = match self.advance(candidate, cur_absolute) {
+                            Some(next) => next,
+                            None => break,
+                        };
                         continue;
                     }
                 }
 
                 if self.read_min_match_equals(input, candidate_local, off) {
-                    let match_len_forward = MINMATCH
+                    let fwd = MINMATCH
                         + self.common_bytes(
                             input,
                             candidate_local + MINMATCH,
                             off + MINMATCH,
                             match_limit,
                         );
-                    let match_len_backward = Self::common_bytes_backward(
-                        input,
-                        candidate_local,
-                        off,
-                        0,
-                        start_limit,
-                    );
-                    let match_len = (match_len_backward + match_len_forward) as u32;
+                    let bwd =
+                        Self::common_bytes_backward(input, candidate_local, off, 0, start_limit);
+                    let match_len = (bwd + fwd) as u32;
 
                     if match_len > match_info.match_length {
                         match_info.match_length = match_len;
                         let distance = cur_absolute - candidate;
                         match_info.reference_position =
-                            ((off - match_len_backward) as u32).wrapping_sub(distance as u32);
-                        match_info.start_position = (off - match_len_backward) as u32;
+                            ((off - bwd) as u32).wrapping_sub(distance as u32);
+                        match_info.start_position = (off - bwd) as u32;
                     }
                 }
-            } else if !ext_dict.is_empty()
-                && candidate >= ext_dict_stream_offset
-            {
+            } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
                 let candidate_local = candidate - ext_dict_stream_offset;
                 // No backward extension for ext_dict matches
                 let match_len =
@@ -712,14 +699,10 @@ impl HashTableHCU32 {
                 }
             }
 
-            let next = self.next(candidate);
-            if next >= cur_absolute
-                || cur_absolute - next > self.chain_mask()
-                || next == candidate
-            {
-                break;
-            }
-            candidate = next;
+            candidate = match self.advance(candidate, cur_absolute) {
+                Some(next) => next,
+                None => break,
+            };
         }
 
         match_info.match_length > min_len
@@ -926,16 +909,13 @@ impl HashTableHCU32 {
         let mut candidate = self.get_dictionary_at(Self::get_hash_at(input, off));
 
         for _ in 0..self.max_attempts {
-            if candidate >= cur_absolute
-                || cur_absolute - candidate > self.chain_mask()
-            {
+            if !self.in_range(candidate, cur_absolute) {
                 break;
             }
 
             let mut match_len: usize = 0;
-            let ref_in_input = candidate >= stream_offset;
 
-            if ref_in_input {
+            if candidate >= stream_offset {
                 let candidate_local = candidate - stream_offset;
 
                 let tail_matches_past_best = if best_len >= MINMATCH {
