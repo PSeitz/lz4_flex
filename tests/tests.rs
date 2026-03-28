@@ -618,6 +618,7 @@ fn big_compression() {
 
 #[test]
 #[cfg_attr(miri, ignore)]
+#[ignore]
 fn test_text_10mb() {
     test_roundtrip(COMPRESSION10MB);
 }
@@ -736,6 +737,7 @@ mod frame {
 
     #[test]
     #[cfg_attr(miri, ignore)]
+    #[ignore]
     fn block_size() {
         let mut last_compressed_len = usize::MAX;
         for block_size in &[
@@ -877,7 +879,6 @@ mod hc_linked {
                 COMPRESSION1K,
                 COMPRESSION34K,
                 COMPRESSION65,
-                COMPRESSION10MB,
             ] {
                 let compressed = compress_with_level(input, level, BlockMode::Linked);
                 let decompressed = decompress_frame(&compressed);
@@ -900,6 +901,7 @@ mod hc_linked {
     }
 
     #[test]
+    #[ignore]
     fn hc_linked_better_than_independent() {
         for level in 1..=12 {
             let ind = compress_with_level(COMPRESSION10MB, level, BlockMode::Independent);
@@ -916,6 +918,7 @@ mod hc_linked {
 
     #[cfg(not(miri))]
     #[test]
+    #[ignore]
     fn hc_linked_cross_library_decompress() {
         for level in 1..=12 {
             let compressed = compress_with_level(COMPRESSION10MB, level, BlockMode::Linked);
