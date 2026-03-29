@@ -283,17 +283,17 @@ fn read_min_match_equals(input: &[u8], pos1: usize, pos2: usize) -> bool {
 #[inline]
 fn try_ext_dict_match(
     input: &[u8],
-    search_pos: usize,
+    cur: usize,
     match_limit: usize,
     ext_dict: &[u8],
     candidate_local: usize,
 ) -> usize {
     let min_match_ok = if candidate_local + 4 <= ext_dict.len() {
         super::compress::get_batch(ext_dict, candidate_local)
-            == super::compress::get_batch(input, search_pos)
+            == super::compress::get_batch(input, cur)
     } else if candidate_local < ext_dict.len() {
         read_u32_from_two_slices(ext_dict, candidate_local, input)
-            == super::compress::get_batch(input, search_pos)
+            == super::compress::get_batch(input, cur)
     } else {
         false
     };
@@ -301,7 +301,7 @@ fn try_ext_dict_match(
         MINMATCH
             + count_forward_ext_dict(
                 input,
-                search_pos + MINMATCH,
+                cur + MINMATCH,
                 ext_dict,
                 candidate_local + MINMATCH,
                 match_limit,
@@ -500,8 +500,8 @@ impl HashTableHCU32 {
     /// Insert hashes for all positions up to the given local offset.
     /// Positions stored in the hash table are absolute (`local_pos + stream_offset`).
     #[inline]
-    fn insert(&mut self, search_pos: u32, input: &[u8], stream_offset: usize) {
-        let cur_absolute = search_pos as usize + stream_offset;
+    fn insert(&mut self, cur: u32, input: &[u8], stream_offset: usize) {
+        let cur_absolute = cur as usize + stream_offset;
         for absolute_position in self.next_to_update..cur_absolute {
             let local_pos = absolute_position - stream_offset;
             self.add_hash(Self::get_hash_at(input, local_pos), absolute_position);
@@ -509,11 +509,11 @@ impl HashTableHCU32 {
         self.next_to_update = cur_absolute;
     }
 
-    /// Insert `search_pos` into the hash/chain tables, then search the chain for the
-    /// longest match starting at `search_pos`.
+    /// Insert `cur` into the hash/chain tables, then search the chain for the
+    /// longest match starting at `cur`.
     ///
     /// `input` is the full input buffer (prefix + block).
-    /// `search_pos` is the local position in `input` to search at.
+    /// `cur` is the position in `input` to search at.
     /// `match_limit` is the exclusive end position — matches must not extend past this.
     /// `match_info` is filled with the best match found (length 0 if none).
     /// `ext_dict` is the external dictionary for linked-block mode (empty if unused).
@@ -523,25 +523,25 @@ impl HashTableHCU32 {
     fn insert_and_find_best_match(
         &mut self,
         input: &[u8],
-        search_pos: u32,
+        cur: u32,
         match_limit: u32,
         match_info: &mut Match,
         ext_dict: &[u8],
         stream_offset: usize,
     ) -> bool {
-        match_info.start_position = search_pos;
+        match_info.start_position = cur;
         match_info.match_length = 0;
         let mut delta: usize = 0;
         let mut first_match_len: usize = 0;
 
-        let search_pos = search_pos as usize;
+        let cur = cur as usize;
         let match_limit = match_limit as usize;
-        let cur_absolute = search_pos + stream_offset;
+        let cur_absolute = cur + stream_offset;
         let ext_dict_stream_offset = stream_offset - ext_dict.len();
 
-        self.insert(search_pos as u32, input, stream_offset);
+        self.insert(cur as u32, input, stream_offset);
 
-        let mut candidate = self.get_dictionary_at(Self::get_hash_at(input, search_pos));
+        let mut candidate = self.get_dictionary_at(Self::get_hash_at(input, cur));
 
         for i in 0..self.max_attempts {
             if !self.in_range(candidate, cur_absolute) {
@@ -552,17 +552,16 @@ impl HashTableHCU32 {
                 let candidate_local = candidate - stream_offset;
                 let tail_ok = match_info.match_length < MINMATCH as u32 || {
                     let check_pos = match_info.match_length as usize - 1;
-                    input[candidate_local + check_pos] == input[search_pos + check_pos]
-                        && input[candidate_local + check_pos + 1]
-                            == input[search_pos + check_pos + 1]
+                    input[candidate_local + check_pos] == input[cur + check_pos]
+                        && input[candidate_local + check_pos + 1] == input[cur + check_pos + 1]
                 };
 
-                if tail_ok && read_min_match_equals(input, candidate_local, search_pos) {
+                if tail_ok && read_min_match_equals(input, candidate_local, cur) {
                     MINMATCH
                         + self.common_bytes(
                             input,
                             candidate_local + MINMATCH,
-                            search_pos + MINMATCH,
+                            cur + MINMATCH,
                             match_limit,
                         )
                 } else {
@@ -570,7 +569,7 @@ impl HashTableHCU32 {
                 }
             } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
                 let candidate_local = candidate - ext_dict_stream_offset;
-                try_ext_dict_match(input, search_pos, match_limit, ext_dict, candidate_local)
+                try_ext_dict_match(input, cur, match_limit, ext_dict, candidate_local)
             } else {
                 0
             };
@@ -578,8 +577,7 @@ impl HashTableHCU32 {
             if match_len > 0 {
                 if match_len as u32 > match_info.match_length {
                     let distance = cur_absolute - candidate;
-                    match_info.reference_position =
-                        (search_pos as u32).wrapping_sub(distance as u32);
+                    match_info.reference_position = (cur as u32).wrapping_sub(distance as u32);
                     match_info.match_length = match_len as u32;
                 }
                 if i == 0 {
@@ -617,11 +615,11 @@ impl HashTableHCU32 {
         match_info.match_length != 0
     }
 
-    /// Insert `search_pos` into the hash/chain tables, then search the chain for a match
+    /// Insert `cur` into the hash/chain tables, then search the chain for a match
     /// longer than `min_len`, extending both forward and backward.
     ///
     /// `input` is the full input buffer (prefix + block).
-    /// `search_pos` is the local position in `input` to search at.
+    /// `cur` is the position in `input` to search at.
     /// `start_limit` is the earliest position the match may extend backward to.
     /// `match_limit` is the exclusive end position — matches must not extend past this.
     /// `min_len` is the minimum match length to beat (current best).
@@ -634,7 +632,7 @@ impl HashTableHCU32 {
     fn insert_and_find_wider_match(
         &mut self,
         input: &[u8],
-        search_pos: u32,
+        cur: u32,
         start_limit: u32,
         match_limit: u32,
         min_len: u32,
@@ -644,17 +642,17 @@ impl HashTableHCU32 {
     ) -> bool {
         match_info.match_length = min_len;
 
-        let search_pos = search_pos as usize;
+        let cur = cur as usize;
         let start_limit = start_limit as usize;
         let match_limit = match_limit as usize;
-        let cur_absolute = search_pos + stream_offset;
+        let cur_absolute = cur + stream_offset;
         let ext_dict_stream_offset = stream_offset - ext_dict.len();
 
-        let look_back_length = search_pos - start_limit;
+        let look_back_length = cur - start_limit;
 
-        self.insert(search_pos as u32, input, stream_offset);
+        self.insert(cur as u32, input, stream_offset);
 
-        let mut candidate = self.get_dictionary_at(Self::get_hash_at(input, search_pos));
+        let mut candidate = self.get_dictionary_at(Self::get_hash_at(input, cur));
 
         for _ in 0..self.max_attempts {
             if !self.in_range(candidate, cur_absolute) {
@@ -676,42 +674,36 @@ impl HashTableHCU32 {
                             && input[src_check + 1] == input[ref_check + 1]
                     };
 
-                if tail_ok && read_min_match_equals(input, candidate_local, search_pos) {
+                if tail_ok && read_min_match_equals(input, candidate_local, cur) {
                     let forward_len = MINMATCH
                         + self.common_bytes(
                             input,
                             candidate_local + MINMATCH,
-                            search_pos + MINMATCH,
+                            cur + MINMATCH,
                             match_limit,
                         );
-                    let backward_len = Self::common_bytes_backward(
-                        input,
-                        candidate_local,
-                        search_pos,
-                        0,
-                        start_limit,
-                    );
+                    let backward_len =
+                        Self::common_bytes_backward(input, candidate_local, cur, 0, start_limit);
                     let match_len = (backward_len + forward_len) as u32;
 
                     if match_len > match_info.match_length {
                         match_info.match_length = match_len;
                         let distance = cur_absolute - candidate;
                         match_info.reference_position =
-                            ((search_pos - backward_len) as u32).wrapping_sub(distance as u32);
-                        match_info.start_position = (search_pos - backward_len) as u32;
+                            ((cur - backward_len) as u32).wrapping_sub(distance as u32);
+                        match_info.start_position = (cur - backward_len) as u32;
                     }
                 }
             } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
                 let candidate_local = candidate - ext_dict_stream_offset;
                 // No backward extension for ext_dict matches
                 let match_len =
-                    try_ext_dict_match(input, search_pos, match_limit, ext_dict, candidate_local);
+                    try_ext_dict_match(input, cur, match_limit, ext_dict, candidate_local);
                 if match_len as u32 > match_info.match_length {
                     match_info.match_length = match_len as u32;
                     let distance = cur_absolute - candidate;
-                    match_info.reference_position =
-                        (search_pos as u32).wrapping_sub(distance as u32);
-                    match_info.start_position = search_pos as u32;
+                    match_info.reference_position = (cur as u32).wrapping_sub(distance as u32);
+                    match_info.start_position = cur as u32;
                 }
             }
 
@@ -810,7 +802,7 @@ impl HashTableHCU32 {
     fn pattern_chain_action(
         &self,
         input: &[u8],
-        search_pos: usize,
+        cur: usize,
         match_limit: usize,
         cur_absolute: usize,
         stream_offset: usize,
@@ -828,10 +820,10 @@ impl HashTableHCU32 {
         let match_candidate = candidate.wrapping_sub(1);
 
         if *repeat == 0 {
-            let pattern = super::compress::get_batch(input, search_pos);
+            let pattern = super::compress::get_batch(input, cur);
             if (pattern & 0xFFFF) == (pattern >> 16) && (pattern & 0xFF) == (pattern >> 24) {
                 *repeat = 1;
-                *src_pat_len = count_pattern(input, search_pos + 4, match_limit, pattern) + 4;
+                *src_pat_len = count_pattern(input, cur + 4, match_limit, pattern) + 4;
             } else {
                 *repeat = 2;
             }
@@ -849,7 +841,7 @@ impl HashTableHCU32 {
         }
 
         let match_candidate_local = match_candidate - stream_offset;
-        let pattern = super::compress::get_batch(input, search_pos);
+        let pattern = super::compress::get_batch(input, cur);
         if match_candidate_local + 4 > input.len()
             || super::compress::get_batch(input, match_candidate_local) != pattern
         {
@@ -887,11 +879,11 @@ impl HashTableHCU32 {
         PatternChainAction::Noop
     }
 
-    /// Insert `search_pos` into the hash/chain tables, then search the chain for a match
+    /// Insert `cur` into the hash/chain tables, then search the chain for a match
     /// longer than `min_len`. Used by the optimal parser.
     ///
     /// `input` is the full input buffer (prefix + block).
-    /// `search_pos` is the local position in `input` to search at.
+    /// `cur` is the position in `input` to search at.
     /// `match_limit` is the exclusive end position — matches must not extend past this.
     /// `min_len` is the minimum match length to beat (current best).
     /// `ext_dict` is the external dictionary for linked-block mode (empty if unused).
@@ -903,17 +895,17 @@ impl HashTableHCU32 {
     fn find_longer_match(
         &mut self,
         input: &[u8],
-        search_pos: u32,
+        cur: u32,
         match_limit: u32,
         min_len: u32,
         ext_dict: &[u8],
         stream_offset: usize,
     ) -> (u32, u16) {
-        self.insert(search_pos, input, stream_offset);
+        self.insert(cur, input, stream_offset);
 
-        let search_pos = search_pos as usize;
+        let cur = cur as usize;
         let match_limit = match_limit as usize;
-        let cur_absolute = search_pos + stream_offset;
+        let cur_absolute = cur + stream_offset;
         let ext_dict_stream_offset = stream_offset - ext_dict.len();
 
         let mut best_len: usize = min_len as usize;
@@ -923,7 +915,7 @@ impl HashTableHCU32 {
         let mut repeat: u8 = 0;
         let mut src_pat_len: usize = 0;
 
-        let mut candidate = self.get_dictionary_at(Self::get_hash_at(input, search_pos));
+        let mut candidate = self.get_dictionary_at(Self::get_hash_at(input, cur));
 
         for _ in 0..self.max_attempts {
             if !self.in_range(candidate, cur_absolute) {
@@ -941,27 +933,23 @@ impl HashTableHCU32 {
                     unsafe {
                         (input.as_ptr().add(candidate_local + check_pos) as *const u16)
                             .read_unaligned()
-                            == (input.as_ptr().add(search_pos + check_pos) as *const u16)
-                                .read_unaligned()
+                            == (input.as_ptr().add(cur + check_pos) as *const u16).read_unaligned()
                     }
                     #[cfg(feature = "safe-encode")]
                     {
-                        input[candidate_local + check_pos] == input[search_pos + check_pos]
-                            && input[candidate_local + check_pos + 1]
-                                == input[search_pos + check_pos + 1]
+                        input[candidate_local + check_pos] == input[cur + check_pos]
+                            && input[candidate_local + check_pos + 1] == input[cur + check_pos + 1]
                     }
                 } else {
                     true
                 };
 
-                if tail_matches_past_best
-                    && read_min_match_equals(input, candidate_local, search_pos)
-                {
+                if tail_matches_past_best && read_min_match_equals(input, candidate_local, cur) {
                     match_len = MINMATCH
                         + self.common_bytes(
                             input,
                             candidate_local + MINMATCH,
-                            search_pos + MINMATCH,
+                            cur + MINMATCH,
                             match_limit,
                         );
                     if match_len > best_len {
@@ -1002,7 +990,7 @@ impl HashTableHCU32 {
 
                 match self.pattern_chain_action(
                     input,
-                    search_pos,
+                    cur,
                     match_limit,
                     cur_absolute,
                     stream_offset,
@@ -1022,8 +1010,7 @@ impl HashTableHCU32 {
                 }
             } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
                 let candidate_local = candidate - ext_dict_stream_offset;
-                match_len =
-                    try_ext_dict_match(input, search_pos, match_limit, ext_dict, candidate_local);
+                match_len = try_ext_dict_match(input, cur, match_limit, ext_dict, candidate_local);
                 if match_len > best_len {
                     best_len = match_len;
                     best_offset = (cur_absolute - candidate) as u16;
