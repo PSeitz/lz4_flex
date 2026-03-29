@@ -1482,7 +1482,7 @@ impl HashTableMid {
 
     /// Insert a 4-byte hash entry at `pos` if within bounds.
     #[inline]
-    fn add_hash4(&mut self, input: &[u8], pos: usize, input_end: usize, stream_offset: usize) {
+    fn insert_4byte_hash(&mut self, input: &[u8], pos: usize, input_end: usize, stream_offset: usize) {
         if pos + 4 <= input_end {
             let h = get_hash4_mid(input, pos);
             self.hash4[h] = (pos + stream_offset) as u32;
@@ -1491,7 +1491,7 @@ impl HashTableMid {
 
     /// Insert an 8-byte hash entry at `pos` if within bounds.
     #[inline]
-    fn add_hash8(&mut self, input: &[u8], pos: usize, input_end: usize, stream_offset: usize) {
+    fn insert_8byte_hash(&mut self, input: &[u8], pos: usize, input_end: usize, stream_offset: usize) {
         if pos + 8 <= input_end {
             let h = get_hash8_mid(input, pos);
             self.hash8[h] = (pos + stream_offset) as u32;
@@ -1510,22 +1510,22 @@ impl HashTableMid {
     ) {
         let max_h8_pos = input_end.saturating_sub(8);
 
-        self.add_hash8(input, match_start + 1, input_end, stream_offset);
-        self.add_hash8(input, match_start + 2, input_end, stream_offset);
-        self.add_hash4(input, match_start + 1, input_end, stream_offset);
+        self.insert_8byte_hash(input, match_start + 1, input_end, stream_offset);
+        self.insert_8byte_hash(input, match_start + 2, input_end, stream_offset);
+        self.insert_4byte_hash(input, match_start + 1, input_end, stream_offset);
 
         if cur >= 5 && cur <= max_h8_pos {
-            self.add_hash8(input, cur - 5, input_end, stream_offset);
+            self.insert_8byte_hash(input, cur - 5, input_end, stream_offset);
         }
         if cur >= 3 && cur <= max_h8_pos {
-            self.add_hash8(input, cur - 3, input_end, stream_offset);
-            self.add_hash8(input, cur - 2, input_end, stream_offset);
+            self.insert_8byte_hash(input, cur - 3, input_end, stream_offset);
+            self.insert_8byte_hash(input, cur - 2, input_end, stream_offset);
         }
         if cur >= 2 {
-            self.add_hash4(input, cur - 2, input_end, stream_offset);
+            self.insert_4byte_hash(input, cur - 2, input_end, stream_offset);
         }
         if cur >= 1 {
-            self.add_hash4(input, cur - 1, input_end, stream_offset);
+            self.insert_4byte_hash(input, cur - 1, input_end, stream_offset);
         }
     }
 }
@@ -1918,27 +1918,27 @@ fn compress_hc_internal(
     Ok(output.pos() - output_start_pos)
 }
 
-/// Reverse the DP path: walk backward from `start`, swapping each state's
+/// Reverse the dynamic programming path: walk backward from `start`, swapping each state's
 /// `(match_len, match_offset)` with the values from the next step forward.
 /// After this, `opt[0..last_match_pos)` can be read forward to emit sequences.
 #[inline]
-fn reverse_optimal_path(opt: &mut [OptimalState], start: usize, mut ml: i32, mut off: i32) {
-    let mut cp = start;
+fn reverse_dynamic_programming_path(opt: &mut [OptimalState], start: usize, mut match_length: i32, mut match_offset: i32) {
+    let mut pos = start;
     loop {
-        let next_ml = opt[cp].match_len;
-        let next_off = opt[cp].match_offset;
-        opt[cp].match_len = ml;
-        opt[cp].match_offset = off;
-        ml = next_ml;
-        off = next_off;
-        if (next_ml as usize) > cp {
+        let next_match_length = opt[pos].match_len;
+        let next_match_offset = opt[pos].match_offset;
+        opt[pos].match_len = match_length;
+        opt[pos].match_offset = match_offset;
+        match_length = next_match_length;
+        match_offset = next_match_offset;
+        if (next_match_length as usize) > pos {
             break;
         }
-        cp -= next_ml as usize;
+        pos -= next_match_length as usize;
     }
 }
 
-/// Emit LZ4 sequences from DP states `opt[0..last_match_pos)` (`match_len == 1` is one literal step).
+/// Emit LZ4 sequences from optimal states `opt[0..last_match_pos)` (`match_len == 1` is one literal step).
 #[inline]
 fn encode_optimal_path_from_dp(
     opt: &[OptimalState],
@@ -1950,10 +1950,10 @@ fn encode_optimal_path_from_dp(
 ) {
     let mut pos: usize = 0;
     while pos < last_match_pos {
-        let ml = opt[pos].match_len as usize;
+        let match_length = opt[pos].match_len as usize;
         let match_offset = opt[pos].match_offset as u16;
 
-        if ml == 1 {
+        if match_length == 1 {
             *cur += 1;
             pos += 1;
             continue;
@@ -1963,12 +1963,12 @@ fn encode_optimal_path_from_dp(
             &input[*literal_start..*cur],
             output,
             match_offset,
-            ml - MINMATCH,
+            match_length - MINMATCH,
         );
 
-        *cur += ml;
+        *cur += match_length;
         *literal_start = *cur;
-        pos += ml;
+        pos += match_length;
     }
 }
 
@@ -2130,7 +2130,7 @@ fn compress_opt_internal(
                 // Set last_match_pos = i + 1 as in C code
                 last_match_pos = i + 1;
 
-                reverse_optimal_path(&mut opt, i, capped_ml as i32, new_match_offset as i32);
+                reverse_dynamic_programming_path(&mut opt, i, capped_ml as i32, new_match_offset as i32);
 
                 encode_optimal_path_from_dp(
                     &opt,
@@ -2211,9 +2211,9 @@ fn compress_opt_internal(
 
         // Reverse traversal to find the optimal path
         {
-            let ml = opt[last_match_pos].match_len;
-            let off = opt[last_match_pos].match_offset;
-            reverse_optimal_path(&mut opt, last_match_pos - ml as usize, ml, off);
+            let match_length = opt[last_match_pos].match_len;
+            let match_offset = opt[last_match_pos].match_offset;
+            reverse_dynamic_programming_path(&mut opt, last_match_pos - match_length as usize, match_length, match_offset);
         }
 
         encode_optimal_path_from_dp(
