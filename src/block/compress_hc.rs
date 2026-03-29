@@ -283,17 +283,17 @@ fn read_min_match_equals(input: &[u8], pos1: usize, pos2: usize) -> bool {
 #[inline]
 fn try_ext_dict_match(
     input: &[u8],
-    off: usize,
+    search_pos: usize,
     match_limit: usize,
     ext_dict: &[u8],
     candidate_local: usize,
 ) -> usize {
     let min_match_ok = if candidate_local + 4 <= ext_dict.len() {
         super::compress::get_batch(ext_dict, candidate_local)
-            == super::compress::get_batch(input, off)
+            == super::compress::get_batch(input, search_pos)
     } else if candidate_local < ext_dict.len() {
         read_u32_from_two_slices(ext_dict, candidate_local, input)
-            == super::compress::get_batch(input, off)
+            == super::compress::get_batch(input, search_pos)
     } else {
         false
     };
@@ -301,7 +301,7 @@ fn try_ext_dict_match(
         MINMATCH
             + count_forward_ext_dict(
                 input,
-                off + MINMATCH,
+                search_pos + MINMATCH,
                 ext_dict,
                 candidate_local + MINMATCH,
                 match_limit,
@@ -500,8 +500,8 @@ impl HashTableHCU32 {
     /// Insert hashes for all positions up to the given local offset.
     /// Positions stored in the hash table are absolute (`local_pos + stream_offset`).
     #[inline]
-    fn insert(&mut self, off: u32, input: &[u8], stream_offset: usize) {
-        let cur_absolute = off as usize + stream_offset;
+    fn insert(&mut self, search_pos: u32, input: &[u8], stream_offset: usize) {
+        let cur_absolute = search_pos as usize + stream_offset;
         for absolute_position in self.next_to_update..cur_absolute {
             let local_pos = absolute_position - stream_offset;
             self.add_hash(Self::get_hash_at(input, local_pos), absolute_position);
@@ -509,11 +509,11 @@ impl HashTableHCU32 {
         self.next_to_update = cur_absolute;
     }
 
-    /// Insert `off` into the hash/chain tables, then search the chain for the
-    /// longest match starting at `off`.
+    /// Insert `search_pos` into the hash/chain tables, then search the chain for the
+    /// longest match starting at `search_pos`.
     ///
     /// `input` is the full input buffer (prefix + block).
-    /// `off` is the local position in `input` to search at.
+    /// `search_pos` is the local position in `input` to search at.
     /// `match_limit` is the exclusive end position — matches must not extend past this.
     /// `match_info` is filled with the best match found (length 0 if none).
     /// `ext_dict` is the external dictionary for linked-block mode (empty if unused).
@@ -523,25 +523,25 @@ impl HashTableHCU32 {
     fn insert_and_find_best_match(
         &mut self,
         input: &[u8],
-        off: u32,
+        search_pos: u32,
         match_limit: u32,
         match_info: &mut Match,
         ext_dict: &[u8],
         stream_offset: usize,
     ) -> bool {
-        match_info.start_position = off;
+        match_info.start_position = search_pos;
         match_info.match_length = 0;
         let mut delta: usize = 0;
         let mut first_match_len: usize = 0;
 
-        let off = off as usize;
+        let search_pos = search_pos as usize;
         let match_limit = match_limit as usize;
-        let cur_absolute = off + stream_offset;
+        let cur_absolute = search_pos + stream_offset;
         let ext_dict_stream_offset = stream_offset - ext_dict.len();
 
-        self.insert(off as u32, input, stream_offset);
+        self.insert(search_pos as u32, input, stream_offset);
 
-        let mut candidate = self.get_dictionary_at(Self::get_hash_at(input, off));
+        let mut candidate = self.get_dictionary_at(Self::get_hash_at(input, search_pos));
 
         for i in 0..self.max_attempts {
             if !self.in_range(candidate, cur_absolute) {
@@ -550,27 +550,19 @@ impl HashTableHCU32 {
 
             let match_len = if candidate >= stream_offset {
                 let candidate_local = candidate - stream_offset;
-
-                // Early skip: check tail bytes of current best match
-                if match_info.match_length >= MINMATCH as u32 {
+                let tail_ok = match_info.match_length < MINMATCH as u32 || {
                     let check_pos = match_info.match_length as usize - 1;
-                    if input[candidate_local + check_pos] != input[off + check_pos]
-                        || input[candidate_local + check_pos + 1] != input[off + check_pos + 1]
-                    {
-                        candidate = match self.advance(candidate, cur_absolute) {
-                            Some(next) => next,
-                            None => break,
-                        };
-                        continue;
-                    }
-                }
+                    input[candidate_local + check_pos] == input[search_pos + check_pos]
+                        && input[candidate_local + check_pos + 1]
+                            == input[search_pos + check_pos + 1]
+                };
 
-                if read_min_match_equals(input, candidate_local, off) {
+                if tail_ok && read_min_match_equals(input, candidate_local, search_pos) {
                     MINMATCH
                         + self.common_bytes(
                             input,
                             candidate_local + MINMATCH,
-                            off + MINMATCH,
+                            search_pos + MINMATCH,
                             match_limit,
                         )
                 } else {
@@ -578,7 +570,7 @@ impl HashTableHCU32 {
                 }
             } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
                 let candidate_local = candidate - ext_dict_stream_offset;
-                try_ext_dict_match(input, off, match_limit, ext_dict, candidate_local)
+                try_ext_dict_match(input, search_pos, match_limit, ext_dict, candidate_local)
             } else {
                 0
             };
@@ -586,7 +578,8 @@ impl HashTableHCU32 {
             if match_len > 0 {
                 if match_len as u32 > match_info.match_length {
                     let distance = cur_absolute - candidate;
-                    match_info.reference_position = (off as u32).wrapping_sub(distance as u32);
+                    match_info.reference_position =
+                        (search_pos as u32).wrapping_sub(distance as u32);
                     match_info.match_length = match_len as u32;
                 }
                 if i == 0 {
@@ -603,18 +596,18 @@ impl HashTableHCU32 {
 
         // Handle pre hash (positions are absolute for hash table, local for input reads)
         if first_match_len != 0 {
-            let mut ptr_pos = cur_absolute;
+            let mut hash_pos = cur_absolute;
             let end_pos = cur_absolute + first_match_len - 3;
-            while ptr_pos < end_pos - delta {
-                self.set_chain(ptr_pos, delta as u16);
-                ptr_pos += 1;
+            while hash_pos < end_pos - delta {
+                self.set_chain(hash_pos, delta as u16);
+                hash_pos += 1;
             }
             loop {
-                self.set_chain(ptr_pos, delta as u16);
-                let local_ptr = ptr_pos - stream_offset;
-                self.set_dictionary_at(Self::get_hash_at(input, local_ptr), ptr_pos);
-                ptr_pos += 1;
-                if ptr_pos >= end_pos {
+                self.set_chain(hash_pos, delta as u16);
+                let local_hash_pos = hash_pos - stream_offset;
+                self.set_dictionary_at(Self::get_hash_at(input, local_hash_pos), hash_pos);
+                hash_pos += 1;
+                if hash_pos >= end_pos {
                     break;
                 }
             }
@@ -624,11 +617,11 @@ impl HashTableHCU32 {
         match_info.match_length != 0
     }
 
-    /// Insert `off` into the hash/chain tables, then search the chain for a match
+    /// Insert `search_pos` into the hash/chain tables, then search the chain for a match
     /// longer than `min_len`, extending both forward and backward.
     ///
     /// `input` is the full input buffer (prefix + block).
-    /// `off` is the local position in `input` to search at.
+    /// `search_pos` is the local position in `input` to search at.
     /// `start_limit` is the earliest position the match may extend backward to.
     /// `match_limit` is the exclusive end position — matches must not extend past this.
     /// `min_len` is the minimum match length to beat (current best).
@@ -641,7 +634,7 @@ impl HashTableHCU32 {
     fn insert_and_find_wider_match(
         &mut self,
         input: &[u8],
-        off: u32,
+        search_pos: u32,
         start_limit: u32,
         match_limit: u32,
         min_len: u32,
@@ -651,17 +644,17 @@ impl HashTableHCU32 {
     ) -> bool {
         match_info.match_length = min_len;
 
-        let off = off as usize;
+        let search_pos = search_pos as usize;
         let start_limit = start_limit as usize;
         let match_limit = match_limit as usize;
-        let cur_absolute = off + stream_offset;
+        let cur_absolute = search_pos + stream_offset;
         let ext_dict_stream_offset = stream_offset - ext_dict.len();
 
-        let look_back_length = off - start_limit;
+        let look_back_length = search_pos - start_limit;
 
-        self.insert(off as u32, input, stream_offset);
+        self.insert(search_pos as u32, input, stream_offset);
 
-        let mut candidate = self.get_dictionary_at(Self::get_hash_at(input, off));
+        let mut candidate = self.get_dictionary_at(Self::get_hash_at(input, search_pos));
 
         for _ in 0..self.max_attempts {
             if !self.in_range(candidate, cur_absolute) {
@@ -672,52 +665,53 @@ impl HashTableHCU32 {
                 let candidate_local = candidate - stream_offset;
 
                 // Early skip: check tail bytes of current best match
-                if match_info.match_length >= MINMATCH as u32 && candidate_local >= look_back_length
-                {
-                    let src_check = start_limit + match_info.match_length as usize - 1;
-                    let ref_check =
-                        candidate_local - look_back_length + match_info.match_length as usize - 1;
-                    if input[src_check] != input[ref_check]
-                        || input[src_check + 1] != input[ref_check + 1]
-                    {
-                        candidate = match self.advance(candidate, cur_absolute) {
-                            Some(next) => next,
-                            None => break,
-                        };
-                        continue;
-                    }
-                }
+                let tail_ok = match_info.match_length < MINMATCH as u32
+                    || candidate_local < look_back_length
+                    || {
+                        let src_check = start_limit + match_info.match_length as usize - 1;
+                        let ref_check = candidate_local - look_back_length
+                            + match_info.match_length as usize
+                            - 1;
+                        input[src_check] == input[ref_check]
+                            && input[src_check + 1] == input[ref_check + 1]
+                    };
 
-                if read_min_match_equals(input, candidate_local, off) {
-                    let fwd = MINMATCH
+                if tail_ok && read_min_match_equals(input, candidate_local, search_pos) {
+                    let forward_len = MINMATCH
                         + self.common_bytes(
                             input,
                             candidate_local + MINMATCH,
-                            off + MINMATCH,
+                            search_pos + MINMATCH,
                             match_limit,
                         );
-                    let bwd =
-                        Self::common_bytes_backward(input, candidate_local, off, 0, start_limit);
-                    let match_len = (bwd + fwd) as u32;
+                    let backward_len = Self::common_bytes_backward(
+                        input,
+                        candidate_local,
+                        search_pos,
+                        0,
+                        start_limit,
+                    );
+                    let match_len = (backward_len + forward_len) as u32;
 
                     if match_len > match_info.match_length {
                         match_info.match_length = match_len;
                         let distance = cur_absolute - candidate;
                         match_info.reference_position =
-                            ((off - bwd) as u32).wrapping_sub(distance as u32);
-                        match_info.start_position = (off - bwd) as u32;
+                            ((search_pos - backward_len) as u32).wrapping_sub(distance as u32);
+                        match_info.start_position = (search_pos - backward_len) as u32;
                     }
                 }
             } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
                 let candidate_local = candidate - ext_dict_stream_offset;
                 // No backward extension for ext_dict matches
                 let match_len =
-                    try_ext_dict_match(input, off, match_limit, ext_dict, candidate_local);
+                    try_ext_dict_match(input, search_pos, match_limit, ext_dict, candidate_local);
                 if match_len as u32 > match_info.match_length {
                     match_info.match_length = match_len as u32;
                     let distance = cur_absolute - candidate;
-                    match_info.reference_position = (off as u32).wrapping_sub(distance as u32);
-                    match_info.start_position = off as u32;
+                    match_info.reference_position =
+                        (search_pos as u32).wrapping_sub(distance as u32);
+                    match_info.start_position = search_pos as u32;
                 }
             }
 
@@ -816,7 +810,7 @@ impl HashTableHCU32 {
     fn pattern_chain_action(
         &self,
         input: &[u8],
-        off: usize,
+        search_pos: usize,
         match_limit: usize,
         cur_absolute: usize,
         stream_offset: usize,
@@ -834,10 +828,10 @@ impl HashTableHCU32 {
         let match_candidate = candidate.wrapping_sub(1);
 
         if *repeat == 0 {
-            let pattern = super::compress::get_batch(input, off);
+            let pattern = super::compress::get_batch(input, search_pos);
             if (pattern & 0xFFFF) == (pattern >> 16) && (pattern & 0xFF) == (pattern >> 24) {
                 *repeat = 1;
-                *src_pat_len = count_pattern(input, off + 4, match_limit, pattern) + 4;
+                *src_pat_len = count_pattern(input, search_pos + 4, match_limit, pattern) + 4;
             } else {
                 *repeat = 2;
             }
@@ -854,29 +848,32 @@ impl HashTableHCU32 {
             return PatternChainAction::Noop;
         }
 
-        let mc_local = match_candidate - stream_offset;
-        let pattern = super::compress::get_batch(input, off);
-        if mc_local + 4 > input.len() || super::compress::get_batch(input, mc_local) != pattern {
+        let match_candidate_local = match_candidate - stream_offset;
+        let pattern = super::compress::get_batch(input, search_pos);
+        if match_candidate_local + 4 > input.len()
+            || super::compress::get_batch(input, match_candidate_local) != pattern
+        {
             return PatternChainAction::Noop;
         }
 
-        let forward_pattern_len = count_pattern(input, mc_local + 4, match_limit, pattern) + 4;
-        let back_length = reverse_count_pattern(input, mc_local, 0, pattern);
-        let seg_len = back_length + forward_pattern_len;
+        let forward_pattern_len =
+            count_pattern(input, match_candidate_local + 4, match_limit, pattern) + 4;
+        let back_length = reverse_count_pattern(input, match_candidate_local, 0, pattern);
+        let segment_length = back_length + forward_pattern_len;
 
-        if seg_len >= *src_pat_len && forward_pattern_len <= *src_pat_len {
-            let new_candidate_local = mc_local + forward_pattern_len - *src_pat_len;
+        if segment_length >= *src_pat_len && forward_pattern_len <= *src_pat_len {
+            let new_candidate_local = match_candidate_local + forward_pattern_len - *src_pat_len;
             let new_ref_abs = new_candidate_local + stream_offset;
             if cur_absolute > new_ref_abs && cur_absolute - new_ref_abs <= self.chain_mask() {
                 return PatternChainAction::RetryCandidate(new_ref_abs);
             }
         } else {
-            let new_candidate_local = mc_local - back_length;
+            let new_candidate_local = match_candidate_local - back_length;
             let new_ref_abs = new_candidate_local + stream_offset;
             if cur_absolute > new_ref_abs && cur_absolute - new_ref_abs <= self.chain_mask() {
-                let max_ml = seg_len.min(*src_pat_len);
-                if max_ml > *best_len {
-                    *best_len = max_ml;
+                let max_match_length = segment_length.min(*src_pat_len);
+                if max_match_length > *best_len {
+                    *best_len = max_match_length;
                     *best_offset = (cur_absolute - new_ref_abs) as u16;
                 }
                 let dist = self.chain_delta(new_ref_abs) as usize;
@@ -890,11 +887,11 @@ impl HashTableHCU32 {
         PatternChainAction::Noop
     }
 
-    /// Insert `off` into the hash/chain tables, then search the chain for a match
+    /// Insert `search_pos` into the hash/chain tables, then search the chain for a match
     /// longer than `min_len`. Used by the optimal parser.
     ///
     /// `input` is the full input buffer (prefix + block).
-    /// `off` is the local position in `input` to search at.
+    /// `search_pos` is the local position in `input` to search at.
     /// `match_limit` is the exclusive end position — matches must not extend past this.
     /// `min_len` is the minimum match length to beat (current best).
     /// `ext_dict` is the external dictionary for linked-block mode (empty if unused).
@@ -906,17 +903,17 @@ impl HashTableHCU32 {
     fn find_longer_match(
         &mut self,
         input: &[u8],
-        off: u32,
+        search_pos: u32,
         match_limit: u32,
         min_len: u32,
         ext_dict: &[u8],
         stream_offset: usize,
     ) -> (u32, u16) {
-        self.insert(off, input, stream_offset);
+        self.insert(search_pos, input, stream_offset);
 
-        let off = off as usize;
+        let search_pos = search_pos as usize;
         let match_limit = match_limit as usize;
-        let cur_absolute = off + stream_offset;
+        let cur_absolute = search_pos + stream_offset;
         let ext_dict_stream_offset = stream_offset - ext_dict.len();
 
         let mut best_len: usize = min_len as usize;
@@ -926,7 +923,7 @@ impl HashTableHCU32 {
         let mut repeat: u8 = 0;
         let mut src_pat_len: usize = 0;
 
-        let mut candidate = self.get_dictionary_at(Self::get_hash_at(input, off));
+        let mut candidate = self.get_dictionary_at(Self::get_hash_at(input, search_pos));
 
         for _ in 0..self.max_attempts {
             if !self.in_range(candidate, cur_absolute) {
@@ -944,23 +941,27 @@ impl HashTableHCU32 {
                     unsafe {
                         (input.as_ptr().add(candidate_local + check_pos) as *const u16)
                             .read_unaligned()
-                            == (input.as_ptr().add(off + check_pos) as *const u16).read_unaligned()
+                            == (input.as_ptr().add(search_pos + check_pos) as *const u16)
+                                .read_unaligned()
                     }
                     #[cfg(feature = "safe-encode")]
                     {
-                        input[candidate_local + check_pos] == input[off + check_pos]
-                            && input[candidate_local + check_pos + 1] == input[off + check_pos + 1]
+                        input[candidate_local + check_pos] == input[search_pos + check_pos]
+                            && input[candidate_local + check_pos + 1]
+                                == input[search_pos + check_pos + 1]
                     }
                 } else {
                     true
                 };
 
-                if tail_matches_past_best && read_min_match_equals(input, candidate_local, off) {
+                if tail_matches_past_best
+                    && read_min_match_equals(input, candidate_local, search_pos)
+                {
                     match_len = MINMATCH
                         + self.common_bytes(
                             input,
                             candidate_local + MINMATCH,
-                            off + MINMATCH,
+                            search_pos + MINMATCH,
                             match_limit,
                         );
                     if match_len > best_len {
@@ -1001,7 +1002,7 @@ impl HashTableHCU32 {
 
                 match self.pattern_chain_action(
                     input,
-                    off,
+                    search_pos,
                     match_limit,
                     cur_absolute,
                     stream_offset,
@@ -1021,7 +1022,8 @@ impl HashTableHCU32 {
                 }
             } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
                 let candidate_local = candidate - ext_dict_stream_offset;
-                match_len = try_ext_dict_match(input, off, match_limit, ext_dict, candidate_local);
+                match_len =
+                    try_ext_dict_match(input, search_pos, match_limit, ext_dict, candidate_local);
                 if match_len > best_len {
                     best_len = match_len;
                     best_offset = (cur_absolute - candidate) as u16;
@@ -1047,14 +1049,14 @@ impl HashTableHCU32 {
 /// Optimal parsing state for a single position.
 /// Matches C's LZ4HC_optimal_t layout (4x i32 = 16 bytes).
 /// Using i32 for match offset/length instead of u16 avoids costly widening conversions
-/// on every access in the hot DP loop (15-20% regression with u16).
-/// The 4099-entry optimal-parsing DP buffer is ~64KB.
+/// on every access in the hot optimal-parsing loop (15-20% regression with u16).
+/// The 4099-entry optimal-parsing buffer is ~64KB.
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 struct OptimalState {
     /// Best known encoded size (byte-cost model) to reach this position.
     path_cost: i32,
-    /// Length of the literal run immediately before this state (DP bookkeeping).
+    /// Length of the literal run immediately before this state (optimal-parse bookkeeping).
     lit_len: i32,
     /// Copy offset for the sequence ending here; `0` means literal step.
     match_offset: i32,
@@ -1482,7 +1484,13 @@ impl HashTableMid {
 
     /// Insert a 4-byte hash entry at `pos` if within bounds.
     #[inline]
-    fn insert_4byte_hash(&mut self, input: &[u8], pos: usize, input_end: usize, stream_offset: usize) {
+    fn insert_4byte_hash(
+        &mut self,
+        input: &[u8],
+        pos: usize,
+        input_end: usize,
+        stream_offset: usize,
+    ) {
         if pos + 4 <= input_end {
             let h = get_hash4_mid(input, pos);
             self.hash4[h] = (pos + stream_offset) as u32;
@@ -1491,7 +1499,13 @@ impl HashTableMid {
 
     /// Insert an 8-byte hash entry at `pos` if within bounds.
     #[inline]
-    fn insert_8byte_hash(&mut self, input: &[u8], pos: usize, input_end: usize, stream_offset: usize) {
+    fn insert_8byte_hash(
+        &mut self,
+        input: &[u8],
+        pos: usize,
+        input_end: usize,
+        stream_offset: usize,
+    ) {
         if pos + 8 <= input_end {
             let h = get_hash8_mid(input, pos);
             self.hash8[h] = (pos + stream_offset) as u32;
@@ -1826,13 +1840,15 @@ fn compress_hc_internal(
             'resolve: loop {
                 // Adjust match2 if it overlaps with match1
                 if (match2.start_position - match1.start_position) < OPTIMAL_ML as u32 {
-                    let mut ml = (match1.match_length as usize).min(OPTIMAL_ML);
-                    if match1.start_position as usize + ml > match2.end().saturating_sub(MINMATCH) {
-                        ml = (match2.start_position - match1.start_position) as usize
+                    let mut capped_length = (match1.match_length as usize).min(OPTIMAL_ML);
+                    if match1.start_position as usize + capped_length
+                        > match2.end().saturating_sub(MINMATCH)
+                    {
+                        capped_length = (match2.start_position - match1.start_position) as usize
                             + (match2.match_length as usize).saturating_sub(MINMATCH);
                     }
-                    let correction =
-                        ml.saturating_sub((match2.start_position - match1.start_position) as usize);
+                    let correction = capped_length
+                        .saturating_sub((match2.start_position - match1.start_position) as usize);
                     if correction > 0 {
                         match2.fix(correction);
                     }
@@ -1918,11 +1934,16 @@ fn compress_hc_internal(
     Ok(output.pos() - output_start_pos)
 }
 
-/// Reverse the dynamic programming path: walk backward from `start`, swapping each state's
+/// Reverse the optimal parse path: walk backward from `start`, swapping each state's
 /// `(match_len, match_offset)` with the values from the next step forward.
 /// After this, `opt[0..last_match_pos)` can be read forward to emit sequences.
 #[inline]
-fn reverse_dynamic_programming_path(opt: &mut [OptimalState], start: usize, mut match_length: i32, mut match_offset: i32) {
+fn reverse_optimal_parse_path(
+    opt: &mut [OptimalState],
+    start: usize,
+    mut match_length: i32,
+    mut match_offset: i32,
+) {
     let mut pos = start;
     loop {
         let next_match_length = opt[pos].match_len;
@@ -1940,7 +1961,7 @@ fn reverse_dynamic_programming_path(opt: &mut [OptimalState], start: usize, mut 
 
 /// Emit LZ4 sequences from optimal states `opt[0..last_match_pos)` (`match_len == 1` is one literal step).
 #[inline]
-fn encode_optimal_path_from_dp(
+fn encode_optimal_parse_path(
     opt: &[OptimalState],
     last_match_pos: usize,
     input: &[u8],
@@ -2130,9 +2151,9 @@ fn compress_opt_internal(
                 // Set last_match_pos = i + 1 as in C code
                 last_match_pos = i + 1;
 
-                reverse_dynamic_programming_path(&mut opt, i, capped_ml as i32, new_match_offset as i32);
+                reverse_optimal_parse_path(&mut opt, i, capped_ml as i32, new_match_offset as i32);
 
-                encode_optimal_path_from_dp(
+                encode_optimal_parse_path(
                     &opt,
                     last_match_pos,
                     input,
@@ -2213,10 +2234,15 @@ fn compress_opt_internal(
         {
             let match_length = opt[last_match_pos].match_len;
             let match_offset = opt[last_match_pos].match_offset;
-            reverse_dynamic_programming_path(&mut opt, last_match_pos - match_length as usize, match_length, match_offset);
+            reverse_optimal_parse_path(
+                &mut opt,
+                last_match_pos - match_length as usize,
+                match_length,
+                match_offset,
+            );
         }
 
-        encode_optimal_path_from_dp(
+        encode_optimal_parse_path(
             &opt,
             last_match_pos,
             input,
