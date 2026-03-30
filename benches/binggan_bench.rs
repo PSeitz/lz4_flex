@@ -39,11 +39,12 @@ fn main() {
         frame_compress(InputGroup::new_with_inputs(data_sets));
     }
 
-    let named_data = ALL
+    let named_data: Vec<_> = ALL
         .iter()
         .map(|data| (data.len().to_string(), data.to_vec()))
         .collect();
     block_compress(InputGroup::new_with_inputs(named_data));
+    block_compress_hc();
     block_decompress();
 }
 
@@ -142,6 +143,38 @@ fn block_compress(mut runner: InputGroup<Vec<u8>, usize>) {
     });
 
     runner.run();
+}
+
+fn lz4_cpp_block_compress_hc(input: &[u8], level: i32) -> Result<Vec<u8>, lzzzz::Error> {
+    let mut out = Vec::new();
+    lzzzz::lz4_hc::compress_to_vec(input, &mut out, level)?;
+    Ok(out)
+}
+
+fn block_compress_hc() {
+    let mut runner = BenchRunner::with_name("block_compress_hc");
+    runner.add_plugin(PeakMemAllocPlugin::new(&GLOBAL));
+
+    for data in ALL {
+        for level in [3u8, 5, 9, 12] {
+            let mut group = runner.new_group();
+            group.set_name(format!("{} level {level}", data.len()));
+            group.set_input_size(data.len());
+
+            group.register_with_input("lz4 flex", data, move |i| {
+                let out = black_box(lz4_flex::block::compress_hc_to_vec(i, level));
+                out.len()
+            });
+            if level >= 3 {
+                group.register_with_input("lz4 c90", data, move |i| {
+                    let out = black_box(lz4_cpp_block_compress_hc(i, level as i32).unwrap());
+                    out.len()
+                });
+            }
+
+            group.run();
+        }
+    }
 }
 
 fn block_decompress() {

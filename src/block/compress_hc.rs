@@ -288,8 +288,7 @@ fn end_bytes_match(input: &[u8], pos1: usize, pos2: usize, length: usize) -> boo
     }
     #[cfg(feature = "safe-encode")]
     {
-        input[pos1 + tail] == input[pos2 + tail]
-            && input[pos1 + tail + 1] == input[pos2 + tail + 1]
+        input[pos1 + tail] == input[pos2 + tail] && input[pos1 + tail + 1] == input[pos2 + tail + 1]
     }
 }
 
@@ -676,8 +675,8 @@ impl HashTableHCU32 {
             if candidate >= stream_offset {
                 let candidate_pos = candidate - stream_offset;
 
-                let can_check_tail = match_info.match_length >= MINMATCH as u32
-                    && candidate_pos >= look_back_length;
+                let can_check_tail =
+                    match_info.match_length >= MINMATCH as u32 && candidate_pos >= look_back_length;
                 if (!can_check_tail
                     || end_bytes_match(
                         input,
@@ -939,8 +938,7 @@ impl HashTableHCU32 {
             if candidate >= stream_offset {
                 let candidate_pos = candidate - stream_offset;
 
-                if (best_len < MINMATCH
-                    || end_bytes_match(input, candidate_pos, cur, best_len))
+                if (best_len < MINMATCH || end_bytes_match(input, candidate_pos, cur, best_len))
                     && read_min_match_equals(input, candidate_pos, cur)
                 {
                     match_len = MINMATCH
@@ -1737,6 +1735,131 @@ fn compress_mid_internal(
     Ok(output.pos() - output_start)
 }
 
+/// Result of the three-match resolution loop.
+enum ResolveAction {
+    /// All matches encoded. `scan_pos` and `literal_start` already advanced.
+    Done,
+    /// match1 was encoded. Restart lazy evaluation with the returned `(match1, match0)`.
+    Restart {
+        next_match1: Match,
+        next_match0: Match,
+    },
+}
+
+/// Resolve overlapping matches (match1, match2, and potentially match3).
+/// Encodes sequences to `output` and advances `scan_pos`/`literal_start`.
+#[allow(clippy::too_many_arguments)]
+fn resolve_overlapping_matches(
+    input: &[u8],
+    output: &mut impl Sink,
+    ht: &mut HashTableHCU32,
+    ext_dict: &[u8],
+    stream_offset: usize,
+    end_pos_check: usize,
+    match_limit: usize,
+    match1: &mut Match,
+    match2: &mut Match,
+    scan_pos: &mut usize,
+    literal_start: &mut usize,
+) -> ResolveAction {
+    let mut match3 = Match::new();
+
+    loop {
+        // Adjust match2 if it overlaps with match1
+        if (match2.start_position - match1.start_position) < OPTIMAL_ML as u32 {
+            let mut capped_length = (match1.match_length as usize).min(OPTIMAL_ML);
+            if match1.start_position as usize + capped_length
+                > match2.end().saturating_sub(MINMATCH)
+            {
+                capped_length = (match2.start_position - match1.start_position) as usize
+                    + (match2.match_length as usize).saturating_sub(MINMATCH);
+            }
+            let correction = capped_length
+                .saturating_sub((match2.start_position - match1.start_position) as usize);
+            if correction > 0 {
+                match2.fix(correction);
+            }
+        }
+
+        // Try to find match3 near the end of match2
+        let found_match3 = match2.end() <= end_pos_check
+            && ht.insert_and_find_wider_match(
+                input,
+                (match2.end() - 3) as u32,
+                match2.start_position,
+                match_limit as u32,
+                match2.match_length,
+                &mut match3,
+                ext_dict,
+                stream_offset,
+            );
+
+        if !found_match3 {
+            // No match3 — encode match1 + match2
+            if (match2.start_position as usize) < match1.end() {
+                match1.match_length = match2.start_position - match1.start_position;
+            }
+            match1.encode_to(input, *literal_start, output);
+            *scan_pos = match1.end();
+            *literal_start = *scan_pos;
+            match2.encode_to(input, *literal_start, output);
+            *scan_pos = match2.end();
+            *literal_start = *scan_pos;
+            return ResolveAction::Done;
+        }
+
+        let match3_near_match1_end = (match3.start_position as usize) < match1.end() + 3;
+
+        // match3 starts right after match1 — encode match1, restart lazy with match3
+        if match3_near_match1_end && match3.start_position as usize >= match1.end() {
+            if (match2.start_position as usize) < match1.end() {
+                let correction = match1.end() - match2.start_position as usize;
+                match2.fix(correction);
+                if (match2.match_length as usize) < MINMATCH {
+                    *match2 = match3;
+                }
+            }
+            match1.encode_to(input, *literal_start, output);
+            *scan_pos = match1.end();
+            *literal_start = *scan_pos;
+            return ResolveAction::Restart {
+                next_match1: match3,
+                next_match0: *match2,
+            };
+        }
+
+        // match3 overlaps with match1 — demote to match2 and retry
+        if match3_near_match1_end {
+            *match2 = match3;
+            continue;
+        }
+
+        // Resolve overlap between match1 and match2
+        if (match2.start_position as usize) < match1.end() {
+            if (match2.start_position - match1.start_position) < ML_MASK as u32 {
+                if match1.match_length as usize > OPTIMAL_ML {
+                    match1.match_length = OPTIMAL_ML as u32;
+                }
+                if match1.end() > match2.end() - MINMATCH {
+                    match1.match_length =
+                        (match2.end() - match1.start_position as usize - MINMATCH) as u32;
+                }
+                let correction = match1.end() - match2.start_position as usize;
+                match2.fix(correction);
+            } else {
+                match1.match_length = match2.start_position - match1.start_position;
+            }
+        }
+
+        // Encode match1, shift match2→match1, match3→match2, continue resolving
+        match1.encode_to(input, *literal_start, output);
+        *scan_pos = match1.end();
+        *literal_start = *scan_pos;
+        *match1 = *match2;
+        *match2 = match3;
+    }
+}
+
 /// Internal HC compression implementation using hash chain algorithm.
 /// `input_pos` is where the current block starts (positions before it are prefix).
 /// `ext_dict` and `stream_offset` support linked block mode.
@@ -1765,7 +1888,6 @@ fn compress_hc_internal(
     let mut match0;
     let mut match1 = Match::new();
     let mut match2 = Match::new();
-    let mut match3 = Match::new();
 
     while scan_pos < end_pos_check {
         if !ht.insert_and_find_best_match(
@@ -1782,8 +1904,11 @@ fn compress_hc_internal(
 
         match0 = match1;
 
-        // Lazy match evaluation: try to find better matches ahead
-        'lazy: loop {
+        // Lazy match evaluation: try to find better matches ahead.
+        // Each iteration holds match1 (current best). We search for match2 near
+        // match1's end. If match2 is better, we resolve overlaps (possibly finding
+        // match3) and either emit sequences or loop back with an updated match1.
+        loop {
             debug_assert!(match1.start_position as usize >= literal_start);
 
             // Try to find a wider match starting near the end of match1
@@ -1821,96 +1946,29 @@ fn compress_hc_internal(
                 continue;
             }
 
-            // Three-match resolution: resolve overlaps between match1, match2, match3
-            'resolve: loop {
-                // Adjust match2 if it overlaps with match1
-                if (match2.start_position - match1.start_position) < OPTIMAL_ML as u32 {
-                    let mut capped_length = (match1.match_length as usize).min(OPTIMAL_ML);
-                    if match1.start_position as usize + capped_length
-                        > match2.end().saturating_sub(MINMATCH)
-                    {
-                        capped_length = (match2.start_position - match1.start_position) as usize
-                            + (match2.match_length as usize).saturating_sub(MINMATCH);
-                    }
-                    let correction = capped_length
-                        .saturating_sub((match2.start_position - match1.start_position) as usize);
-                    if correction > 0 {
-                        match2.fix(correction);
-                    }
+            // Resolve overlaps between match1, match2, and potentially match3
+            match resolve_overlapping_matches(
+                input,
+                output,
+                ht,
+                ext_dict,
+                stream_offset,
+                end_pos_check,
+                match_limit,
+                &mut match1,
+                &mut match2,
+                &mut scan_pos,
+                &mut literal_start,
+            ) {
+                ResolveAction::Done => break,
+                ResolveAction::Restart {
+                    next_match1,
+                    next_match0,
+                } => {
+                    match1 = next_match1;
+                    match0 = next_match0;
+                    continue;
                 }
-
-                // Try to find match3 near the end of match2
-                if match2.end() > end_pos_check
-                    || !ht.insert_and_find_wider_match(
-                        input,
-                        (match2.end() - 3) as u32,
-                        match2.start_position,
-                        match_limit as u32,
-                        match2.match_length,
-                        &mut match3,
-                        ext_dict,
-                        stream_offset,
-                    )
-                {
-                    // No match3 — encode match1 + match2
-                    if (match2.start_position as usize) < match1.end() {
-                        match1.match_length = match2.start_position - match1.start_position;
-                    }
-                    match1.encode_to(input, literal_start, output);
-                    scan_pos = match1.end();
-                    literal_start = scan_pos;
-                    match2.encode_to(input, literal_start, output);
-                    scan_pos = match2.end();
-                    literal_start = scan_pos;
-                    break 'lazy;
-                }
-
-                // match3 is close to match1's end — special overlap handling
-                if (match3.start_position as usize) < match1.end() + 3 {
-                    if match3.start_position as usize >= match1.end() {
-                        // match3 starts right after match1 — encode match1, restart with match3
-                        if (match2.start_position as usize) < match1.end() {
-                            let correction = match1.end() - match2.start_position as usize;
-                            match2.fix(correction);
-                            if (match2.match_length as usize) < MINMATCH {
-                                match2 = match3;
-                            }
-                        }
-                        match1.encode_to(input, literal_start, output);
-                        scan_pos = match1.end();
-                        literal_start = scan_pos;
-                        match1 = match3;
-                        match0 = match2;
-                        continue 'lazy;
-                    }
-                    // match3 overlaps with match1 — demote to match2 and retry
-                    match2 = match3;
-                    continue 'resolve;
-                }
-
-                // Resolve overlap between match1 and match2
-                if (match2.start_position as usize) < match1.end() {
-                    if (match2.start_position - match1.start_position) < ML_MASK as u32 {
-                        if match1.match_length as usize > OPTIMAL_ML {
-                            match1.match_length = OPTIMAL_ML as u32;
-                        }
-                        if match1.end() > match2.end() - MINMATCH {
-                            match1.match_length =
-                                (match2.end() - match1.start_position as usize - MINMATCH) as u32;
-                        }
-                        let correction = match1.end() - match2.start_position as usize;
-                        match2.fix(correction);
-                    } else {
-                        match1.match_length = match2.start_position - match1.start_position;
-                    }
-                }
-
-                // Encode match1, shift match2→match1, match3→match2, continue resolving
-                match1.encode_to(input, literal_start, output);
-                scan_pos = match1.end();
-                literal_start = scan_pos;
-                match1 = match2;
-                match2 = match3;
             }
         }
     }
