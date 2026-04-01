@@ -312,18 +312,17 @@ fn try_ext_dict_match(
     } else {
         false
     };
-    if min_match_ok {
-        MINMATCH
-            + count_forward_ext_dict(
-                input,
-                cur + MINMATCH,
-                ext_dict,
-                candidate_pos + MINMATCH,
-                match_limit,
-            )
-    } else {
-        0
+    if !min_match_ok {
+        return 0;
     }
+    MINMATCH
+        + count_forward_ext_dict(
+            input,
+            cur + MINMATCH,
+            ext_dict,
+            candidate_pos + MINMATCH,
+            match_limit,
+        )
 }
 
 /// Count matching bytes forward with the reference starting in `ext_dict` and
@@ -524,6 +523,27 @@ impl HashTableHCU32 {
         self.next_to_update = cur_absolute;
     }
 
+    /// Compute match length between `candidate_pos` and `cur` in `input`.
+    /// Uses `end_bytes_match` as a fast rejection filter when a prior match
+    /// already exists, then counts common bytes forward.
+    /// Returns 0 if the candidate doesn't match.
+    #[inline]
+    fn match_length(
+        &self,
+        input: &[u8],
+        candidate_pos: usize,
+        cur: usize,
+        match_limit: usize,
+        match_info: &Match,
+    ) -> usize {
+        let cant_beat_best = match_info.match_length >= MINMATCH as u32
+            && !end_bytes_match(input, candidate_pos, cur, match_info.match_length as usize);
+        if cant_beat_best || !read_min_match_equals(input, candidate_pos, cur) {
+            return 0;
+        }
+        MINMATCH + self.common_bytes(input, candidate_pos + MINMATCH, cur + MINMATCH, match_limit)
+    }
+
     /// Insert `cur` into the hash/chain tables, then search the chain for the
     /// longest match starting at `cur`.
     ///
@@ -565,21 +585,7 @@ impl HashTableHCU32 {
 
             let match_len = if candidate >= stream_offset {
                 let candidate_pos = candidate - stream_offset;
-
-                if (match_info.match_length < MINMATCH as u32
-                    || end_bytes_match(input, candidate_pos, cur, match_info.match_length as usize))
-                    && read_min_match_equals(input, candidate_pos, cur)
-                {
-                    MINMATCH
-                        + self.common_bytes(
-                            input,
-                            candidate_pos + MINMATCH,
-                            cur + MINMATCH,
-                            match_limit,
-                        )
-                } else {
-                    0
-                }
+                self.match_length(input, candidate_pos, cur, match_limit, match_info)
             } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
                 let candidate_pos = candidate - ext_dict_stream_offset;
                 try_ext_dict_match(input, cur, match_limit, ext_dict, candidate_pos)
@@ -587,22 +593,20 @@ impl HashTableHCU32 {
                 0
             };
 
-            if match_len > 0 {
-                if match_len as u32 > match_info.match_length {
-                    let distance = cur_absolute - candidate;
-                    match_info.reference_position = (cur as u32).wrapping_sub(distance as u32);
-                    match_info.match_length = match_len as u32;
-                }
-                if i == 0 {
-                    first_match_len = match_len;
-                    delta = cur_absolute - candidate;
-                }
+            if match_len as u32 > match_info.match_length {
+                let distance = cur_absolute - candidate;
+                match_info.reference_position = (cur as u32).wrapping_sub(distance as u32);
+                match_info.match_length = match_len as u32;
+            }
+            if i == 0 && match_len > 0 {
+                first_match_len = match_len;
+                delta = cur_absolute - candidate;
             }
 
-            candidate = match self.advance(candidate, cur_absolute) {
-                Some(next) => next,
-                None => break,
+            let Some(next) = self.advance(candidate, cur_absolute) else {
+                break;
             };
+            candidate = next;
         }
 
         // Handle pre hash (positions are absolute for hash table, local for input reads)
@@ -1021,11 +1025,10 @@ impl HashTableHCU32 {
             candidate -= delta;
         }
 
-        if best_len > min_len as usize {
-            (best_len as u32, best_offset)
-        } else {
-            (0, 0)
+        if best_len <= min_len as usize {
+            return (0, 0);
         }
+        (best_len as u32, best_offset)
     }
 }
 
