@@ -54,6 +54,7 @@ twox-hash = { version = "2.0.0", default-features = false, features = ["xxhash32
 codegen-units = 1
 lto = true
 opt-level = 3
+debug = true
 
 [profile.release]
 codegen-units = 1

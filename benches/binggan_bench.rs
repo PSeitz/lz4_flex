@@ -156,24 +156,23 @@ fn block_compress_hc() {
     runner.add_plugin(PeakMemAllocPlugin::new(&GLOBAL));
 
     for data in ALL {
-        for level in [3u8, 5, 9, 12] {
-            let mut group = runner.new_group();
-            group.set_name(format!("{} level {level}", data.len()));
-            group.set_input_size(data.len());
+        let mut group = runner.new_group();
+        group.set_name(format!("{}", data.len()));
+        group.set_input_size(data.len());
 
-            group.register_with_input("lz4 flex", data, move |i| {
+        for level in [3u8, 5, 9, 12] {
+            group.register_with_input(format!("lz4_flex_level_{level}"), data, move |i| {
                 let out = black_box(lz4_flex::block::compress_hc_to_vec(i, level));
                 out.len()
             });
             if level >= 3 {
-                group.register_with_input("lz4 c90", data, move |i| {
+                group.register_with_input(format!("lz4_c90_level_{level}"), data, move |i| {
                     let out = black_box(lz4_cpp_block_compress_hc(i, level as i32).unwrap());
                     out.len()
                 });
             }
-
-            group.run();
         }
+        group.run();
     }
 }
 
