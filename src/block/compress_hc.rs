@@ -704,6 +704,16 @@ impl HashTableHCU32 {
 
 /// Insert `cur` into the hash/chain tables, then search the chain for a match
 /// longer than `min_match_length`. Used by the optimal parser.
+///
+/// `input` is the full input buffer (prefix + block).
+/// `cur` is the position in `input` to search at.
+/// `match_limit` is the exclusive end position — matches must not extend past this.
+/// `min_match_length` is the minimum match length to beat (current best).
+/// `ext_dict` is the external dictionary for linked-block mode (empty if unused).
+/// `stream_offset` is the logical position of `input[0]` in the stream.
+///
+/// Returns `(match_length, offset)`. Length is 0 if no match beats `min_match_length`.
+/// Offset is `u16` since the LZ4 format limits back-reference distance to 16 bits.
 #[inline]
 fn find_longer_hash_chain_match(
     hash_table: &mut HashTableHCU32,
@@ -868,6 +878,14 @@ fn prehash_first_match(
 
 /// Insert `cur` into the hash/chain tables, then search the chain for the
 /// longest match starting at `cur`.
+///
+/// `input` is the full input buffer (prefix + block).
+/// `cur` is the position in `input` to search at.
+/// `match_limit` is the exclusive end position — matches must not extend past this.
+/// `ext_dict` is the external dictionary for linked-block mode (empty if unused).
+/// `stream_offset` is the logical position of `input[0]` in the stream.
+///
+/// Returns the best match found, or `None` if no match of at least `MINMATCH` bytes exists.
 fn find_best_hash_chain_match(
     hash_table: &mut HashTableHCU32,
     input: &[u8],
@@ -953,6 +971,16 @@ fn find_best_hash_chain_match(
 
 /// Insert `cur` into the hash/chain tables, then search the chain for a match
 /// longer than `min_match_length`, extending both forward and backward.
+///
+/// `input` is the full input buffer (prefix + block).
+/// `cur` is the position in `input` to search at.
+/// `start_limit` is the earliest position the match may extend backward to.
+/// `match_limit` is the exclusive end position — matches must not extend past this.
+/// `min_match_length` is the minimum match length to beat (current best).
+/// `ext_dict` is the external dictionary for linked-block mode (empty if unused).
+/// `stream_offset` is the logical position of `input[0]` in the stream.
+///
+/// Returns the best wider match found, or `None` if no match beats `min_match_length`.
 fn find_wider_hash_chain_match(
     hash_table: &mut HashTableHCU32,
     input: &[u8],
