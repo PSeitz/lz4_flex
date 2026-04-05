@@ -369,14 +369,14 @@ fn get_hash_at(input: &[u8], pos: usize) -> usize {
 /// Count matching bytes forward. Delegates to the shared `count_same_bytes`
 /// with `input` as both slices (HC always matches within the same buffer).
 #[inline]
-fn common_bytes(input: &[u8], pos1: usize, pos2: usize, limit: usize) -> usize {
+fn count_common_bytes(input: &[u8], pos1: usize, pos2: usize, limit: usize) -> usize {
     let mut cur = pos2;
     count_same_bytes(input, &mut cur, input, pos1, input.len().min(limit))
 }
 
 /// Find the number of common bytes backward from two positions
 #[inline]
-fn common_bytes_backward(
+fn count_common_bytes_backward(
     input: &[u8],
     mut pos1: usize,
     mut pos2: usize,
@@ -450,7 +450,7 @@ fn common_bytes_backward(
 /// already exists, then counts common bytes forward.
 /// Returns 0 if the candidate doesn't match.
 #[inline]
-fn match_length(
+fn compute_match_length(
     input: &[u8],
     candidate: usize,
     cur: usize,
@@ -462,7 +462,7 @@ fn match_length(
     if cant_beat_best || !read_min_match_equals(input, candidate, cur) {
         return 0;
     }
-    MINMATCH + common_bytes(input, candidate + MINMATCH, cur + MINMATCH, match_limit)
+    MINMATCH + count_common_bytes(input, candidate + MINMATCH, cur + MINMATCH, match_limit)
 }
 
 /// Result of pattern/repeat chain optimization inside [`HashTableHCU32::find_longer_match`]
@@ -665,7 +665,7 @@ impl HashTableHCU32 {
             }
 
             let match_len = if candidate >= stream_offset {
-                match_length(
+                compute_match_length(
                     input,
                     candidate - stream_offset,
                     cur,
@@ -782,14 +782,14 @@ impl HashTableHCU32 {
                     && read_min_match_equals(input, candidate_relative, cur)
                 {
                     let forward_len = MINMATCH
-                        + common_bytes(
+                        + count_common_bytes(
                             input,
                             candidate_relative + MINMATCH,
                             cur + MINMATCH,
                             match_limit,
                         );
                     let backward_len =
-                        common_bytes_backward(input, candidate_relative, cur, 0, start_limit);
+                        count_common_bytes_backward(input, candidate_relative, cur, 0, start_limit);
                     let match_len = (backward_len + forward_len) as u32;
 
                     if match_len > match_info.match_length {
@@ -960,7 +960,7 @@ impl HashTableHCU32 {
                     && read_min_match_equals(input, candidate_relative, cur)
                 {
                     match_len = MINMATCH
-                        + common_bytes(
+                        + count_common_bytes(
                             input,
                             candidate_relative + MINMATCH,
                             cur + MINMATCH,
