@@ -156,14 +156,6 @@ struct Match {
 }
 
 impl Match {
-    fn new() -> Self {
-        Self {
-            start_position: 0,
-            match_length: 0,
-            candidate: 0,
-        }
-    }
-
     #[inline]
     fn end(&self) -> usize {
         self.start_position as usize + self.match_length as usize
@@ -624,203 +616,6 @@ impl HashTableHCU32 {
         self.next_to_update = cur_absolute;
     }
 
-    /// Insert `cur` into the hash/chain tables, then search the chain for the
-    /// longest match starting at `cur`.
-    ///
-    /// `input` is the full input buffer (prefix + block).
-    /// `cur` is the position in `input` to search at.
-    /// `match_limit` is the exclusive end position — matches must not extend past this.
-    /// `match_info` is filled with the best match found (length 0 if none).
-    /// `ext_dict` is the external dictionary for linked-block mode (empty if unused).
-    /// `stream_offset` is the logical position of `input[0]` in the stream.
-    ///
-    /// Returns `true` if a match of at least `MINMATCH` bytes was found.
-    fn insert_and_find_best_match(
-        &mut self,
-        input: &[u8],
-        cur: u32,
-        match_limit: u32,
-        match_info: &mut Match,
-        ext_dict: &[u8],
-        stream_offset: usize,
-    ) -> bool {
-        match_info.start_position = cur;
-        match_info.match_length = 0;
-        let mut delta: usize = 0;
-        let mut first_match_len: usize = 0;
-
-        let cur = cur as usize;
-        let match_limit = match_limit as usize;
-        let cur_absolute = cur + stream_offset;
-        let ext_dict_stream_offset = stream_offset - ext_dict.len();
-
-        self.insert(cur as u32, input, stream_offset);
-
-        let mut candidate = self.get_dictionary_at(get_hash_at(input, cur));
-
-        for i in 0..self.max_attempts {
-            if !self.in_range(candidate, cur_absolute) {
-                break;
-            }
-
-            let match_len = if candidate >= stream_offset {
-                compute_match_length(
-                    input,
-                    candidate - stream_offset,
-                    cur,
-                    match_limit,
-                    match_info,
-                )
-            } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
-                try_ext_dict_match(
-                    input,
-                    cur,
-                    match_limit,
-                    ext_dict,
-                    candidate - ext_dict_stream_offset,
-                )
-            } else {
-                0
-            };
-
-            if match_len as u32 > match_info.match_length {
-                let distance = cur_absolute - candidate;
-                match_info.candidate = (cur as u32).wrapping_sub(distance as u32);
-                match_info.match_length = match_len as u32;
-            }
-            if i == 0 && match_len > 0 {
-                first_match_len = match_len;
-                delta = cur_absolute - candidate;
-            }
-
-            let Some(next) = self.advance(candidate, cur_absolute) else {
-                break;
-            };
-            candidate = next;
-        }
-
-        // Handle pre hash (positions are absolute for hash table, local for input reads)
-        if first_match_len != 0 {
-            let mut hash_pos = cur_absolute;
-            let end_pos = cur_absolute + first_match_len - 3;
-            while hash_pos < end_pos - delta {
-                self.set_chain(hash_pos, delta as u16);
-                hash_pos += 1;
-            }
-            loop {
-                self.set_chain(hash_pos, delta as u16);
-                let local_hash_pos = hash_pos - stream_offset;
-                self.set_dictionary_at(get_hash_at(input, local_hash_pos), hash_pos);
-                hash_pos += 1;
-                if hash_pos >= end_pos {
-                    break;
-                }
-            }
-            self.next_to_update = end_pos;
-        }
-
-        match_info.match_length != 0
-    }
-
-    /// Insert `cur` into the hash/chain tables, then search the chain for a match
-    /// longer than `min_len`, extending both forward and backward.
-    ///
-    /// `input` is the full input buffer (prefix + block).
-    /// `cur` is the position in `input` to search at.
-    /// `start_limit` is the earliest position the match may extend backward to.
-    /// `match_limit` is the exclusive end position — matches must not extend past this.
-    /// `min_len` is the minimum match length to beat (current best).
-    /// `match_info` is filled with the best match found if it exceeds `min_len`.
-    /// `ext_dict` is the external dictionary for linked-block mode (empty if unused).
-    /// `stream_offset` is the logical position of `input[0]` in the stream.
-    ///
-    /// Returns `true` if a match longer than `min_len` was found.
-    #[allow(clippy::too_many_arguments)]
-    fn insert_and_find_wider_match(
-        &mut self,
-        input: &[u8],
-        cur: u32,
-        start_limit: u32,
-        match_limit: u32,
-        min_len: u32,
-        match_info: &mut Match,
-        ext_dict: &[u8],
-        stream_offset: usize,
-    ) -> bool {
-        match_info.match_length = min_len;
-
-        let cur = cur as usize;
-        let start_limit = start_limit as usize;
-        let match_limit = match_limit as usize;
-        let cur_absolute = cur + stream_offset;
-        let ext_dict_stream_offset = stream_offset - ext_dict.len();
-
-        let look_back_length = cur - start_limit;
-
-        self.insert(cur as u32, input, stream_offset);
-
-        let mut candidate = self.get_dictionary_at(get_hash_at(input, cur));
-
-        for _ in 0..self.max_attempts {
-            if !self.in_range(candidate, cur_absolute) {
-                break;
-            }
-
-            if candidate >= stream_offset {
-                let candidate_relative = candidate - stream_offset;
-
-                let can_check_tail = match_info.match_length >= MINMATCH as u32
-                    && candidate_relative >= look_back_length;
-                if (!can_check_tail
-                    || end_bytes_match(
-                        input,
-                        candidate_relative - look_back_length,
-                        start_limit,
-                        match_info.match_length as usize,
-                    ))
-                    && read_min_match_equals(input, candidate_relative, cur)
-                {
-                    let forward_len = MINMATCH
-                        + count_common_bytes(
-                            input,
-                            candidate_relative + MINMATCH,
-                            cur + MINMATCH,
-                            match_limit,
-                        );
-                    let backward_len =
-                        count_common_bytes_backward(input, candidate_relative, cur, 0, start_limit);
-                    let match_len = (backward_len + forward_len) as u32;
-
-                    if match_len > match_info.match_length {
-                        match_info.match_length = match_len;
-                        let distance = cur_absolute - candidate;
-                        match_info.candidate =
-                            ((cur - backward_len) as u32).wrapping_sub(distance as u32);
-                        match_info.start_position = (cur - backward_len) as u32;
-                    }
-                }
-            } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
-                let candidate_relative = candidate - ext_dict_stream_offset;
-                // No backward extension for ext_dict matches
-                let match_len =
-                    try_ext_dict_match(input, cur, match_limit, ext_dict, candidate_relative);
-                if match_len as u32 > match_info.match_length {
-                    match_info.match_length = match_len as u32;
-                    let distance = cur_absolute - candidate;
-                    match_info.candidate = (cur as u32).wrapping_sub(distance as u32);
-                    match_info.start_position = cur as u32;
-                }
-            }
-
-            let Some(next) = self.advance(candidate, cur_absolute) else {
-                break;
-            };
-            candidate = next;
-        }
-
-        match_info.match_length > min_len
-    }
-
     /// Pattern / repeat chain optimization when `chain_delta(candidate) == 1` and
     /// `chain_pos == 0`. Returns an action for the outer search loop.
     #[allow(clippy::too_many_arguments)]
@@ -1047,6 +842,236 @@ impl HashTableHCU32 {
             return (0, 0);
         }
         (best_len as u32, best_offset)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct HashChainSearch<'a> {
+    input: &'a [u8],
+    match_limit: usize,
+    ext_dict: &'a [u8],
+    stream_offset: usize,
+}
+
+impl HashChainSearch<'_> {
+    #[inline]
+    fn cur_absolute(self, cur: usize) -> usize {
+        cur + self.stream_offset
+    }
+
+    #[inline]
+    fn ext_dict_stream_offset(self) -> usize {
+        self.stream_offset - self.ext_dict.len()
+    }
+}
+
+/// Update the hash chain for the first match found at `cur`.
+///
+/// This mirrors the pre-hash step from the LZ4 HC reference: positions inside the
+/// first accepted match are inserted eagerly so later searches can skip ahead.
+fn prehash_first_match(
+    hash_table: &mut HashTableHCU32,
+    input: &[u8],
+    cur_absolute: usize,
+    stream_offset: usize,
+    first_match_length: usize,
+    delta: usize,
+) {
+    let mut hash_pos = cur_absolute;
+    let end_pos = cur_absolute + first_match_length - 3;
+
+    while hash_pos < end_pos - delta {
+        hash_table.set_chain(hash_pos, delta as u16);
+        hash_pos += 1;
+    }
+
+    loop {
+        hash_table.set_chain(hash_pos, delta as u16);
+        let local_hash_pos = hash_pos - stream_offset;
+        hash_table.set_dictionary_at(get_hash_at(input, local_hash_pos), hash_pos);
+        hash_pos += 1;
+        if hash_pos >= end_pos {
+            break;
+        }
+    }
+
+    hash_table.next_to_update = end_pos;
+}
+
+/// Insert `cur` into the hash/chain tables, then search the chain for the
+/// longest match starting at `cur`.
+fn find_best_hash_chain_match(
+    hash_table: &mut HashTableHCU32,
+    search: HashChainSearch<'_>,
+    cur: usize,
+) -> Option<Match> {
+    let mut best_match = Match {
+        start_position: cur as u32,
+        match_length: 0,
+        candidate: 0,
+    };
+    let mut first_match_delta = 0usize;
+    let mut first_match_length = 0usize;
+
+    let cur_absolute = search.cur_absolute(cur);
+    let ext_dict_stream_offset = search.ext_dict_stream_offset();
+
+    hash_table.insert(cur as u32, search.input, search.stream_offset);
+
+    let mut candidate = hash_table.get_dictionary_at(get_hash_at(search.input, cur));
+
+    for attempt in 0..hash_table.max_attempts {
+        if !hash_table.in_range(candidate, cur_absolute) {
+            break;
+        }
+
+        let match_length = if candidate >= search.stream_offset {
+            compute_match_length(
+                search.input,
+                candidate - search.stream_offset,
+                cur,
+                search.match_limit,
+                &best_match,
+            )
+        } else if !search.ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
+            try_ext_dict_match(
+                search.input,
+                cur,
+                search.match_limit,
+                search.ext_dict,
+                candidate - ext_dict_stream_offset,
+            )
+        } else {
+            0
+        };
+
+        if match_length as u32 > best_match.match_length {
+            let distance = cur_absolute - candidate;
+            best_match.candidate = (cur as u32).wrapping_sub(distance as u32);
+            best_match.match_length = match_length as u32;
+        }
+
+        if attempt == 0 && match_length > 0 {
+            first_match_length = match_length;
+            first_match_delta = cur_absolute - candidate;
+        }
+
+        let Some(next_candidate) = hash_table.advance(candidate, cur_absolute) else {
+            break;
+        };
+        candidate = next_candidate;
+    }
+
+    if first_match_length != 0 {
+        prehash_first_match(
+            hash_table,
+            search.input,
+            cur_absolute,
+            search.stream_offset,
+            first_match_length,
+            first_match_delta,
+        );
+    }
+
+    if best_match.match_length == 0 {
+        None
+    } else {
+        Some(best_match)
+    }
+}
+
+/// Insert `cur` into the hash/chain tables, then search the chain for a match
+/// longer than `min_match_length`, extending both forward and backward.
+fn find_wider_hash_chain_match(
+    hash_table: &mut HashTableHCU32,
+    search: HashChainSearch<'_>,
+    cur: usize,
+    start_limit: usize,
+    min_match_length: usize,
+) -> Option<Match> {
+    let mut best_match = Match {
+        start_position: cur as u32,
+        match_length: min_match_length as u32,
+        candidate: 0,
+    };
+
+    let cur_absolute = search.cur_absolute(cur);
+    let ext_dict_stream_offset = search.ext_dict_stream_offset();
+    let look_back_length = cur - start_limit;
+
+    hash_table.insert(cur as u32, search.input, search.stream_offset);
+
+    let mut candidate = hash_table.get_dictionary_at(get_hash_at(search.input, cur));
+
+    for _ in 0..hash_table.max_attempts {
+        if !hash_table.in_range(candidate, cur_absolute) {
+            break;
+        }
+
+        if candidate >= search.stream_offset {
+            let candidate_relative = candidate - search.stream_offset;
+            let can_check_tail = best_match.match_length >= MINMATCH as u32
+                && candidate_relative >= look_back_length;
+            if (!can_check_tail
+                || end_bytes_match(
+                    search.input,
+                    candidate_relative - look_back_length,
+                    start_limit,
+                    best_match.match_length as usize,
+                ))
+                && read_min_match_equals(search.input, candidate_relative, cur)
+            {
+                let forward_length = MINMATCH
+                    + count_common_bytes(
+                        search.input,
+                        candidate_relative + MINMATCH,
+                        cur + MINMATCH,
+                        search.match_limit,
+                    );
+                let backward_length = count_common_bytes_backward(
+                    search.input,
+                    candidate_relative,
+                    cur,
+                    0,
+                    start_limit,
+                );
+                let match_length = backward_length + forward_length;
+
+                if match_length as u32 > best_match.match_length {
+                    best_match.match_length = match_length as u32;
+                    let distance = cur_absolute - candidate;
+                    best_match.candidate =
+                        ((cur - backward_length) as u32).wrapping_sub(distance as u32);
+                    best_match.start_position = (cur - backward_length) as u32;
+                }
+            }
+        } else if !search.ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
+            let candidate_relative = candidate - ext_dict_stream_offset;
+            let match_length = try_ext_dict_match(
+                search.input,
+                cur,
+                search.match_limit,
+                search.ext_dict,
+                candidate_relative,
+            );
+            if match_length as u32 > best_match.match_length {
+                best_match.match_length = match_length as u32;
+                let distance = cur_absolute - candidate;
+                best_match.candidate = (cur as u32).wrapping_sub(distance as u32);
+                best_match.start_position = cur as u32;
+            }
+        }
+
+        let Some(next_candidate) = hash_table.advance(candidate, cur_absolute) else {
+            break;
+        };
+        candidate = next_candidate;
+    }
+
+    if best_match.match_length as usize == min_match_length {
+        None
+    } else {
+        Some(best_match)
     }
 }
 
@@ -1777,22 +1802,16 @@ enum ResolveAction {
 
 /// Resolve overlapping matches (match1, match2, and potentially match3).
 /// Encodes sequences to `output` and advances `cur`/`literal_start`.
-#[allow(clippy::too_many_arguments)]
 fn resolve_overlapping_matches(
-    input: &[u8],
     output: &mut impl Sink,
     hash_table: &mut HashTableHCU32,
-    ext_dict: &[u8],
-    stream_offset: usize,
+    search: HashChainSearch<'_>,
     end_pos_check: usize,
-    match_limit: usize,
     match1: &mut Match,
     match2: &mut Match,
     cur: &mut usize,
     literal_start: &mut usize,
 ) -> ResolveAction {
-    let mut match3 = Match::new();
-
     loop {
         // Adjust match2 if it overlaps with match1
         if (match2.start_position - match1.start_position) < OPTIMAL_MATCH_LENGTH as u32 {
@@ -1811,31 +1830,30 @@ fn resolve_overlapping_matches(
         }
 
         // Try to find match3 near the end of match2
-        let found_match3 = match2.end() <= end_pos_check
-            && hash_table.insert_and_find_wider_match(
-                input,
-                (match2.end() - 3) as u32,
-                match2.start_position,
-                match_limit as u32,
-                match2.match_length,
-                &mut match3,
-                ext_dict,
-                stream_offset,
-            );
-
-        if !found_match3 {
+        let Some(match3) = (match2.end() <= end_pos_check)
+            .then(|| {
+                find_wider_hash_chain_match(
+                    hash_table,
+                    search,
+                    match2.end() - 3,
+                    match2.start_position as usize,
+                    match2.match_length as usize,
+                )
+            })
+            .flatten()
+        else {
             // No match3 — encode match1 + match2
             if (match2.start_position as usize) < match1.end() {
                 match1.match_length = match2.start_position - match1.start_position;
             }
-            match1.encode_to(input, *literal_start, output);
+            match1.encode_to(search.input, *literal_start, output);
             *cur = match1.end();
             *literal_start = *cur;
-            match2.encode_to(input, *literal_start, output);
+            match2.encode_to(search.input, *literal_start, output);
             *cur = match2.end();
             *literal_start = *cur;
             return ResolveAction::Done;
-        }
+        };
 
         let match3_near_match1_end = (match3.start_position as usize) < match1.end() + 3;
 
@@ -1848,7 +1866,7 @@ fn resolve_overlapping_matches(
                     *match2 = match3;
                 }
             }
-            match1.encode_to(input, *literal_start, output);
+            match1.encode_to(search.input, *literal_start, output);
             *cur = match1.end();
             *literal_start = *cur;
             return ResolveAction::Restart {
@@ -1881,7 +1899,7 @@ fn resolve_overlapping_matches(
         }
 
         // Encode match1, shift match2→match1, match3→match2, continue resolving
-        match1.encode_to(input, *literal_start, output);
+        match1.encode_to(search.input, *literal_start, output);
         *cur = match1.end();
         *literal_start = *cur;
         *match1 = *match2;
@@ -1911,26 +1929,26 @@ fn compress_hash_chain_internal(
     let end_pos_check = input_end - MFLIMIT;
     // Do not extend matches into the last `LAST_LITERALS` bytes (they are literals).
     let match_limit = input_end - LAST_LITERALS;
+    let search = HashChainSearch {
+        input,
+        match_limit,
+        ext_dict,
+        stream_offset,
+    };
 
     let mut cur = input_pos + 1;
     let mut literal_start = input_pos;
     let mut match0;
-    let mut match1 = Match::new();
-    let mut match2 = Match::new();
+    let mut match1;
+    let mut match2;
 
     while cur < end_pos_check {
-        if !hash_table.insert_and_find_best_match(
-            input,
-            cur as u32,
-            match_limit as u32,
-            &mut match1,
-            ext_dict,
-            stream_offset,
-        ) {
+        let Some(found_match) = find_best_hash_chain_match(hash_table, search, cur) else {
             cur += 1;
             continue;
-        }
+        };
 
+        match1 = found_match;
         match0 = match1;
 
         // Lazy match evaluation: try to find better matches ahead.
@@ -1941,24 +1959,27 @@ fn compress_hash_chain_internal(
             debug_assert!(match1.start_position as usize >= literal_start);
 
             // Try to find a wider match starting near the end of match1
-            if match1.end() > end_pos_check
-                || !hash_table.insert_and_find_wider_match(
-                    input,
-                    (match1.end() - 2) as u32,
-                    match1.start_position,
-                    match_limit as u32,
-                    match1.match_length,
-                    &mut match2,
-                    ext_dict,
-                    stream_offset,
+            let next_match = if match1.end() > end_pos_check {
+                None
+            } else {
+                find_wider_hash_chain_match(
+                    hash_table,
+                    search,
+                    match1.end() - 2,
+                    match1.start_position as usize,
+                    match1.match_length as usize,
                 )
-            {
+            };
+
+            let Some(found_match) = next_match else {
                 // No better match found — encode match1
-                match1.encode_to(input, literal_start, output);
+                match1.encode_to(search.input, literal_start, output);
                 cur = match1.end();
                 literal_start = cur;
                 break;
-            }
+            };
+
+            match2 = found_match;
 
             // Prefer match0 over match1 if match2 overlaps with match0's range
             if match0.start_position < match1.start_position
@@ -1977,13 +1998,10 @@ fn compress_hash_chain_internal(
 
             // Resolve overlaps between match1, match2, and potentially match3
             match resolve_overlapping_matches(
-                input,
                 output,
                 hash_table,
-                ext_dict,
-                stream_offset,
+                search,
                 end_pos_check,
-                match_limit,
                 &mut match1,
                 &mut match2,
                 &mut cur,
