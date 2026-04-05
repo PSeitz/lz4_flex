@@ -150,9 +150,9 @@ struct Match {
     start_position: u32,
     /// Length of the match in bytes (including the mandatory 4-byte minimum).
     match_length: u32,
-    /// Byte position of the earlier occurrence being referenced.
-    /// The encoded offset/distance is `start_position - reference_position`.
-    reference_position: u32,
+    /// Byte position of the earlier occurrence being matched against.
+    /// The encoded offset/distance is `start_position - candidate`.
+    candidate: u32,
 }
 
 impl Match {
@@ -160,7 +160,7 @@ impl Match {
         Self {
             start_position: 0,
             match_length: 0,
-            reference_position: 0,
+            candidate: 0,
         }
     }
 
@@ -174,13 +174,13 @@ impl Match {
     /// Used to resolve overlaps between consecutive matches.
     fn trim_front(&mut self, bytes_to_skip: usize) {
         self.start_position += bytes_to_skip as u32;
-        self.reference_position += bytes_to_skip as u32;
+        self.candidate += bytes_to_skip as u32;
         self.match_length = self.match_length.saturating_sub(bytes_to_skip as u32);
     }
 
     #[inline]
     fn offset(&self) -> u16 {
-        self.start_position.wrapping_sub(self.reference_position) as u16
+        self.start_position.wrapping_sub(self.candidate) as u16
     }
 
     fn encode_to<S: Sink>(&self, input: &[u8], literal_start: usize, output: &mut S) {
@@ -329,26 +329,25 @@ fn try_ext_dict_match(
 
 /// Count matching bytes forward with the reference starting in `ext_dict` and
 /// potentially continuing into `input[0..]` (the prefix) when ext_dict is exhausted.
-/// `reference_position` may already be past `ext_dict` (when the min-match check crossed the boundary).
+/// `candidate` may already be past `ext_dict` (when the min-match check crossed the boundary).
 #[inline]
 fn count_forward_ext_dict(
     input: &[u8],
     cur: usize,
     ext_dict: &[u8],
-    reference_position: usize,
+    candidate: usize,
     match_limit: usize,
 ) -> usize {
     let mut cur = cur;
 
-    if reference_position >= ext_dict.len() {
-        let prefix_pos = reference_position - ext_dict.len();
+    if candidate >= ext_dict.len() {
+        let prefix_pos = candidate - ext_dict.len();
         return count_same_bytes(input, &mut cur, input, prefix_pos, match_limit);
     }
 
-    let ext_dict_match_len =
-        count_same_bytes(input, &mut cur, ext_dict, reference_position, match_limit);
+    let ext_dict_match_len = count_same_bytes(input, &mut cur, ext_dict, candidate, match_limit);
 
-    if reference_position + ext_dict_match_len >= ext_dict.len() && cur < match_limit {
+    if candidate + ext_dict_match_len >= ext_dict.len() && cur < match_limit {
         ext_dict_match_len + count_same_bytes(input, &mut cur, input, 0, match_limit)
     } else {
         ext_dict_match_len
@@ -686,7 +685,7 @@ impl HashTableHCU32 {
 
             if match_len as u32 > match_info.match_length {
                 let distance = cur_absolute - candidate;
-                match_info.reference_position = (cur as u32).wrapping_sub(distance as u32);
+                match_info.candidate = (cur as u32).wrapping_sub(distance as u32);
                 match_info.match_length = match_len as u32;
             }
             if i == 0 && match_len > 0 {
@@ -795,7 +794,7 @@ impl HashTableHCU32 {
                     if match_len > match_info.match_length {
                         match_info.match_length = match_len;
                         let distance = cur_absolute - candidate;
-                        match_info.reference_position =
+                        match_info.candidate =
                             ((cur - backward_len) as u32).wrapping_sub(distance as u32);
                         match_info.start_position = (cur - backward_len) as u32;
                     }
@@ -808,7 +807,7 @@ impl HashTableHCU32 {
                 if match_len as u32 > match_info.match_length {
                     match_info.match_length = match_len as u32;
                     let distance = cur_absolute - candidate;
-                    match_info.reference_position = (cur as u32).wrapping_sub(distance as u32);
+                    match_info.candidate = (cur as u32).wrapping_sub(distance as u32);
                     match_info.start_position = cur as u32;
                 }
             }
