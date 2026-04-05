@@ -1249,7 +1249,7 @@ pub fn compress_hc(
         }
         HcCompressionStrategy::HashChain => {
             let mut ht = HashTableHCU32::new(params.max_attempts, input.len());
-            compress_hc_internal(input, 0, output, &mut ht, &[], 0)
+            compress_hash_chain_internal(input, 0, output, &mut ht, &[], 0)
         }
         HcCompressionStrategy::Mid => {
             let mut table = HashTableMid::new();
@@ -1291,7 +1291,7 @@ pub fn compress_hc_with_table(
         }
         HcCompressionStrategy::HashChain => {
             let ht = table.reset_hc(params.max_attempts, input.len());
-            compress_hc_internal(input, 0, output, ht, &[], 0)
+            compress_hash_chain_internal(input, 0, output, ht, &[], 0)
         }
         HcCompressionStrategy::Optimal => {
             let ht = table.reset_hc(params.max_attempts, input.len());
@@ -1331,7 +1331,7 @@ pub(crate) fn compress_hc_linked(
                     "prepare_linked_block should have ensured HC variant for HC levels"
                 ),
             };
-            compress_hc_internal(input, input_pos, output, ht, ext_dict, stream_offset)
+            compress_hash_chain_internal(input, input_pos, output, ht, ext_dict, stream_offset)
         }
         HcCompressionStrategy::Optimal => {
             let ht = match &mut table.inner {
@@ -1889,10 +1889,10 @@ fn resolve_overlapping_matches(
     }
 }
 
-/// Internal HC compression implementation using hash chain algorithm.
+/// Internal high-compression implementation for the hash-chain strategy.
 /// `input_pos` is where the current block starts (positions before it are prefix).
 /// `ext_dict` and `stream_offset` support linked block mode.
-fn compress_hc_internal(
+fn compress_hash_chain_internal(
     input: &[u8],
     input_pos: usize,
     output: &mut impl Sink,
