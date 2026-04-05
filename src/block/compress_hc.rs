@@ -1442,20 +1442,20 @@ pub fn compress_hc_to_vec_with_table(
 // algorithm while being faster than HC.
 // ============================================================================
 
-/// Hash table for lz4mid algorithm - contains two tables (4-byte and 8-byte)
+/// Hash table for lz4mid algorithm — two tables keyed by 4-byte and 8-byte input sequences.
 struct HashTableMid {
-    hash4: Box<[u32; LZ4MID_HASHTABLE_SIZE]>,
-    hash8: Box<[u32; LZ4MID_HASHTABLE_SIZE]>,
+    table_4byte: Box<[u32; LZ4MID_HASHTABLE_SIZE]>,
+    table_8byte: Box<[u32; LZ4MID_HASHTABLE_SIZE]>,
 }
 
 impl HashTableMid {
     fn new() -> Self {
         HashTableMid {
-            hash4: vec![0u32; LZ4MID_HASHTABLE_SIZE]
+            table_4byte: vec![0u32; LZ4MID_HASHTABLE_SIZE]
                 .into_boxed_slice()
                 .try_into()
                 .unwrap(),
-            hash8: vec![0u32; LZ4MID_HASHTABLE_SIZE]
+            table_8byte: vec![0u32; LZ4MID_HASHTABLE_SIZE]
                 .into_boxed_slice()
                 .try_into()
                 .unwrap(),
@@ -1464,8 +1464,8 @@ impl HashTableMid {
 
     /// Reset the table for reuse by zeroing both hash tables.
     fn reset(&mut self) {
-        self.hash4.fill(0);
-        self.hash8.fill(0);
+        self.table_4byte.fill(0);
+        self.table_8byte.fill(0);
     }
 
     /// Prepare the table for a new linked block without clearing entries.
@@ -1478,73 +1478,55 @@ impl HashTableMid {
     #[cfg(feature = "frame")]
     fn reposition(&mut self, delta: usize) {
         let delta32 = delta as u32;
-        for entry in self.hash4.iter_mut() {
+        for entry in self.table_4byte.iter_mut() {
             *entry = entry.saturating_sub(delta32);
         }
-        for entry in self.hash8.iter_mut() {
+        for entry in self.table_8byte.iter_mut() {
             *entry = entry.saturating_sub(delta32);
         }
     }
 
-    /// Insert a 4-byte hash entry at `pos` if within bounds.
     #[inline]
-    fn insert_4byte_hash(
-        &mut self,
-        input: &[u8],
-        pos: usize,
-        input_end: usize,
-        stream_offset: usize,
-    ) {
-        if pos + 4 <= input_end {
-            let hash = get_hash4_mid(input, pos);
-            self.hash4[hash] = (pos + stream_offset) as u32;
-        }
+    fn insert_4byte_hash(&mut self, input: &[u8], pos: usize, stream_offset: usize) {
+        let hash = get_hash4_mid(input, pos);
+        self.table_4byte[hash] = (pos + stream_offset) as u32;
     }
 
-    /// Insert an 8-byte hash entry at `pos` if within bounds.
     #[inline]
-    fn insert_8byte_hash(
-        &mut self,
-        input: &[u8],
-        pos: usize,
-        input_end: usize,
-        stream_offset: usize,
-    ) {
-        if pos + 8 <= input_end {
-            let hash = get_hash8_mid(input, pos);
-            self.hash8[hash] = (pos + stream_offset) as u32;
-        }
+    fn insert_8byte_hash(&mut self, input: &[u8], pos: usize, stream_offset: usize) {
+        let hash = get_hash8_mid(input, pos);
+        self.table_8byte[hash] = (pos + stream_offset) as u32;
     }
 
-    /// Insert hashes near a match start and at trailing positions after emitting a match.
-    /// Called after encoding a sequence to populate the hash tables for future searches.
+    /// Insert hashes near both ends of a just-encoded match so future searches can
+    /// find overlapping sequences.
     fn insert_match_hashes(
         &mut self,
         input: &[u8],
         match_start: usize,
-        cur: usize,
+        match_end: usize,
         input_end: usize,
         stream_offset: usize,
     ) {
-        let max_8byte_hash_pos = input_end.saturating_sub(8);
+        // The furthest read is an 8-byte hash at match_end - 2, needing match_end + 6 <= input_end.
+        // Since match_start <= match_end - MINMATCH, all match_start positions are also safe.
+        if match_end + 6 > input_end {
+            return;
+        }
 
-        self.insert_8byte_hash(input, match_start + 1, input_end, stream_offset);
-        self.insert_8byte_hash(input, match_start + 2, input_end, stream_offset);
-        self.insert_4byte_hash(input, match_start + 1, input_end, stream_offset);
+        // Near match start
+        self.insert_8byte_hash(input, match_start + 1, stream_offset);
+        self.insert_8byte_hash(input, match_start + 2, stream_offset);
+        self.insert_4byte_hash(input, match_start + 1, stream_offset);
 
-        if cur >= 5 && cur <= max_8byte_hash_pos {
-            self.insert_8byte_hash(input, cur - 5, input_end, stream_offset);
+        // Near match end
+        if match_end >= 5 {
+            self.insert_8byte_hash(input, match_end - 5, stream_offset);
         }
-        if cur >= 3 && cur <= max_8byte_hash_pos {
-            self.insert_8byte_hash(input, cur - 3, input_end, stream_offset);
-            self.insert_8byte_hash(input, cur - 2, input_end, stream_offset);
-        }
-        if cur >= 2 {
-            self.insert_4byte_hash(input, cur - 2, input_end, stream_offset);
-        }
-        if cur >= 1 {
-            self.insert_4byte_hash(input, cur - 1, input_end, stream_offset);
-        }
+        self.insert_8byte_hash(input, match_end - 3, stream_offset);
+        self.insert_8byte_hash(input, match_end - 2, stream_offset);
+        self.insert_4byte_hash(input, match_end - 2, stream_offset);
+        self.insert_4byte_hash(input, match_end - 1, stream_offset);
     }
 }
 
@@ -1575,9 +1557,10 @@ fn get_hash8_mid(input: &[u8], pos: usize) -> usize {
 }
 
 /// Resolve an absolute hash table position to a source slice and local index.
-/// Returns `(source, local_index, distance_from_cursor)`.
+/// Returns `None` if the candidate is out of range or unreachable.
+/// Returns `(source, local_index, distance)` on success.
 #[inline]
-fn resolve_mid_candidate<'a>(
+fn resolve_candidate<'a>(
     candidate: usize,
     cur_absolute: usize,
     input: &'a [u8],
@@ -1631,10 +1614,10 @@ fn compress_mid_internal(
 
         // Try 8-byte hash first
         let hash_8byte = get_hash8_mid(input, cur);
-        let candidate_8byte = table.hash8[hash_8byte] as usize;
-        table.hash8[hash_8byte] = cur_absolute as u32;
+        let candidate_8byte = table.table_8byte[hash_8byte] as usize;
+        table.table_8byte[hash_8byte] = cur_absolute as u32;
 
-        if let Some((source_8byte, candidate_8byte_pos, distance_8byte)) = resolve_mid_candidate(
+        if let Some((source_8byte, candidate_8byte_pos, distance_8byte)) = resolve_candidate(
             candidate_8byte,
             cur_absolute,
             input,
@@ -1681,10 +1664,10 @@ fn compress_mid_internal(
 
         // Try 4-byte hash
         let hash_4byte = get_hash4_mid(input, cur);
-        let candidate_4byte = table.hash4[hash_4byte] as usize;
-        table.hash4[hash_4byte] = cur_absolute as u32;
+        let candidate_4byte = table.table_4byte[hash_4byte] as usize;
+        table.table_4byte[hash_4byte] = cur_absolute as u32;
 
-        if let Some((source_4byte, candidate_4byte_pos, distance_4byte)) = resolve_mid_candidate(
+        if let Some((source_4byte, candidate_4byte_pos, distance_4byte)) = resolve_candidate(
             candidate_4byte,
             cur_absolute,
             input,
@@ -1709,12 +1692,12 @@ fn compress_mid_internal(
 
                 if cur < end_pos_check {
                     let hash_8byte_next = get_hash8_mid(input, cur + 1);
-                    let candidate_8byte_next = table.hash8[hash_8byte_next] as usize;
+                    let candidate_8byte_next = table.table_8byte[hash_8byte_next] as usize;
                     if let Some((
                         source_8byte_next,
                         candidate_8byte_next_pos,
                         distance_8byte_next,
-                    )) = resolve_mid_candidate(
+                    )) = resolve_candidate(
                         candidate_8byte_next,
                         cur_absolute + 1,
                         input,
@@ -1731,7 +1714,7 @@ fn compress_mid_internal(
                             match_limit,
                         );
                         if len_next > best_len {
-                            table.hash8[hash_8byte_next] = (cur + 1 + stream_offset) as u32;
+                            table.table_8byte[hash_8byte_next] = (cur + 1 + stream_offset) as u32;
                             best_cur = cur + 1;
                             best_source = source_8byte_next;
                             best_candidate = candidate_8byte_next_pos;
@@ -2568,6 +2551,78 @@ mod tests {
         let result = decompress(&output[..compressed_size], input.len());
         assert!(result.is_ok());
         assert_eq!(&input[..], &result.unwrap()[..])
+    }
+
+    /// Exact compressed sizes for larger structured inputs. These inputs separate
+    /// the different HC strategies much better than tiny toy strings, so they are
+    /// useful as a regression net for compression ratio changes.
+    #[test]
+    fn test_compressed_sizes_exact() {
+        fn get_size(input: &[u8], level: u8) -> usize {
+            let mut output = vec![0u8; input.len() * 2 + 100];
+            let mut sink = SliceSink::new(&mut output, 0);
+            compress_hc(input, &mut sink, level).unwrap()
+        }
+
+        let html_like: Vec<u8> = (0..10_000)
+            .flat_map(|i| match i % 7 {
+                0 => b"<div class=\"item\">".to_vec(),
+                1 => format!("content {i} here ").into_bytes(),
+                2 => b"</div>\n".to_vec(),
+                3 => b"<span style=\"color:red\">".to_vec(),
+                4 => format!("value={i} ").into_bytes(),
+                5 => b"</span>".to_vec(),
+                _ => b"<br/>\n".to_vec(),
+            })
+            .collect();
+
+        let json_like: Vec<u8> = (0..2_000)
+            .flat_map(|i| {
+                format!(
+                    "{{\"id\":{i},\"name\":\"user_{}\",\"score\":{},\"active\":true}},\n",
+                    i % 100,
+                    i * 7 % 1000,
+                )
+                .into_bytes()
+            })
+            .collect();
+
+        let code_like: Vec<u8> = (0..3_000)
+            .flat_map(|i| match i % 5 {
+                0 => format!("    let value_{} = compute(input[{}]);\n", i % 50, i).into_bytes(),
+                1 => b"    if value > threshold {\n".to_vec(),
+                2 => format!("        result += value_{} * weight;\n", i % 50).into_bytes(),
+                3 => b"    }\n".to_vec(),
+                _ => format!("    // step {i}\n").into_bytes(),
+            })
+            .collect();
+
+        // (level, html_like, json_like, code_like)
+        let expected: &[(u8, usize, usize, usize)] = &[
+            (1, 16_350, 16_183, 6_246),
+            (4, 15_620, 16_198, 6_071),
+            (9, 15_509, 15_698, 5_985),
+            (10, 15_153, 15_102, 5_990),
+            (12, 15_100, 15_083, 5_979),
+        ];
+
+        for &(level, expected_html_like, expected_json_like, expected_code_like) in expected {
+            assert_eq!(
+                get_size(&html_like, level),
+                expected_html_like,
+                "html_like @ level {level}"
+            );
+            assert_eq!(
+                get_size(&json_like, level),
+                expected_json_like,
+                "json_like @ level {level}"
+            );
+            assert_eq!(
+                get_size(&code_like, level),
+                expected_code_like,
+                "code_like @ level {level}"
+            );
+        }
     }
 
     #[test]
