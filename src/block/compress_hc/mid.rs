@@ -103,27 +103,29 @@ impl HashTableMid {
 /// 4-byte hash for lz4mid (same multiplier as fast algorithm)
 #[inline]
 fn get_hash4_mid(input: &[u8], pos: usize) -> usize {
-    let batch = crate::block::compress::get_batch(input, pos);
-    (batch.wrapping_mul(2654435761) >> (32 - LZ4MID_HASH_LOG)) as usize
+    let sequence = crate::block::compress::get_batch(input, pos);
+    (sequence.wrapping_mul(2654435761) >> (32 - LZ4MID_HASH_LOG)) as usize
 }
 
-/// 8-byte hash for lz4mid (hashes lower 56 bits for longer match detection)
+/// Read 8 bytes as a little-endian `u64`.
 #[inline]
-fn get_hash8_mid(input: &[u8], pos: usize) -> usize {
-    // Use get_batch_arch for the raw read (eliminates bounds check in unsafe mode),
-    // then convert to u64 for the 56-bit hash computation.
+fn read_u64_little_endian(input: &[u8], pos: usize) -> u64 {
     #[cfg(target_pointer_width = "64")]
     {
-        let batch = crate::block::compress::get_batch_arch(input, pos) as u64;
-        let batch_56bit = batch.to_le() << 8;
-        ((batch_56bit.wrapping_mul(58295818150454627)) >> (64 - LZ4MID_HASH_LOG)) as usize
+        (crate::block::compress::get_batch_arch(input, pos) as u64).to_le()
     }
     #[cfg(not(target_pointer_width = "64"))]
     {
-        let batch = u64::from_le_bytes(input[pos..pos + 8].try_into().unwrap());
-        let batch_56bit = batch << 8;
-        ((batch_56bit.wrapping_mul(58295818150454627)) >> (64 - LZ4MID_HASH_LOG)) as usize
+        u64::from_le_bytes(input[pos..pos + 8].try_into().unwrap())
     }
+}
+
+/// 8-byte hash for lz4mid (hashes the lower 56 bits of a little-endian 8-byte read)
+#[inline]
+fn get_hash8_mid(input: &[u8], pos: usize) -> usize {
+    let sequence = read_u64_little_endian(input, pos);
+    let lower_56_bits = sequence << 8;
+    ((lower_56_bits.wrapping_mul(58295818150454627)) >> (64 - LZ4MID_HASH_LOG)) as usize
 }
 
 /// Resolve an absolute hash table position to a source slice and local index.
