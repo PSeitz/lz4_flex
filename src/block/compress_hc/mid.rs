@@ -206,21 +206,21 @@ pub(super) fn compress_mid_internal(
                 match_limit,
             );
             if match_len >= MINMATCH {
-                let mut match_cur = cur;
+                let mut match_start = cur;
                 let mut candidate = candidate_8byte_pos;
                 backtrack_match(
                     input,
-                    &mut match_cur,
+                    &mut match_start,
                     literal_start,
                     source_8byte,
                     &mut candidate,
                 );
+                let mut match_end = match_start;
                 let match_len =
-                    count_same_bytes(input, &mut match_cur, source_8byte, candidate, match_limit);
-                let match_start = match_cur - match_len;
+                    count_same_bytes(input, &mut match_end, source_8byte, candidate, match_limit);
                 let offset = distance_8byte as u16;
 
-                table.insert_match_hashes(input, match_start, match_cur, input_end, stream_offset);
+                table.insert_match_hashes(input, match_start, match_end, input_end, stream_offset);
                 encode_sequence(
                     &input[literal_start..match_start],
                     output,
@@ -228,7 +228,7 @@ pub(super) fn compress_mid_internal(
                     match_len - MINMATCH,
                 );
 
-                cur = match_cur;
+                cur = match_end;
                 literal_start = cur;
                 continue;
             }
@@ -297,21 +297,21 @@ pub(super) fn compress_mid_internal(
                 }
                 let _ = best_len;
 
-                let mut match_cur = best_cur;
+                let mut match_start = best_cur;
                 let mut candidate = best_candidate;
                 backtrack_match(
                     input,
-                    &mut match_cur,
+                    &mut match_start,
                     literal_start,
                     best_source,
                     &mut candidate,
                 );
+                let mut match_end = match_start;
                 let match_len =
-                    count_same_bytes(input, &mut match_cur, best_source, candidate, match_limit);
-                let match_start = match_cur - match_len;
+                    count_same_bytes(input, &mut match_end, best_source, candidate, match_limit);
                 let offset = best_distance as u16;
 
-                table.insert_match_hashes(input, match_start, match_cur, input_end, stream_offset);
+                table.insert_match_hashes(input, match_start, match_end, input_end, stream_offset);
                 encode_sequence(
                     &input[literal_start..match_start],
                     output,
@@ -319,7 +319,7 @@ pub(super) fn compress_mid_internal(
                     match_len - MINMATCH,
                 );
 
-                cur = match_cur;
+                cur = match_end;
                 literal_start = cur;
                 continue;
             }
