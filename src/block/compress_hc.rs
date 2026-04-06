@@ -1261,16 +1261,16 @@ pub fn compress_hc(
 
     match params.strategy {
         HcCompressionStrategy::Optimal => {
-            let mut ht = HashTableHCU32::new(params.max_attempts, input.len());
-            compress_opt_internal(input, 0, output, params, &mut ht, &[], 0)
+            let mut hash_table = HashTableHCU32::new(params.max_attempts, input.len());
+            compress_opt_internal(input, 0, output, params, &mut hash_table, &[], 0)
         }
         HcCompressionStrategy::HashChain => {
-            let mut ht = HashTableHCU32::new(params.max_attempts, input.len());
-            compress_hash_chain_internal(input, 0, output, &mut ht, &[], 0)
+            let mut hash_table = HashTableHCU32::new(params.max_attempts, input.len());
+            compress_hash_chain_internal(input, 0, output, &mut hash_table, &[], 0)
         }
         HcCompressionStrategy::Mid => {
-            let mut table = HashTableMid::new();
-            compress_mid_internal(input, 0, output, &mut table, &[], 0)
+            let mut mid_table = HashTableMid::new();
+            compress_mid_internal(input, 0, output, &mut mid_table, &[], 0)
         }
     }
 }
@@ -1303,16 +1303,16 @@ pub fn compress_hc_with_table(
 
     match params.strategy {
         HcCompressionStrategy::Mid => {
-            let mid = table.reset_mid();
-            compress_mid_internal(input, 0, output, mid, &[], 0)
+            let mid_table = table.reset_mid();
+            compress_mid_internal(input, 0, output, mid_table, &[], 0)
         }
         HcCompressionStrategy::HashChain => {
-            let ht = table.reset_hc(params.max_attempts, input.len());
-            compress_hash_chain_internal(input, 0, output, ht, &[], 0)
+            let hash_table = table.reset_hc(params.max_attempts, input.len());
+            compress_hash_chain_internal(input, 0, output, hash_table, &[], 0)
         }
         HcCompressionStrategy::Optimal => {
-            let ht = table.reset_hc(params.max_attempts, input.len());
-            compress_opt_internal(input, 0, output, params, ht, &[], 0)
+            let hash_table = table.reset_hc(params.max_attempts, input.len());
+            compress_opt_internal(input, 0, output, params, hash_table, &[], 0)
         }
     }
 }
@@ -1333,26 +1333,33 @@ pub(crate) fn compress_hc_linked(
 ) -> Result<usize, CompressError> {
     match params.strategy {
         HcCompressionStrategy::Mid => {
-            let mid = match &mut table.inner {
-                CompressTableHCInner::Mid(mid) => mid,
+            let mid_table = match &mut table.inner {
+                CompressTableHCInner::Mid(mid_table) => mid_table,
                 _ => unreachable!(
                     "prepare_linked_block should have ensured Mid variant for mid levels"
                 ),
             };
-            compress_mid_internal(input, input_pos, output, mid, ext_dict, stream_offset)
+            compress_mid_internal(input, input_pos, output, mid_table, ext_dict, stream_offset)
         }
         HcCompressionStrategy::HashChain => {
-            let ht = match &mut table.inner {
-                CompressTableHCInner::HC(ht) => ht,
+            let hash_table = match &mut table.inner {
+                CompressTableHCInner::HC(hash_table) => hash_table,
                 _ => unreachable!(
                     "prepare_linked_block should have ensured HC variant for HC levels"
                 ),
             };
-            compress_hash_chain_internal(input, input_pos, output, ht, ext_dict, stream_offset)
+            compress_hash_chain_internal(
+                input,
+                input_pos,
+                output,
+                hash_table,
+                ext_dict,
+                stream_offset,
+            )
         }
         HcCompressionStrategy::Optimal => {
-            let ht = match &mut table.inner {
-                CompressTableHCInner::HC(ht) => ht,
+            let hash_table = match &mut table.inner {
+                CompressTableHCInner::HC(hash_table) => hash_table,
                 _ => unreachable!(
                     "prepare_linked_block should have ensured HC variant for optimal levels"
                 ),
@@ -1362,7 +1369,7 @@ pub(crate) fn compress_hc_linked(
                 input_pos,
                 output,
                 params,
-                ht,
+                hash_table,
                 ext_dict,
                 stream_offset,
             )
@@ -1781,18 +1788,73 @@ fn compress_mid_internal(
     Ok(output.pos() - output_start)
 }
 
+#[inline]
+fn encode_match_and_advance(
+    input: &[u8],
+    output: &mut impl Sink,
+    found_match: &Match,
+    literal_start: &mut usize,
+    cur: &mut usize,
+) {
+    found_match.encode_to(input, *literal_start, output);
+    *cur = found_match.end();
+    *literal_start = *cur;
+}
+
+#[inline]
+fn find_following_wider_match(
+    hash_table: &mut HashTableHCU32,
+    input: &[u8],
+    current_match: &Match,
+    end_pos_check: usize,
+    match_limit: usize,
+    ext_dict: &[u8],
+    stream_offset: usize,
+) -> Option<Match> {
+    if current_match.end() > end_pos_check {
+        return None;
+    }
+
+    find_wider_hash_chain_match(
+        hash_table,
+        input,
+        current_match.end() - 2,
+        current_match.start_position as usize,
+        match_limit,
+        current_match.match_length as usize,
+        ext_dict,
+        stream_offset,
+    )
+}
+
+#[inline]
+fn followup_match_overlaps_previous_match(
+    previous_match: &Match,
+    current_match: &Match,
+    next_match: &Match,
+) -> bool {
+    previous_match.start_position < current_match.start_position
+        && (next_match.start_position as usize)
+            < current_match.start_position as usize + previous_match.match_length as usize
+}
+
+#[inline]
+fn next_match_starts_too_close(current_match: &Match, next_match: &Match) -> bool {
+    (next_match.start_position - current_match.start_position) < 3
+}
+
 /// Result of the three-match resolution loop.
 enum ResolveAction {
     /// All matches encoded. `cur` and `literal_start` already advanced.
     Done,
-    /// match1 was encoded. Restart lazy evaluation with the returned `(match1, match0)`.
+    /// `current_match` was encoded. Restart lazy evaluation with the returned matches.
     Restart {
-        next_match1: Match,
-        next_match0: Match,
+        current_match: Match,
+        previous_match: Match,
     },
 }
 
-/// Resolve overlapping matches (match1, match2, and potentially match3).
+/// Resolve overlapping matches (`current_match`, `next_match`, and potentially `third_match`).
 /// Encodes sequences to `output` and advances `cur`/`literal_start`.
 fn resolve_overlapping_matches(
     input: &[u8],
@@ -1802,106 +1864,106 @@ fn resolve_overlapping_matches(
     stream_offset: usize,
     end_pos_check: usize,
     match_limit: usize,
-    match1: &mut Match,
-    match2: &mut Match,
+    current_match: &mut Match,
+    next_match: &mut Match,
     cur: &mut usize,
     literal_start: &mut usize,
 ) -> ResolveAction {
     loop {
-        // Adjust match2 if it overlaps with match1
-        if (match2.start_position - match1.start_position) < OPTIMAL_MATCH_LENGTH as u32 {
-            let mut capped_length = (match1.match_length as usize).min(OPTIMAL_MATCH_LENGTH);
-            if match1.start_position as usize + capped_length
-                > match2.end().saturating_sub(MINMATCH)
+        // Adjust next_match if it overlaps with current_match.
+        if (next_match.start_position - current_match.start_position) < OPTIMAL_MATCH_LENGTH as u32
+        {
+            let mut capped_length = (current_match.match_length as usize).min(OPTIMAL_MATCH_LENGTH);
+            if current_match.start_position as usize + capped_length
+                > next_match.end().saturating_sub(MINMATCH)
             {
-                capped_length = (match2.start_position - match1.start_position) as usize
-                    + (match2.match_length as usize).saturating_sub(MINMATCH);
+                capped_length = (next_match.start_position - current_match.start_position) as usize
+                    + (next_match.match_length as usize).saturating_sub(MINMATCH);
             }
-            let overlap = capped_length
-                .saturating_sub((match2.start_position - match1.start_position) as usize);
+            let overlap = capped_length.saturating_sub(
+                (next_match.start_position - current_match.start_position) as usize,
+            );
             if overlap > 0 {
-                match2.trim_front(overlap);
+                next_match.trim_front(overlap);
             }
         }
 
-        // Try to find match3 near the end of match2
-        let Some(match3) = (match2.end() <= end_pos_check)
+        // Try to find third_match near the end of next_match.
+        let Some(third_match) = (next_match.end() <= end_pos_check)
             .then(|| {
                 find_wider_hash_chain_match(
                     hash_table,
                     input,
-                    match2.end() - 3,
-                    match2.start_position as usize,
+                    next_match.end() - 3,
+                    next_match.start_position as usize,
                     match_limit,
-                    match2.match_length as usize,
+                    next_match.match_length as usize,
                     ext_dict,
                     stream_offset,
                 )
             })
             .flatten()
         else {
-            // No match3 — encode match1 + match2
-            if (match2.start_position as usize) < match1.end() {
-                match1.match_length = match2.start_position - match1.start_position;
+            if (next_match.start_position as usize) < current_match.end() {
+                current_match.match_length =
+                    next_match.start_position - current_match.start_position;
             }
-            match1.encode_to(input, *literal_start, output);
-            *cur = match1.end();
-            *literal_start = *cur;
-            match2.encode_to(input, *literal_start, output);
-            *cur = match2.end();
-            *literal_start = *cur;
+            encode_match_and_advance(input, output, current_match, literal_start, cur);
+            encode_match_and_advance(input, output, next_match, literal_start, cur);
             return ResolveAction::Done;
         };
 
-        let match3_near_match1_end = (match3.start_position as usize) < match1.end() + 3;
+        let third_match_starts_near_current_end =
+            (third_match.start_position as usize) < current_match.end() + 3;
 
-        // match3 starts right after match1 — encode match1, restart lazy with match3
-        if match3_near_match1_end && match3.start_position as usize >= match1.end() {
-            if (match2.start_position as usize) < match1.end() {
-                let overlap = match1.end() - match2.start_position as usize;
-                match2.trim_front(overlap);
-                if (match2.match_length as usize) < MINMATCH {
-                    *match2 = match3;
+        // third_match starts right after current_match — encode current_match, then continue.
+        if third_match_starts_near_current_end
+            && third_match.start_position as usize >= current_match.end()
+        {
+            if (next_match.start_position as usize) < current_match.end() {
+                let overlap = current_match.end() - next_match.start_position as usize;
+                next_match.trim_front(overlap);
+                if (next_match.match_length as usize) < MINMATCH {
+                    *next_match = third_match;
                 }
             }
-            match1.encode_to(input, *literal_start, output);
-            *cur = match1.end();
-            *literal_start = *cur;
+            encode_match_and_advance(input, output, current_match, literal_start, cur);
             return ResolveAction::Restart {
-                next_match1: match3,
-                next_match0: *match2,
+                current_match: third_match,
+                previous_match: *next_match,
             };
         }
 
-        // match3 overlaps with match1 — demote to match2 and retry
-        if match3_near_match1_end {
-            *match2 = match3;
+        // third_match starts too close to current_match — treat it as the new next_match.
+        if third_match_starts_near_current_end {
+            *next_match = third_match;
             continue;
         }
 
-        // Resolve overlap between match1 and match2
-        if (match2.start_position as usize) < match1.end() {
-            if (match2.start_position - match1.start_position) < MATCH_LENGTH_MASK as u32 {
-                if match1.match_length as usize > OPTIMAL_MATCH_LENGTH {
-                    match1.match_length = OPTIMAL_MATCH_LENGTH as u32;
+        // Resolve overlap between current_match and next_match.
+        if (next_match.start_position as usize) < current_match.end() {
+            if (next_match.start_position - current_match.start_position) < MATCH_LENGTH_MASK as u32
+            {
+                if current_match.match_length as usize > OPTIMAL_MATCH_LENGTH {
+                    current_match.match_length = OPTIMAL_MATCH_LENGTH as u32;
                 }
-                if match1.end() > match2.end() - MINMATCH {
-                    match1.match_length =
-                        (match2.end() - match1.start_position as usize - MINMATCH) as u32;
+                if current_match.end() > next_match.end() - MINMATCH {
+                    current_match.match_length = (next_match.end()
+                        - current_match.start_position as usize
+                        - MINMATCH) as u32;
                 }
-                let overlap = match1.end() - match2.start_position as usize;
-                match2.trim_front(overlap);
+                let overlap = current_match.end() - next_match.start_position as usize;
+                next_match.trim_front(overlap);
             } else {
-                match1.match_length = match2.start_position - match1.start_position;
+                current_match.match_length =
+                    next_match.start_position - current_match.start_position;
             }
         }
 
-        // Encode match1, shift match2→match1, match3→match2, continue resolving
-        match1.encode_to(input, *literal_start, output);
-        *cur = match1.end();
-        *literal_start = *cur;
-        *match1 = *match2;
-        *match2 = match3;
+        // Encode current_match, then continue resolving with next_match and third_match.
+        encode_match_and_advance(input, output, current_match, literal_start, cur);
+        *current_match = *next_match;
+        *next_match = third_match;
     }
 }
 
@@ -1930,9 +1992,9 @@ fn compress_hash_chain_internal(
 
     let mut cur = input_pos + 1;
     let mut literal_start = input_pos;
-    let mut match0;
-    let mut match1;
-    let mut match2;
+    let mut previous_match;
+    let mut current_match;
+    let mut next_match;
 
     while cur < end_pos_check {
         let Some(found_match) = find_best_hash_chain_match(
@@ -1947,58 +2009,45 @@ fn compress_hash_chain_internal(
             continue;
         };
 
-        match1 = found_match;
-        match0 = match1;
+        current_match = found_match;
+        previous_match = current_match;
 
-        // Lazy match evaluation: try to find better matches ahead.
-        // Each iteration holds match1 (current best). We search for match2 near
-        // match1's end. If match2 is better, we resolve overlaps (possibly finding
-        // match3) and either emit sequences or loop back with an updated match1.
+        // Lazy match evaluation: start from current_match and keep looking slightly ahead.
         loop {
-            debug_assert!(match1.start_position as usize >= literal_start);
+            debug_assert!(current_match.start_position as usize >= literal_start);
 
-            // Try to find a wider match starting near the end of match1
-            let next_match = if match1.end() > end_pos_check {
-                None
-            } else {
-                find_wider_hash_chain_match(
-                    hash_table,
+            let Some(found_match) = find_following_wider_match(
+                hash_table,
+                input,
+                &current_match,
+                end_pos_check,
+                match_limit,
+                ext_dict,
+                stream_offset,
+            ) else {
+                encode_match_and_advance(
                     input,
-                    match1.end() - 2,
-                    match1.start_position as usize,
-                    match_limit,
-                    match1.match_length as usize,
-                    ext_dict,
-                    stream_offset,
-                )
-            };
-
-            let Some(found_match) = next_match else {
-                // No better match found — encode match1
-                match1.encode_to(input, literal_start, output);
-                cur = match1.end();
-                literal_start = cur;
+                    output,
+                    &current_match,
+                    &mut literal_start,
+                    &mut cur,
+                );
                 break;
             };
 
-            match2 = found_match;
+            next_match = found_match;
 
-            // Prefer match0 over match1 if match2 overlaps with match0's range
-            if match0.start_position < match1.start_position
-                && (match2.start_position as usize)
-                    < match1.start_position as usize + match0.match_length as usize
+            if followup_match_overlaps_previous_match(&previous_match, &current_match, &next_match)
             {
-                match1 = match0;
+                current_match = previous_match;
             }
-            debug_assert!(match2.start_position >= match1.start_position);
+            debug_assert!(next_match.start_position >= current_match.start_position);
 
-            // If match2 is very close to match1, just use match2 and retry
-            if (match2.start_position - match1.start_position) < 3 {
-                match1 = match2;
+            if next_match_starts_too_close(&current_match, &next_match) {
+                current_match = next_match;
                 continue;
             }
 
-            // Resolve overlaps between match1, match2, and potentially match3
             match resolve_overlapping_matches(
                 input,
                 output,
@@ -2007,19 +2056,18 @@ fn compress_hash_chain_internal(
                 stream_offset,
                 end_pos_check,
                 match_limit,
-                &mut match1,
-                &mut match2,
+                &mut current_match,
+                &mut next_match,
                 &mut cur,
                 &mut literal_start,
             ) {
                 ResolveAction::Done => break,
                 ResolveAction::Restart {
-                    next_match1,
-                    next_match0,
+                    current_match: restart_match,
+                    previous_match: restart_previous_match,
                 } => {
-                    match1 = next_match1;
-                    match0 = next_match0;
-                    continue;
+                    current_match = restart_match;
+                    previous_match = restart_previous_match;
                 }
             }
         }
@@ -2029,49 +2077,50 @@ fn compress_hash_chain_internal(
     Ok(output.pos() - output_start_pos)
 }
 
-/// Reverse the optimal parse path: walk backward from `start`, swapping each state's
-/// `(match_len, match_offset)` with the values from the next step forward.
-/// After this, `opt[0..last_match_pos)` can be read forward to emit sequences.
+/// Reverse the optimal parse path: walk backward from `start_state_index`, swapping each
+/// state's `(match_len, match_offset)` with the values from the next step forward.
+/// After this, `optimal_states[0..last_match_state_index)` can be read forward to emit sequences.
 #[inline]
 fn reverse_optimal_parse_path(
-    opt: &mut [OptimalState],
-    start: usize,
+    optimal_states: &mut [OptimalState],
+    start_state_index: usize,
     mut match_length: i32,
     mut match_offset: i32,
 ) {
-    let mut pos = start;
+    let mut optimal_state_index = start_state_index;
     loop {
-        let next_match_length = opt[pos].match_len;
-        let next_match_offset = opt[pos].match_offset;
-        opt[pos].match_len = match_length;
-        opt[pos].match_offset = match_offset;
+        let next_match_length = optimal_states[optimal_state_index].match_len;
+        let next_match_offset = optimal_states[optimal_state_index].match_offset;
+        optimal_states[optimal_state_index].match_len = match_length;
+        optimal_states[optimal_state_index].match_offset = match_offset;
         match_length = next_match_length;
         match_offset = next_match_offset;
-        if (next_match_length as usize) > pos {
+        if (next_match_length as usize) > optimal_state_index {
             break;
         }
-        pos -= next_match_length as usize;
+        optimal_state_index -= next_match_length as usize;
     }
 }
 
-/// Emit LZ4 sequences from optimal states `opt[0..last_match_pos)` (`match_len == 1` is one literal step).
+/// Emit LZ4 sequences from optimal states `optimal_states[0..last_match_state_index)`.
+/// `match_len == 1` means one literal step.
 #[inline]
 fn encode_optimal_parse_path(
-    opt: &[OptimalState],
-    last_match_pos: usize,
+    optimal_states: &[OptimalState],
+    last_match_state_index: usize,
     input: &[u8],
     literal_start: &mut usize,
     cur: &mut usize,
     output: &mut impl Sink,
 ) {
-    let mut pos: usize = 0;
-    while pos < last_match_pos {
-        let match_length = opt[pos].match_len as usize;
-        let match_offset = opt[pos].match_offset as u16;
+    let mut optimal_state_index = 0usize;
+    while optimal_state_index < last_match_state_index {
+        let match_length = optimal_states[optimal_state_index].match_len as usize;
+        let match_offset = optimal_states[optimal_state_index].match_offset as u16;
 
         if match_length == 1 {
             *cur += 1;
-            pos += 1;
+            optimal_state_index += 1;
             continue;
         }
 
@@ -2084,8 +2133,194 @@ fn encode_optimal_parse_path(
 
         *cur += match_length;
         *literal_start = *cur;
-        pos += match_length;
+        optimal_state_index += match_length;
     }
+}
+
+#[inline]
+fn initialize_literal_states(optimal_states: &mut [OptimalState], literal_length: i32) {
+    for literal_step in 0..MINMATCH as i32 {
+        let state = &mut optimal_states[literal_step as usize];
+        state.match_len = 1;
+        state.match_offset = 0;
+        state.lit_len = literal_length + literal_step;
+        state.path_cost = literals_price(literal_length + literal_step);
+    }
+}
+
+#[inline]
+fn initialize_first_match_states(
+    optimal_states: &mut [OptimalState],
+    literal_length: i32,
+    first_match_length: usize,
+    first_match_offset: u16,
+) -> usize {
+    debug_assert!(first_match_length < LZ4_OPT_NUM);
+    for match_length in MINMATCH..=first_match_length {
+        let state = &mut optimal_states[match_length];
+        state.match_len = match_length as i32;
+        state.match_offset = first_match_offset as i32;
+        state.lit_len = literal_length;
+        state.path_cost = sequence_price(literal_length, match_length as i32);
+    }
+    first_match_length
+}
+
+#[inline]
+fn fill_trailing_literal_states(
+    optimal_states: &mut [OptimalState],
+    last_match_state_index: usize,
+) {
+    let base_path_cost = optimal_states[last_match_state_index].path_cost;
+    for trailing_literal_length in 1..=TRAILING_LITERALS as i32 {
+        let state_index = last_match_state_index + trailing_literal_length as usize;
+        if state_index >= optimal_states.len() {
+            break;
+        }
+        let state = &mut optimal_states[state_index];
+        state.match_len = 1;
+        state.match_offset = 0;
+        state.lit_len = trailing_literal_length;
+        state.path_cost = base_path_cost + literals_price(trailing_literal_length);
+    }
+}
+
+#[inline]
+fn should_skip_optimal_search(
+    optimal_states: &[OptimalState],
+    scan_offset: usize,
+    full_optimal_update: bool,
+) -> bool {
+    if full_optimal_update {
+        optimal_states[scan_offset + 1].path_cost <= optimal_states[scan_offset].path_cost
+            && optimal_states[scan_offset + MINMATCH].path_cost
+                < optimal_states[scan_offset].path_cost + 3
+    } else {
+        optimal_states[scan_offset + 1].path_cost <= optimal_states[scan_offset].path_cost
+    }
+}
+
+#[inline]
+fn minimum_match_length_to_improve(
+    full_optimal_update: bool,
+    last_match_state_index: usize,
+    scan_offset: usize,
+) -> usize {
+    if full_optimal_update {
+        MINMATCH - 1
+    } else {
+        last_match_state_index - scan_offset
+    }
+}
+
+#[inline]
+fn should_encode_optimal_match_early(
+    match_length: usize,
+    scan_offset: usize,
+    sufficient_match_len: usize,
+) -> bool {
+    match_length >= sufficient_match_len || match_length + scan_offset >= LZ4_OPT_NUM
+}
+
+#[inline]
+fn update_literal_states_before_match(optimal_states: &mut [OptimalState], scan_offset: usize) {
+    let base_literal_length = optimal_states[scan_offset].lit_len;
+    let base_path_cost = optimal_states[scan_offset].path_cost;
+    let base_literal_cost = literals_price(base_literal_length);
+
+    for literal_step in 1..MINMATCH as i32 {
+        let state_index = scan_offset + literal_step as usize;
+        let path_cost =
+            base_path_cost - base_literal_cost + literals_price(base_literal_length + literal_step);
+        if path_cost < optimal_states[state_index].path_cost {
+            let state = &mut optimal_states[state_index];
+            state.match_len = 1;
+            state.match_offset = 0;
+            state.lit_len = base_literal_length + literal_step;
+            state.path_cost = path_cost;
+        }
+    }
+}
+
+#[inline]
+fn match_price_from_state(
+    optimal_states: &[OptimalState],
+    scan_offset: usize,
+    match_length: i32,
+) -> (i32, i32) {
+    if optimal_states[scan_offset].match_len == 1 {
+        let literal_length = optimal_states[scan_offset].lit_len;
+        let previous_sequence_cost = if scan_offset as i32 > literal_length {
+            optimal_states[scan_offset - literal_length as usize].path_cost
+        } else {
+            0
+        };
+        (
+            literal_length,
+            previous_sequence_cost + sequence_price(literal_length, match_length),
+        )
+    } else {
+        (
+            0,
+            optimal_states[scan_offset].path_cost + sequence_price(0, match_length),
+        )
+    }
+}
+
+#[inline]
+fn update_match_states_from_position(
+    optimal_states: &mut [OptimalState],
+    scan_offset: usize,
+    new_match_length: usize,
+    new_match_offset: u16,
+    last_match_state_index: &mut usize,
+) {
+    let capped_match_length = new_match_length.min(LZ4_OPT_NUM - scan_offset - 1);
+    for match_length in MINMATCH..=capped_match_length {
+        let state_index = scan_offset + match_length;
+        let (literal_prefix_length, path_cost) =
+            match_price_from_state(optimal_states, scan_offset, match_length as i32);
+
+        if state_index > *last_match_state_index + TRAILING_LITERALS
+            || path_cost <= optimal_states[state_index].path_cost
+        {
+            if match_length == capped_match_length && *last_match_state_index < state_index {
+                *last_match_state_index = state_index;
+            }
+            let state = &mut optimal_states[state_index];
+            state.match_len = match_length as i32;
+            state.match_offset = new_match_offset as i32;
+            state.lit_len = literal_prefix_length;
+            state.path_cost = path_cost;
+        }
+    }
+}
+
+#[inline]
+fn finish_optimal_parse_path(
+    optimal_states: &mut [OptimalState],
+    last_match_state_index: usize,
+    input: &[u8],
+    literal_start: &mut usize,
+    cur: &mut usize,
+    output: &mut impl Sink,
+) {
+    let match_length = optimal_states[last_match_state_index].match_len;
+    let match_offset = optimal_states[last_match_state_index].match_offset;
+    reverse_optimal_parse_path(
+        optimal_states,
+        last_match_state_index - match_length as usize,
+        match_length,
+        match_offset,
+    );
+    encode_optimal_parse_path(
+        optimal_states,
+        last_match_state_index,
+        input,
+        literal_start,
+        cur,
+        output,
+    );
 }
 
 /// Internal optimal parsing compression implementation
@@ -2124,13 +2359,11 @@ fn compress_opt_internal(
 
     let mut literal_start = input_pos;
     let mut cur = input_pos;
-
-    let mut opt = vec![OptimalState::SENTINEL; LZ4_OPT_NUM + TRAILING_LITERALS];
-
+    let mut optimal_states = vec![OptimalState::SENTINEL; LZ4_OPT_NUM + TRAILING_LITERALS];
     let sufficient_match_len = sufficient_match_len.min(LZ4_OPT_NUM - 1);
 
     while cur <= end_pos_check {
-        let lit_len = (cur - literal_start) as i32;
+        let literal_length = (cur - literal_start) as i32;
 
         let (first_match_length, first_match_offset) = find_longer_hash_chain_match(
             hash_table,
@@ -2147,7 +2380,6 @@ fn compress_opt_internal(
         }
         let first_match_length = first_match_length as usize;
 
-        // If match is good enough, encode immediately
         if first_match_length >= sufficient_match_len {
             encode_sequence(
                 &input[literal_start..cur],
@@ -2160,79 +2392,39 @@ fn compress_opt_internal(
             continue;
         }
 
-        // Initialize optimal parsing state for literals
-        for opt_offset in 0..MINMATCH as i32 {
-            let cost = literals_price(lit_len + opt_offset);
-            opt[opt_offset as usize].match_len = 1;
-            opt[opt_offset as usize].match_offset = 0;
-            opt[opt_offset as usize].lit_len = lit_len + opt_offset;
-            opt[opt_offset as usize].path_cost = cost;
-        }
+        initialize_literal_states(&mut optimal_states, literal_length);
+        let mut last_match_state_index = initialize_first_match_states(
+            &mut optimal_states,
+            literal_length,
+            first_match_length,
+            first_match_offset,
+        );
+        fill_trailing_literal_states(&mut optimal_states, last_match_state_index);
 
-        // Set prices using initial match
-        let first_match_length_capped = first_match_length.min(LZ4_OPT_NUM - 1);
-        #[allow(clippy::needless_range_loop)]
-        for match_length in MINMATCH..=first_match_length_capped {
-            let cost = sequence_price(lit_len, match_length as i32);
-            opt[match_length].match_len = match_length as i32;
-            opt[match_length].match_offset = first_match_offset as i32;
-            opt[match_length].lit_len = lit_len;
-            opt[match_length].path_cost = cost;
-        }
-
-        let mut last_match_pos = first_match_length;
-
-        // Add trailing literals after the match
-        for trail in 1..=TRAILING_LITERALS {
-            let opt_index = last_match_pos + trail;
-            if opt_index < opt.len() {
-                opt[opt_index].match_len = 1; // literal
-                opt[opt_index].match_offset = 0;
-                opt[opt_index].lit_len = trail as i32;
-                opt[opt_index].path_cost =
-                    opt[last_match_pos].path_cost + literals_price(trail as i32);
-            }
-        }
-
-        // Refine costs along the optimal window; may encode a prefix and restart the main step.
-        let mut early_encode = false;
-        let mut scan_offset: usize = 1;
-        while scan_offset < last_match_pos {
+        let mut encoded_prefix_early = false;
+        let mut scan_offset = 1usize;
+        while scan_offset < last_match_state_index {
             let scan_pos = cur + scan_offset;
-
             if scan_pos > end_pos_check {
                 break;
             }
 
-            if full_optimal_update {
-                // Not useful to search here if next position has same (or lower) cost
-                if opt[scan_offset + 1].path_cost <= opt[scan_offset].path_cost
-                    && opt[scan_offset + MINMATCH].path_cost < opt[scan_offset].path_cost + 3
-                {
-                    scan_offset += 1;
-                    continue;
-                }
-            } else {
-                // Not useful to search here if next position has same (or lower) cost
-                if opt[scan_offset + 1].path_cost <= opt[scan_offset].path_cost {
-                    scan_offset += 1;
-                    continue;
-                }
+            if should_skip_optimal_search(&optimal_states, scan_offset, full_optimal_update) {
+                scan_offset += 1;
+                continue;
             }
 
-            // Find longer match at current position
-            let min_match_length = if full_optimal_update {
-                MINMATCH - 1
-            } else {
-                last_match_pos - scan_offset
-            };
-
+            let minimum_match_length = minimum_match_length_to_improve(
+                full_optimal_update,
+                last_match_state_index,
+                scan_offset,
+            );
             let (new_match_length, new_match_offset) = find_longer_hash_chain_match(
                 hash_table,
                 input,
                 scan_pos,
                 match_limit,
-                min_match_length,
+                minimum_match_length,
                 ext_dict,
                 stream_offset,
             );
@@ -2242,127 +2434,58 @@ fn compress_opt_internal(
             }
             let new_match_length = new_match_length as usize;
 
-            // If match is good enough or extends beyond buffer, encode immediately
-            if new_match_length >= sufficient_match_len
-                || new_match_length + scan_offset >= LZ4_OPT_NUM
-            {
-                // Set last_match_pos = scan_offset + 1 as in C code
-                last_match_pos = scan_offset + 1;
-
+            if should_encode_optimal_match_early(
+                new_match_length,
+                scan_offset,
+                sufficient_match_len,
+            ) {
+                last_match_state_index = scan_offset + 1;
                 reverse_optimal_parse_path(
-                    &mut opt,
+                    &mut optimal_states,
                     scan_offset,
                     new_match_length as i32,
                     new_match_offset as i32,
                 );
-
                 encode_optimal_parse_path(
-                    &opt,
-                    last_match_pos,
+                    &optimal_states,
+                    last_match_state_index,
                     input,
                     &mut literal_start,
                     &mut cur,
                     output,
                 );
-
-                early_encode = true;
+                encoded_prefix_early = true;
                 break;
             }
 
-            // Update prices for literals before the match
-            {
-                let base_lit_len = opt[scan_offset].lit_len;
-                for lit_step in 1..MINMATCH as i32 {
-                    let opt_index = scan_offset + lit_step as usize;
-                    let price = opt[scan_offset].path_cost - literals_price(base_lit_len)
-                        + literals_price(base_lit_len + lit_step);
-                    if price < opt[opt_index].path_cost {
-                        opt[opt_index].match_len = 1; // literal
-                        opt[opt_index].match_offset = 0;
-                        opt[opt_index].lit_len = base_lit_len + lit_step;
-                        opt[opt_index].path_cost = price;
-                    }
-                }
-            }
-
-            // Set prices using match at current position
-            {
-                let new_match_length_capped = new_match_length.min(LZ4_OPT_NUM - scan_offset - 1);
-                for match_length in MINMATCH..=new_match_length_capped {
-                    let opt_index = scan_offset + match_length;
-                    let (literal_prefix, price) = if opt[scan_offset].match_len == 1 {
-                        let lit_len = opt[scan_offset].lit_len;
-                        let base_price = if scan_offset as i32 > lit_len {
-                            opt[scan_offset - lit_len as usize].path_cost
-                        } else {
-                            0
-                        };
-                        (
-                            lit_len,
-                            base_price + sequence_price(lit_len, match_length as i32),
-                        )
-                    } else {
-                        (
-                            0,
-                            opt[scan_offset].path_cost + sequence_price(0, match_length as i32),
-                        )
-                    };
-
-                    if opt_index > last_match_pos + TRAILING_LITERALS
-                        || price <= opt[opt_index].path_cost
-                    {
-                        if match_length == new_match_length_capped && last_match_pos < opt_index {
-                            last_match_pos = opt_index;
-                        }
-                        opt[opt_index].match_len = match_length as i32;
-                        opt[opt_index].match_offset = new_match_offset as i32;
-                        opt[opt_index].lit_len = literal_prefix;
-                        opt[opt_index].path_cost = price;
-                    }
-                }
-            }
-
-            // Complete following positions with literals
-            for trail in 1..=TRAILING_LITERALS as i32 {
-                let opt_index = last_match_pos + trail as usize;
-                opt[opt_index].match_len = 1; // literal
-                opt[opt_index].match_offset = 0;
-                opt[opt_index].lit_len = trail;
-                opt[opt_index].path_cost = opt[last_match_pos].path_cost + literals_price(trail);
-            }
-
+            update_literal_states_before_match(&mut optimal_states, scan_offset);
+            update_match_states_from_position(
+                &mut optimal_states,
+                scan_offset,
+                new_match_length,
+                new_match_offset,
+                &mut last_match_state_index,
+            );
+            fill_trailing_literal_states(&mut optimal_states, last_match_state_index);
             scan_offset += 1;
         }
 
-        if early_encode {
+        if encoded_prefix_early {
             continue;
         }
 
-        // Reverse traversal to find the optimal path
-        {
-            let match_length = opt[last_match_pos].match_len;
-            let match_offset = opt[last_match_pos].match_offset;
-            reverse_optimal_parse_path(
-                &mut opt,
-                last_match_pos - match_length as usize,
-                match_length,
-                match_offset,
-            );
-        }
-
-        encode_optimal_parse_path(
-            &opt,
-            last_match_pos,
+        finish_optimal_parse_path(
+            &mut optimal_states,
+            last_match_state_index,
             input,
             &mut literal_start,
             &mut cur,
             output,
         );
 
-        // No opt buffer reset needed (matches C behavior)
+        // No optimal-state reset needed (matches C behavior).
     }
 
-    // Handle remaining literals
     handle_last_literals(output, &input[literal_start..input_end]);
     Ok(output.pos() - output_start_pos)
 }
