@@ -160,7 +160,7 @@ fn block_compress_hc() {
         group.set_name(format!("{}", data.len()));
         group.set_input_size(data.len());
 
-        for level in [3u8, 5, 9, 12] {
+        for level in [2u8, 3u8, 5, 9, 12] {
             group.register_with_input(format!("lz4_flex_level_{level}"), data, move |i| {
                 let out = black_box(lz4_flex::block::compress_hc_to_vec(i, level));
                 out.len()
