@@ -33,9 +33,13 @@ impl HashTableMid {
     }
 
     /// Reset the table for reuse by zeroing both hash tables.
+    /// Reset the table for reuse.
+    ///
+    /// Stale entries are harmless: `resolve_candidate` bounds-checks every
+    /// position before use, so old entries just fail the match attempt.
+    /// Skipping the 128 KB memset is a large win for small inputs.
     pub(super) fn reset(&mut self) {
-        self.table_4byte.fill(0);
-        self.table_8byte.fill(0);
+        // Intentionally not zeroed — see resolve_candidate.
     }
 
     /// Prepare the table for a new linked block without clearing entries.
@@ -70,6 +74,7 @@ impl HashTableMid {
 
     /// Insert hashes near both ends of a just-encoded match so future searches can
     /// find overlapping sequences.
+    #[inline(always)]
     fn insert_match_hashes(
         &mut self,
         input: &[u8],
@@ -192,13 +197,17 @@ impl<'a> MidMatchFinder<'a> {
             return None;
         }
         if candidate >= self.stream_offset {
-            Some((self.input, candidate - self.stream_offset, distance))
+            let local_pos = candidate - self.stream_offset;
+            if local_pos >= self.input.len() {
+                return None;
+            }
+            Some((self.input, local_pos, distance))
         } else if !self.ext_dict.is_empty() && candidate >= self.ext_dict_stream_offset {
-            Some((
-                self.ext_dict,
-                candidate - self.ext_dict_stream_offset,
-                distance,
-            ))
+            let local_pos = candidate - self.ext_dict_stream_offset;
+            if local_pos >= self.ext_dict.len() {
+                return None;
+            }
+            Some((self.ext_dict, local_pos, distance))
         } else {
             None
         }
@@ -290,14 +299,10 @@ impl<'a> MidMatchFinder<'a> {
             &mut candidate,
         );
 
-        let mut match_end = match_start;
-        let match_length = count_same_bytes(
-            self.input,
-            &mut match_end,
-            match_candidate.source,
-            candidate,
-            self.match_limit,
-        );
+        // probe_candidate already counted forward; backtracking only extends backwards.
+        let backtrack_length = match_candidate.cur - match_start;
+        let match_length = match_candidate.match_length + backtrack_length;
+        let match_end = match_candidate.cur + match_candidate.match_length;
 
         FinalizedMatch {
             match_start,

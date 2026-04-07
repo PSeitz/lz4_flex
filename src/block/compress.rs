@@ -485,6 +485,7 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool, S: Sink>(
     }
 }
 
+#[inline(always)]
 pub(crate) fn encode_sequence<S: Sink>(
     literal: &[u8],
     output: &mut S,
