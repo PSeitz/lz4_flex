@@ -128,28 +128,207 @@ fn get_hash8_mid(input: &[u8], pos: usize) -> usize {
     ((lower_56_bits.wrapping_mul(58295818150454627)) >> (64 - LZ4MID_HASH_LOG)) as usize
 }
 
-/// Resolve an absolute hash table position to a source slice and local index.
-/// Returns `None` if the candidate is out of range or unreachable.
-/// Returns `(source, local_index, distance)` on success.
-#[inline]
-fn resolve_candidate<'a>(
+struct MatchCandidate<'a> {
+    cur: usize,
+    source: &'a [u8],
     candidate: usize,
-    cur_absolute: usize,
+    match_length: usize,
+    offset: u16,
+}
+
+struct FinalizedMatch {
+    match_start: usize,
+    match_end: usize,
+    match_length: usize,
+    offset: u16,
+}
+
+struct MidMatchFinder<'a> {
     input: &'a [u8],
-    stream_offset: usize,
     ext_dict: &'a [u8],
+    table: &'a mut HashTableMid,
+    stream_offset: usize,
     ext_dict_stream_offset: usize,
-) -> Option<(&'a [u8], usize, usize)> {
-    let distance = cur_absolute.wrapping_sub(candidate);
-    if distance == 0 || distance > MAX_DISTANCE {
-        return None;
+    end_pos_check: usize,
+    match_limit: usize,
+    input_end: usize,
+}
+
+impl<'a> MidMatchFinder<'a> {
+    #[inline]
+    fn new(
+        input: &'a [u8],
+        ext_dict: &'a [u8],
+        table: &'a mut HashTableMid,
+        stream_offset: usize,
+        end_pos_check: usize,
+        match_limit: usize,
+        input_end: usize,
+    ) -> Self {
+        MidMatchFinder {
+            input,
+            ext_dict,
+            table,
+            stream_offset,
+            ext_dict_stream_offset: stream_offset - ext_dict.len(),
+            end_pos_check,
+            match_limit,
+            input_end,
+        }
     }
-    if candidate >= stream_offset {
-        Some((input, candidate - stream_offset, distance))
-    } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
-        Some((ext_dict, candidate - ext_dict_stream_offset, distance))
-    } else {
-        None
+
+    #[inline]
+    fn cur_absolute(&self, cur: usize) -> usize {
+        cur + self.stream_offset
+    }
+
+    /// Resolve an absolute hash table position to a source slice and local index.
+    /// Returns `None` if the candidate is out of range or unreachable.
+    /// Returns `(source, local_index, distance)` on success.
+    #[inline]
+    fn resolve_candidate(&self, candidate: usize, cur: usize) -> Option<(&'a [u8], usize, usize)> {
+        let distance = self.cur_absolute(cur).wrapping_sub(candidate);
+        if distance == 0 || distance > MAX_DISTANCE {
+            return None;
+        }
+        if candidate >= self.stream_offset {
+            Some((self.input, candidate - self.stream_offset, distance))
+        } else if !self.ext_dict.is_empty() && candidate >= self.ext_dict_stream_offset {
+            Some((
+                self.ext_dict,
+                candidate - self.ext_dict_stream_offset,
+                distance,
+            ))
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    fn probe_candidate(&self, cur: usize, candidate: usize) -> Option<MatchCandidate<'a>> {
+        let (source, candidate, distance) = self.resolve_candidate(candidate, cur)?;
+
+        let mut match_end = cur;
+        let match_length = count_same_bytes(
+            self.input,
+            &mut match_end,
+            source,
+            candidate,
+            self.match_limit,
+        );
+        if match_length < MINMATCH {
+            return None;
+        }
+
+        Some(MatchCandidate {
+            cur,
+            source,
+            candidate,
+            match_length,
+            offset: distance as u16,
+        })
+    }
+
+    #[inline]
+    fn probe_8byte(&mut self, cur: usize) -> Option<MatchCandidate<'a>> {
+        let hash = get_hash8_mid(self.input, cur);
+        let candidate = self.table.table_8byte[hash] as usize;
+        let cur_absolute = self.cur_absolute(cur);
+        self.table.table_8byte[hash] = cur_absolute as u32;
+        self.probe_candidate(cur, candidate)
+    }
+
+    #[inline]
+    fn probe_4byte(&mut self, cur: usize) -> Option<MatchCandidate<'a>> {
+        let hash = get_hash4_mid(self.input, cur);
+        let candidate = self.table.table_4byte[hash] as usize;
+        let cur_absolute = self.cur_absolute(cur);
+        self.table.table_4byte[hash] = cur_absolute as u32;
+        self.probe_candidate(cur, candidate)
+    }
+
+    #[inline]
+    fn upgrade_with_8byte_lookahead(
+        &mut self,
+        cur: usize,
+        match_candidate: &mut MatchCandidate<'a>,
+    ) {
+        if cur >= self.end_pos_check {
+            return;
+        }
+
+        let lookahead_cur = cur + 1;
+        let lookahead_hash = get_hash8_mid(self.input, lookahead_cur);
+        let lookahead_candidate = self.table.table_8byte[lookahead_hash] as usize;
+        let lookahead_match = self.probe_candidate(lookahead_cur, lookahead_candidate);
+        let Some(lookahead_match) = lookahead_match else {
+            return;
+        };
+
+        if lookahead_match.match_length <= match_candidate.match_length {
+            return;
+        }
+
+        let lookahead_absolute = self.cur_absolute(lookahead_cur);
+        self.table.table_8byte[lookahead_hash] = lookahead_absolute as u32;
+        *match_candidate = lookahead_match;
+    }
+
+    #[inline]
+    fn finalize_match(
+        &self,
+        literal_start: usize,
+        match_candidate: MatchCandidate<'a>,
+    ) -> FinalizedMatch {
+        let mut match_start = match_candidate.cur;
+        let mut candidate = match_candidate.candidate;
+        backtrack_match(
+            self.input,
+            &mut match_start,
+            literal_start,
+            match_candidate.source,
+            &mut candidate,
+        );
+
+        let mut match_end = match_start;
+        let match_length = count_same_bytes(
+            self.input,
+            &mut match_end,
+            match_candidate.source,
+            candidate,
+            self.match_limit,
+        );
+
+        FinalizedMatch {
+            match_start,
+            match_end,
+            match_length,
+            offset: match_candidate.offset,
+        }
+    }
+
+    #[inline]
+    fn encode_match(
+        &mut self,
+        output: &mut impl Sink,
+        literal_start: usize,
+        match_candidate: MatchCandidate<'a>,
+    ) -> usize {
+        let finalized_match = self.finalize_match(literal_start, match_candidate);
+        self.table.insert_match_hashes(
+            self.input,
+            finalized_match.match_start,
+            finalized_match.match_end,
+            self.input_end,
+            self.stream_offset,
+        );
+        encode_sequence(
+            &self.input[literal_start..finalized_match.match_start],
+            output,
+            finalized_match.offset,
+            finalized_match.match_length - MINMATCH,
+        );
+        finalized_match.match_end
     }
 }
 
@@ -171,8 +350,6 @@ pub(super) fn compress_mid_internal(
         return Ok(output.pos() - output_start);
     }
 
-    let ext_dict_stream_offset = stream_offset - ext_dict.len();
-
     let mut cur = input_pos;
     let mut literal_start = input_pos;
     let input_end = input.len();
@@ -180,149 +357,29 @@ pub(super) fn compress_mid_internal(
     let end_pos_check = input_end.saturating_sub(MFLIMIT);
     // Exclusive end for extending matches: last `END_OFFSET` bytes are handled as literals/trailer.
     let match_limit = input_end - END_OFFSET;
+    let mut match_finder = MidMatchFinder::new(
+        input,
+        ext_dict,
+        table,
+        stream_offset,
+        end_pos_check,
+        match_limit,
+        input_end,
+    );
 
     while cur <= end_pos_check {
-        let cur_absolute = cur + stream_offset;
-
-        // Try 8-byte hash first
-        let hash_8byte = get_hash8_mid(input, cur);
-        let candidate_8byte = table.table_8byte[hash_8byte] as usize;
-        table.table_8byte[hash_8byte] = cur_absolute as u32;
-
-        if let Some((source_8byte, candidate_8byte_pos, distance_8byte)) = resolve_candidate(
-            candidate_8byte,
-            cur_absolute,
-            input,
-            stream_offset,
-            ext_dict,
-            ext_dict_stream_offset,
-        ) {
-            let mut probe = cur;
-            let match_len = count_same_bytes(
-                input,
-                &mut probe,
-                source_8byte,
-                candidate_8byte_pos,
-                match_limit,
-            );
-            if match_len >= MINMATCH {
-                let mut match_start = cur;
-                let mut candidate = candidate_8byte_pos;
-                backtrack_match(
-                    input,
-                    &mut match_start,
-                    literal_start,
-                    source_8byte,
-                    &mut candidate,
-                );
-                let mut match_end = match_start;
-                let match_len =
-                    count_same_bytes(input, &mut match_end, source_8byte, candidate, match_limit);
-                let offset = distance_8byte as u16;
-
-                table.insert_match_hashes(input, match_start, match_end, input_end, stream_offset);
-                encode_sequence(
-                    &input[literal_start..match_start],
-                    output,
-                    offset,
-                    match_len - MINMATCH,
-                );
-
-                cur = match_end;
-                literal_start = cur;
-                continue;
-            }
+        if let Some(match_candidate) = match_finder.probe_8byte(cur) {
+            cur = match_finder.encode_match(output, literal_start, match_candidate);
+            literal_start = cur;
+            continue;
         }
 
-        // Try 4-byte hash
-        let hash_4byte = get_hash4_mid(input, cur);
-        let candidate_4byte = table.table_4byte[hash_4byte] as usize;
-        table.table_4byte[hash_4byte] = cur_absolute as u32;
-
-        if let Some((source_4byte, candidate_4byte_pos, distance_4byte)) = resolve_candidate(
-            candidate_4byte,
-            cur_absolute,
-            input,
-            stream_offset,
-            ext_dict,
-            ext_dict_stream_offset,
-        ) {
-            let mut probe = cur;
-            let match_len = count_same_bytes(
-                input,
-                &mut probe,
-                source_4byte,
-                candidate_4byte_pos,
-                match_limit,
-            );
-            if match_len >= MINMATCH {
-                let mut best_cur = cur;
-                let mut best_source: &[u8] = source_4byte;
-                let mut best_candidate = candidate_4byte_pos;
-                let mut best_len = match_len;
-                let mut best_distance = distance_4byte;
-
-                if cur < end_pos_check {
-                    let hash_8byte_next = get_hash8_mid(input, cur + 1);
-                    let candidate_8byte_next = table.table_8byte[hash_8byte_next] as usize;
-                    if let Some((
-                        source_8byte_next,
-                        candidate_8byte_next_pos,
-                        distance_8byte_next,
-                    )) = resolve_candidate(
-                        candidate_8byte_next,
-                        cur_absolute + 1,
-                        input,
-                        stream_offset,
-                        ext_dict,
-                        ext_dict_stream_offset,
-                    ) {
-                        let mut probe_next = cur + 1;
-                        let len_next = count_same_bytes(
-                            input,
-                            &mut probe_next,
-                            source_8byte_next,
-                            candidate_8byte_next_pos,
-                            match_limit,
-                        );
-                        if len_next > best_len {
-                            table.table_8byte[hash_8byte_next] = (cur + 1 + stream_offset) as u32;
-                            best_cur = cur + 1;
-                            best_source = source_8byte_next;
-                            best_candidate = candidate_8byte_next_pos;
-                            best_len = len_next;
-                            best_distance = distance_8byte_next;
-                        }
-                    }
-                }
-                let _ = best_len;
-
-                let mut match_start = best_cur;
-                let mut candidate = best_candidate;
-                backtrack_match(
-                    input,
-                    &mut match_start,
-                    literal_start,
-                    best_source,
-                    &mut candidate,
-                );
-                let mut match_end = match_start;
-                let match_len =
-                    count_same_bytes(input, &mut match_end, best_source, candidate, match_limit);
-                let offset = best_distance as u16;
-
-                table.insert_match_hashes(input, match_start, match_end, input_end, stream_offset);
-                encode_sequence(
-                    &input[literal_start..match_start],
-                    output,
-                    offset,
-                    match_len - MINMATCH,
-                );
-
-                cur = match_end;
-                literal_start = cur;
-                continue;
-            }
+        // Try 4-byte hash, then look one byte ahead in the 8-byte table for a better match.
+        if let Some(mut match_candidate) = match_finder.probe_4byte(cur) {
+            match_finder.upgrade_with_8byte_lookahead(cur, &mut match_candidate);
+            cur = match_finder.encode_match(output, literal_start, match_candidate);
+            literal_start = cur;
+            continue;
         }
 
         // No match - skip with acceleration
