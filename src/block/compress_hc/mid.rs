@@ -204,7 +204,7 @@ impl<'a> MidMatchFinder<'a> {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn probe_candidate(&self, cur: usize, candidate: usize) -> Option<MatchCandidate<'a>> {
         let (source, candidate, distance) = self.resolve_candidate(candidate, cur)?;
 
@@ -307,7 +307,7 @@ impl<'a> MidMatchFinder<'a> {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn encode_match(
         &mut self,
         output: &mut impl Sink,

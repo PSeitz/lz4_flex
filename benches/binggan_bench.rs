@@ -165,7 +165,7 @@ fn block_compress_hc() {
                 let out = black_box(lz4_flex::block::compress_hc_to_vec(i, level));
                 out.len()
             });
-            if level >= 3 {
+            if level >= 2 {
                 group.register_with_input(format!("lz4_c90_level_{level}"), data, move |i| {
                     let out = black_box(lz4_cpp_block_compress_hc(i, level as i32).unwrap());
                     out.len()
