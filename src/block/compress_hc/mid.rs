@@ -141,20 +141,6 @@ struct MatchCandidate<'a> {
     offset: u16,
 }
 
-#[derive(Copy, Clone)]
-struct ResolvedCandidate<'a> {
-    source: &'a [u8],
-    candidate: usize,
-    distance: usize,
-}
-
-struct FinalizedMatch {
-    match_start: usize,
-    match_end: usize,
-    match_length: usize,
-    offset: u16,
-}
-
 struct MidMatchFinder<'a> {
     input: &'a [u8],
     ext_dict: &'a [u8],
@@ -197,7 +183,7 @@ impl<'a> MidMatchFinder<'a> {
     /// Resolve an absolute hash table position to a source slice and local index.
     /// Returns `None` if the candidate is out of range or unreachable.
     #[inline]
-    fn resolve_candidate(&self, candidate: usize, cur: usize) -> Option<ResolvedCandidate<'a>> {
+    fn resolve_candidate(&self, candidate: usize, cur: usize) -> Option<(&'a [u8], usize, usize)> {
         let distance = self.cur_absolute(cur).wrapping_sub(candidate);
         if distance == 0 || distance > MAX_DISTANCE {
             return None;
@@ -207,22 +193,14 @@ impl<'a> MidMatchFinder<'a> {
             if local_pos >= self.input.len() {
                 return None;
             }
-            return Some(ResolvedCandidate {
-                source: self.input,
-                candidate: local_pos,
-                distance,
-            });
+            return Some((self.input, local_pos, distance));
         }
         if !self.ext_dict.is_empty() && candidate >= self.ext_dict_stream_offset {
             let local_pos = candidate - self.ext_dict_stream_offset;
             if local_pos >= self.ext_dict.len() {
                 return None;
             }
-            return Some(ResolvedCandidate {
-                source: self.ext_dict,
-                candidate: local_pos,
-                distance,
-            });
+            return Some((self.ext_dict, local_pos, distance));
         }
         None
     }
@@ -231,14 +209,16 @@ impl<'a> MidMatchFinder<'a> {
     fn probe_candidate(
         &self,
         cur: usize,
-        resolved_candidate: ResolvedCandidate<'a>,
+        source: &'a [u8],
+        candidate: usize,
+        distance: usize,
     ) -> Option<MatchCandidate<'a>> {
         let mut match_end = cur;
         let match_length = count_same_bytes(
             self.input,
             &mut match_end,
-            resolved_candidate.source,
-            resolved_candidate.candidate,
+            source,
+            candidate,
             self.match_limit,
         );
         if match_length < MINMATCH {
@@ -247,10 +227,10 @@ impl<'a> MidMatchFinder<'a> {
 
         Some(MatchCandidate {
             cur,
-            source: resolved_candidate.source,
-            candidate: resolved_candidate.candidate,
+            source,
+            candidate,
             match_length,
-            offset: resolved_candidate.distance as u16,
+            offset: distance as u16,
         })
     }
 
@@ -260,8 +240,8 @@ impl<'a> MidMatchFinder<'a> {
         let candidate = self.table.table_8byte[hash] as usize;
         let cur_absolute = self.cur_absolute(cur);
         self.table.table_8byte[hash] = cur_absolute as u32;
-        let resolved_candidate = self.resolve_candidate(candidate, cur)?;
-        self.probe_candidate(cur, resolved_candidate)
+        let (source, candidate, distance) = self.resolve_candidate(candidate, cur)?;
+        self.probe_candidate(cur, source, candidate, distance)
     }
 
     #[inline]
@@ -270,25 +250,17 @@ impl<'a> MidMatchFinder<'a> {
         let candidate = self.table.table_4byte[hash] as usize;
         let cur_absolute = self.cur_absolute(cur);
         self.table.table_4byte[hash] = cur_absolute as u32;
-        let resolved_candidate = self.resolve_candidate(candidate, cur)?;
+        let (source, candidate, distance) = self.resolve_candidate(candidate, cur)?;
 
         #[cfg(feature = "safe-encode")]
         {
-            if resolved_candidate
-                .source
-                .len()
-                .saturating_sub(resolved_candidate.candidate)
-                < MINMATCH
-            {
+            if source.len().saturating_sub(candidate) < MINMATCH {
                 return None;
             }
 
             // [Bounds Check]: Candidate is coming from the hash table. It can't be out of bounds,
             // but impossible to prove for the compiler and remove the bounds checks.
-            let candidate_bytes: u32 = crate::block::compress::get_batch(
-                resolved_candidate.source,
-                resolved_candidate.candidate,
-            );
+            let candidate_bytes: u32 = crate::block::compress::get_batch(source, candidate);
             // [Bounds Check]: Should be able to be elided due to `end_pos_check`.
             let current_bytes: u32 = crate::block::compress::get_batch(self.input, cur);
             if candidate_bytes != current_bytes {
@@ -296,7 +268,7 @@ impl<'a> MidMatchFinder<'a> {
             }
         }
 
-        self.probe_candidate(cur, resolved_candidate)
+        self.probe_candidate(cur, source, candidate, distance)
     }
 
     #[inline]
@@ -312,9 +284,11 @@ impl<'a> MidMatchFinder<'a> {
         let lookahead_cur = cur + 1;
         let lookahead_hash = get_hash8_mid(self.input, lookahead_cur);
         let lookahead_candidate = self.table.table_8byte[lookahead_hash] as usize;
-        let resolved_candidate = self.resolve_candidate(lookahead_candidate, lookahead_cur);
-        let lookahead_match = resolved_candidate
-            .and_then(|resolved_candidate| self.probe_candidate(lookahead_cur, resolved_candidate));
+        let lookahead_match = self
+            .resolve_candidate(lookahead_candidate, lookahead_cur)
+            .and_then(|(source, candidate, distance)| {
+                self.probe_candidate(lookahead_cur, source, candidate, distance)
+            });
         let Some(lookahead_match) = lookahead_match else {
             return;
         };
@@ -328,12 +302,13 @@ impl<'a> MidMatchFinder<'a> {
         *match_candidate = lookahead_match;
     }
 
-    #[inline]
-    fn finalize_match(
-        &self,
+    #[inline(always)]
+    fn encode_match(
+        &mut self,
+        output: &mut impl Sink,
         literal_start: usize,
         match_candidate: MatchCandidate<'a>,
-    ) -> FinalizedMatch {
+    ) -> usize {
         let mut match_start = match_candidate.cur;
         let mut candidate = match_candidate.candidate;
         backtrack_match(
@@ -349,36 +324,20 @@ impl<'a> MidMatchFinder<'a> {
         let match_length = match_candidate.match_length + backtrack_length;
         let match_end = match_candidate.cur + match_candidate.match_length;
 
-        FinalizedMatch {
-            match_start,
-            match_end,
-            match_length,
-            offset: match_candidate.offset,
-        }
-    }
-
-    #[inline(always)]
-    fn encode_match(
-        &mut self,
-        output: &mut impl Sink,
-        literal_start: usize,
-        match_candidate: MatchCandidate<'a>,
-    ) -> usize {
-        let finalized_match = self.finalize_match(literal_start, match_candidate);
         self.table.insert_match_hashes(
             self.input,
-            finalized_match.match_start,
-            finalized_match.match_end,
+            match_start,
+            match_end,
             self.input_end,
             self.stream_offset,
         );
         encode_sequence(
-            &self.input[literal_start..finalized_match.match_start],
+            &self.input[literal_start..match_start],
             output,
-            finalized_match.offset,
-            finalized_match.match_length - MINMATCH,
+            match_candidate.offset,
+            match_length - MINMATCH,
         );
-        finalized_match.match_end
+        match_end
     }
 }
 
