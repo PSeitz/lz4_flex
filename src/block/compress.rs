@@ -915,7 +915,7 @@ mod tests {
             21
         );
 
-        for diff_idx in 8..100 {
+        for diff_idx in 0..100 {
             let first: Vec<u8> = (0u8..255).cycle().take(100 + 12).collect();
             let mut second = first.clone();
             second[diff_idx] = 255;

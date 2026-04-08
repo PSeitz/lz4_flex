@@ -109,3 +109,34 @@ With table reuse + fast reset:
 ```
 
 Gap is now 10-30% (safe-encode overhead), except 96KB incompressible (2×).
+
+## Reject 4-byte hash collisions before count_same_bytes (safe-encode)
+
+The remaining standout safe-encode regression was the 96 KB incompressible input.
+That case almost never encodes matches; it mostly probes the 4-byte table, then
+fails immediately in `count_same_bytes`. In C that miss path is cheap. In safe
+Rust, `count_same_bytes` still has to build bounded slices/chunk iterators before
+it can discover the first machine word differs.
+
+Fix: on the **4-byte-table** path only, add an explicit 4-byte equality check
+before calling `count_same_bytes`.
+
+I intentionally did **not** do the same for the 8-byte table: lz4mid's
+"8-byte" hash actually uses only the lower 56 bits, so an 8-byte equality
+precheck would change parsing decisions and compressed sizes.
+
+Default `cargo bench level_2` medians after the change:
+
+```
+725            Median: 6.63 MB/s   (+1%)   Output: 552
+34308          Median: 142.56 MB/s (+2%)   Output: 17_389
+64723          Median: 180.48 MB/s (+8%)   Output: 32_255
+66675          Median: 337.24 MB/s (=)     Output: 14_125
+9991663        Median: 170.56 MB/s (=)     Output: 5_272_298
+96274          Median: 366.23 MB/s (+11%)  Output: 96_519
+```
+
+This helps the public safe path across the board, with the biggest win on the
+incompressible image. Table-reuse results are mixed: the 96 KB incompressible
+case improves from ~658 MB/s to ~744 MB/s, while the 66 KB highly-compressible
+JSON input regresses somewhat.
