@@ -252,6 +252,12 @@ impl<'a> MidMatchFinder<'a> {
         self.table.table_4byte[hash] = cur_absolute as u32;
         let (source, candidate, distance) = self.resolve_candidate(candidate, cur)?;
 
+        // We have this additional check for 4-byte matches to avoid calling `probe_candidate` and
+        // counting match length for candidates that don't even match the first 4 bytes. This is a
+        // common case for the 4-byte table since it has more collisions, so it's worth doing a
+        // quick check here before the more expensive `probe_candidate` logic.
+        //
+        // The common_bytes logic is not that expensive for the unsafe version.
         #[cfg(feature = "safe-encode")]
         {
             if source.len().saturating_sub(candidate) < MINMATCH {
@@ -320,8 +326,6 @@ impl<'a> MidMatchFinder<'a> {
         );
 
         // probe_candidate already counted forward; backtracking only extends backwards.
-        let backtrack_length = match_candidate.cur - match_start;
-        let match_length = match_candidate.match_length + backtrack_length;
         let match_end = match_candidate.cur + match_candidate.match_length;
 
         self.table.insert_match_hashes(
@@ -335,7 +339,7 @@ impl<'a> MidMatchFinder<'a> {
             &self.input[literal_start..match_start],
             output,
             match_candidate.offset,
-            match_length - MINMATCH,
+            match_end - match_start - MINMATCH,
         );
         match_end
     }
@@ -348,7 +352,7 @@ pub(super) fn compress_mid_internal(
     input: &[u8],
     input_pos: usize,
     output: &mut impl Sink,
-    table: &mut HashTableMid,
+    dict: &mut HashTableMid,
     ext_dict: &[u8],
     stream_offset: usize,
 ) -> Result<usize, CompressError> {
@@ -369,7 +373,7 @@ pub(super) fn compress_mid_internal(
     let mut match_finder = MidMatchFinder::new(
         input,
         ext_dict,
-        table,
+        dict,
         stream_offset,
         end_pos_check,
         match_limit,
