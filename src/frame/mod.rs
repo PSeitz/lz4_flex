@@ -62,6 +62,15 @@ pub enum Error {
     SkippableFrame(u32),
     /// External dictionaries are not supported.
     DictionaryNotSupported,
+    /// The frame declares a Dict_ID but no dictionary was provided to the decoder.
+    DictionaryRequired,
+    /// The frame's Dict_ID does not match the dictionary supplied to the decoder.
+    DictIdMismatch {
+        /// Dict_ID written into the frame header.
+        expected: u32,
+        /// Dict_ID of the dictionary provided to the decoder.
+        actual: u32,
+    },
     /// Content length differs.
     ContentLengthError {
         /// Expected content length.
@@ -78,7 +87,9 @@ impl From<Error> for io::Error {
             Error::CompressionError(_)
             | Error::DecompressionError(_)
             | Error::SkippableFrame(_)
-            | Error::DictionaryNotSupported => io::Error::other(e),
+            | Error::DictionaryNotSupported
+            | Error::DictionaryRequired
+            | Error::DictIdMismatch { .. } => io::Error::other(e),
             Error::WrongMagicNumber
             | Error::UnsupportedBlocksize(..)
             | Error::UnsupportedVersion(..)

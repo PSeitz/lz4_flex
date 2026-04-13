@@ -737,6 +737,65 @@ mod frame {
     }
 
     #[test]
+    fn dict_round_trip() {
+        let dict = b"JSON schema v1 field name= value= type= len= ".repeat(4);
+        let dict_id: u32 = 0xDEADBEEF;
+        let msg = b"JSON schema v1 field name=hello value=world type=str len=5";
+
+        let mut enc = lz4_flex::frame::FrameEncoder::with_dictionary(Vec::new(), &dict, dict_id);
+        enc.write_all(msg).unwrap();
+        let compressed = enc.finish().unwrap();
+
+        // Frame magic and Dict_ID flag must be set in FLG.
+        assert_eq!(&compressed[..4], &[0x04, 0x22, 0x4d, 0x18]);
+
+        let mut dec = lz4_flex::frame::FrameDecoder::with_dictionary(&*compressed, &dict, dict_id);
+        let mut out = Vec::new();
+        dec.read_to_end(&mut out).unwrap();
+        assert_eq!(out, msg);
+    }
+
+    #[test]
+    fn dict_id_mismatch_fails() {
+        let dict = b"prefix AAA ".repeat(8);
+        let msg = b"prefix AAA tail";
+        let mut enc = lz4_flex::frame::FrameEncoder::with_dictionary(Vec::new(), &dict, 0xAAAA_AAAA);
+        enc.write_all(msg).unwrap();
+        let compressed = enc.finish().unwrap();
+
+        let mut dec =
+            lz4_flex::frame::FrameDecoder::with_dictionary(&*compressed, &dict, 0xBBBB_BBBB);
+        let mut out = Vec::new();
+        let err = dec.read_to_end(&mut out).unwrap_err();
+        let inner = err
+            .into_inner()
+            .and_then(|e| e.downcast::<lz4_flex::frame::Error>().ok());
+        match inner.as_deref() {
+            Some(lz4_flex::frame::Error::DictIdMismatch { .. }) => {}
+            other => panic!("expected DictIdMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dict_required_when_frame_declares_one() {
+        let dict = b"common ".repeat(8);
+        let mut enc = lz4_flex::frame::FrameEncoder::with_dictionary(Vec::new(), &dict, 1);
+        enc.write_all(b"common payload").unwrap();
+        let compressed = enc.finish().unwrap();
+
+        let mut dec = lz4_flex::frame::FrameDecoder::new(&*compressed);
+        let mut out = Vec::new();
+        let err = dec.read_to_end(&mut out).unwrap_err();
+        let inner = err
+            .into_inner()
+            .and_then(|e| e.downcast::<lz4_flex::frame::Error>().ok());
+        assert!(matches!(
+            inner.as_deref(),
+            Some(lz4_flex::frame::Error::DictionaryNotSupported)
+        ));
+    }
+
+    #[test]
     #[cfg_attr(miri, ignore)]
     fn legacy_frame() {
         const DECOMPRESSION10MB_LEGACY: &[u8] = include_bytes!("../benches/dickens.lz4");

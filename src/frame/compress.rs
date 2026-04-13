@@ -90,6 +90,8 @@ pub struct FrameEncoder<W: io::Write> {
     data_to_frame_written: bool,
     /// The frame information to be used in this encoder.
     frame_info: FrameInfo,
+    /// External dictionary bytes (LZ4 frame format Dict_ID feature). Empty when none.
+    dict: Vec<u8>,
 }
 
 impl<W: io::Write> FrameEncoder<W> {
@@ -149,12 +151,30 @@ impl<W: io::Write> FrameEncoder<W> {
             ext_dict_offset: 0,
             ext_dict_len: 0,
             src_stream_offset: 0,
+            dict: Vec::new(),
         }
     }
 
     /// Creates a new Encoder with the default settings.
     pub fn new(wtr: W) -> Self {
         Self::with_frame_info(Default::default(), wtr)
+    }
+
+    /// Creates a new Encoder that compresses every block using the supplied external
+    /// dictionary, writing the dictionary's id into the frame header so that a peer
+    /// constructed via [`FrameDecoder::with_dictionary`] can verify and decode it.
+    ///
+    /// The encoder forces independent block mode: each block is compressed against
+    /// the dictionary as if it were the only block in the frame, which matches the
+    /// LZ4 frame spec for dictionary-bound frames and avoids the cross-block prefix
+    /// state machine entirely.
+    pub fn with_dictionary(wtr: W, dict: &[u8], dict_id: u32) -> Self {
+        let mut frame_info = FrameInfo::default();
+        frame_info.block_mode = BlockMode::Independent;
+        frame_info.dict_id = Some(dict_id);
+        let mut enc = Self::with_frame_info(frame_info, wtr);
+        enc.dict = dict.to_vec();
+        enc
     }
 
     /// The frame information used by this Encoder.
@@ -277,7 +297,18 @@ impl<W: io::Write> FrameEncoder<W> {
 
         let dst_required_size = crate::block::compress::get_maximum_output_size(src.len());
 
-        let compress_result = if self.ext_dict_len != 0 {
+        let compress_result = if !self.dict.is_empty() {
+            // Dict-bound frame: independent block mode is enforced in
+            // `with_dictionary`, so each block sees the dict as initial history
+            // via a freshly seeded hash table.
+            debug_assert_eq!(self.frame_info.block_mode, BlockMode::Independent);
+            debug_assert_eq!(self.ext_dict_len, 0);
+            crate::block::compress::compress_into_sink_with_dict::<true>(
+                src,
+                &mut vec_sink_for_compression(&mut self.dst, 0, 0, dst_required_size),
+                &self.dict,
+            )
+        } else if self.ext_dict_len != 0 {
             debug_assert_eq!(self.frame_info.block_mode, BlockMode::Linked);
             compress_internal::<_, true, _>(
                 input,
