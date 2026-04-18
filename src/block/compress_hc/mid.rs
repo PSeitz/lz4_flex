@@ -141,7 +141,7 @@ struct MatchCandidate<'a> {
     offset: u16,
 }
 
-struct MidMatchFinder<'a> {
+struct MidMatchFinder<'a, const USE_DICT: bool> {
     input: &'a [u8],
     ext_dict: &'a [u8],
     table: &'a mut HashTableMid,
@@ -152,7 +152,7 @@ struct MidMatchFinder<'a> {
     input_end: usize,
 }
 
-impl<'a> MidMatchFinder<'a> {
+impl<'a, const USE_DICT: bool> MidMatchFinder<'a, USE_DICT> {
     #[inline]
     fn new(
         input: &'a [u8],
@@ -163,12 +163,18 @@ impl<'a> MidMatchFinder<'a> {
         match_limit: usize,
         input_end: usize,
     ) -> Self {
+        let ext_dict_stream_offset = if USE_DICT {
+            stream_offset - ext_dict.len()
+        } else {
+            0
+        };
+
         MidMatchFinder {
             input,
             ext_dict,
             table,
             stream_offset,
-            ext_dict_stream_offset: stream_offset - ext_dict.len(),
+            ext_dict_stream_offset,
             end_pos_check,
             match_limit,
             input_end,
@@ -188,6 +194,7 @@ impl<'a> MidMatchFinder<'a> {
         if distance == 0 || distance > MAX_DISTANCE {
             return None;
         }
+
         if candidate >= self.stream_offset {
             let local_pos = candidate - self.stream_offset;
             if local_pos >= self.input.len() {
@@ -195,14 +202,20 @@ impl<'a> MidMatchFinder<'a> {
             }
             return Some((self.input, local_pos, distance));
         }
-        if !self.ext_dict.is_empty() && candidate >= self.ext_dict_stream_offset {
-            let local_pos = candidate - self.ext_dict_stream_offset;
-            if local_pos >= self.ext_dict.len() {
-                return None;
-            }
-            return Some((self.ext_dict, local_pos, distance));
+
+        if !USE_DICT {
+            return None;
         }
-        None
+
+        if candidate < self.ext_dict_stream_offset {
+            return None;
+        }
+
+        let local_pos = candidate - self.ext_dict_stream_offset;
+        if local_pos >= self.ext_dict.len() {
+            return None;
+        }
+        Some((self.ext_dict, local_pos, distance))
     }
 
     #[inline(always)]
@@ -348,7 +361,7 @@ impl<'a> MidMatchFinder<'a> {
 /// Internal lz4mid compression.
 /// `input_pos` is where the current block starts (positions before it are prefix).
 /// `ext_dict` and `stream_offset` support linked block mode.
-pub(super) fn compress_mid_internal(
+pub(super) fn compress_mid_internal<const USE_DICT: bool>(
     input: &[u8],
     input_pos: usize,
     output: &mut impl Sink,
@@ -363,6 +376,12 @@ pub(super) fn compress_mid_internal(
         return Ok(output.pos() - output_start);
     }
 
+    if USE_DICT {
+        assert!(ext_dict.len() <= stream_offset);
+    } else {
+        assert!(ext_dict.is_empty());
+    }
+
     let mut cur = input_pos;
     let mut literal_start = input_pos;
     let input_end = input.len();
@@ -370,7 +389,7 @@ pub(super) fn compress_mid_internal(
     let end_pos_check = input_end.saturating_sub(MFLIMIT);
     // Exclusive end for extending matches: last `END_OFFSET` bytes are handled as literals/trailer.
     let match_limit = input_end - END_OFFSET;
-    let mut match_finder = MidMatchFinder::new(
+    let mut match_finder = MidMatchFinder::<USE_DICT>::new(
         input,
         ext_dict,
         dict,

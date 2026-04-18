@@ -263,7 +263,7 @@ pub fn compress_hc(
         }
         HcCompressionStrategy::Mid => {
             let mut mid_table = HashTableMid::new();
-            compress_mid_internal(input, 0, output, &mut mid_table, &[], 0)
+            compress_mid_internal::<false>(input, 0, output, &mut mid_table, &[], 0)
         }
     }
 }
@@ -297,7 +297,7 @@ pub fn compress_hc_with_table(
     match params.strategy {
         HcCompressionStrategy::Mid => {
             let mid_table = table.reset_mid();
-            compress_mid_internal(input, 0, output, mid_table, &[], 0)
+            compress_mid_internal::<false>(input, 0, output, mid_table, &[], 0)
         }
         HcCompressionStrategy::HashChain => {
             let hash_table = table.reset_hc(params.max_attempts, input.len());
@@ -332,7 +332,25 @@ pub(crate) fn compress_hc_linked(
                     "prepare_linked_block should have ensured Mid variant for mid levels"
                 ),
             };
-            compress_mid_internal(input, input_pos, output, mid_table, ext_dict, stream_offset)
+            if ext_dict.is_empty() {
+                compress_mid_internal::<false>(
+                    input,
+                    input_pos,
+                    output,
+                    mid_table,
+                    ext_dict,
+                    stream_offset,
+                )
+            } else {
+                compress_mid_internal::<true>(
+                    input,
+                    input_pos,
+                    output,
+                    mid_table,
+                    ext_dict,
+                    stream_offset,
+                )
+            }
         }
         HcCompressionStrategy::HashChain => {
             let hash_table = match &mut table.inner {
