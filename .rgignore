@@ -1,0 +1,7 @@
+# Ignore benchmark corpus data in ripgrep results.
+# Keep Rust benchmark source files searchable.
+benches/**
+!benches/**/*.rs
+
+# Ignore downloaded benchmark corpus files, if present.
+benchmarks/bench_files/**
