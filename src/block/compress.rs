@@ -731,6 +731,48 @@ impl CompressTable {
     pub fn large() -> Self {
         CompressTable::Large(HashTable4K::new())
     }
+
+    /// Clear the table and populate it with positions from `dict_data`.
+    ///
+    /// Use this in combination with [`compress_into_with_loaded_table_and_dict`]
+    /// to amortise dictionary initialisation across many compress calls: load
+    /// the dict once into a pristine table, then before each compress copy
+    /// the pristine table into a scratch table (see [`CompressTable::copy_from`])
+    /// and run the loaded-table compress function. This avoids re-running the
+    /// ~`dict_len/3` hash-and-scatter loop on every call.
+    ///
+    /// If `dict_data.len() > `[`WINDOW_SIZE`] (64 KiB), only the last
+    /// `WINDOW_SIZE` bytes are used.
+    pub fn load_dict(&mut self, mut dict_data: &[u8]) {
+        match self {
+            CompressTable::Small(table) => {
+                table.clear();
+                init_dict(table, &mut dict_data);
+            }
+            CompressTable::Large(table) => {
+                table.clear();
+                init_dict(table, &mut dict_data);
+            }
+        }
+    }
+
+    /// Overwrite this table's entries with the contents of `other`. Reuses
+    /// this table's existing allocation (no heap traffic) — typically a
+    /// single 8 KiB or 16 KiB `memcpy`, which is dramatically cheaper than
+    /// re-running [`CompressTable::load_dict`] on every compress call.
+    ///
+    /// # Panics
+    ///
+    /// If `self` and `other` have different variants (`Small` vs `Large`).
+    /// Callers that need a variant switch should build a fresh table instead.
+    #[inline]
+    pub fn copy_from(&mut self, other: &Self) {
+        match (self, other) {
+            (CompressTable::Small(a), CompressTable::Small(b)) => a.copy_from(b),
+            (CompressTable::Large(a), CompressTable::Large(b)) => a.copy_from(b),
+            _ => panic!("CompressTable::copy_from: variant mismatch (Small vs Large)"),
+        }
+    }
 }
 
 /// Compress all bytes of `input` into `output`, reusing a [`CompressTable`] to avoid
@@ -761,6 +803,115 @@ pub fn compress_into_with_table(
         CompressTable::Large(dict) => {
             dict.clear();
             compress_internal::<_, false, _>(input, 0, &mut SliceSink::new(output, 0), dict, b"", 0)
+        }
+    }
+}
+
+/// Compress all bytes of `input` into `output` with an external dictionary,
+/// reusing a [`CompressTable`] that was previously populated with the dict
+/// via [`CompressTable::load_dict`].
+///
+/// Unlike [`compress_into_with_table_and_dict`], this function does **not**
+/// clear the table and does **not** hash the dict on every call. The caller
+/// is expected to:
+///
+/// 1. Create a pristine "dict-loaded" table via `CompressTable::load_dict`
+///    (done once when the dict is installed).
+/// 2. Before each compress call, restore the pristine state into a scratch
+///    table via [`CompressTable::copy_from`] (a `memcpy`, dramatically
+///    cheaper than re-running the dict-load loop).
+/// 3. Call this function with the scratch table and the same `ext_dict`
+///    bytes that were passed to `load_dict`.
+///
+/// `ext_dict` must be `≤ WINDOW_SIZE` (64 KiB); if the caller's dictionary
+/// is larger they should trim it the same way `load_dict` does (take the
+/// last `WINDOW_SIZE` bytes).
+///
+/// `output` should be preallocated with a size of [`get_maximum_output_size`].
+///
+/// Returns the number of bytes written (compressed) into `output`.
+#[inline]
+pub fn compress_into_with_loaded_table_and_dict(
+    input: &[u8],
+    output: &mut [u8],
+    table: &mut CompressTable,
+    ext_dict: &[u8],
+) -> Result<usize, CompressError> {
+    debug_assert!(
+        ext_dict.len() <= WINDOW_SIZE,
+        "ext_dict must be ≤ WINDOW_SIZE (64 KiB); trim before calling"
+    );
+    match table {
+        CompressTable::Small(t) => compress_internal::<_, true, _>(
+            input,
+            0,
+            &mut SliceSink::new(output, 0),
+            t,
+            ext_dict,
+            ext_dict.len(),
+        ),
+        CompressTable::Large(t) => compress_internal::<_, true, _>(
+            input,
+            0,
+            &mut SliceSink::new(output, 0),
+            t,
+            ext_dict,
+            ext_dict.len(),
+        ),
+    }
+}
+
+/// Compress all bytes of `input` into `output` with an external dictionary,
+/// reusing a [`CompressTable`] to avoid re-allocating the internal hash table.
+///
+/// `output` should be preallocated with a size of [`get_maximum_output_size`].
+///
+/// The dictionary is hashed into the table on every call (the table is cleared
+/// first). For a fully stateful streaming encoder, use the `frame` API with
+/// `FrameEncoder::with_dictionary` instead — this function is meant for the
+/// independent-block case where each call stands alone.
+///
+/// If the table variant is `Small` and the combined dict+input size exceeds
+/// `u16::MAX`, the table is transparently upgraded to `Large`.
+///
+/// Returns the number of bytes written (compressed) into `output`.
+#[inline]
+pub fn compress_into_with_table_and_dict(
+    input: &[u8],
+    output: &mut [u8],
+    table: &mut CompressTable,
+    mut dict_data: &[u8],
+) -> Result<usize, CompressError> {
+    if dict_data.len() + input.len() >= u16::MAX as usize
+        && matches!(table, CompressTable::Small(_))
+    {
+        *table = CompressTable::Large(HashTable4K::new());
+    }
+
+    match table {
+        CompressTable::Small(dict) => {
+            dict.clear();
+            init_dict(dict, &mut dict_data);
+            compress_internal::<_, true, _>(
+                input,
+                0,
+                &mut SliceSink::new(output, 0),
+                dict,
+                dict_data,
+                dict_data.len(),
+            )
+        }
+        CompressTable::Large(dict) => {
+            dict.clear();
+            init_dict(dict, &mut dict_data);
+            compress_internal::<_, true, _>(
+                input,
+                0,
+                &mut SliceSink::new(output, 0),
+                dict,
+                dict_data,
+                dict_data.len(),
+            )
         }
     }
 }
