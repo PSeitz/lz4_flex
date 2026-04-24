@@ -1147,4 +1147,68 @@ mod tests {
             crate::block::decompress_size_prepended_with_dict(&compressed, &dict).unwrap();
         assert_eq!(decompressed, input);
     }
+
+    #[test]
+    fn test_loaded_table_round_trip() {
+        let input: &[u8] = &[
+            10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
+        ];
+        let dict = input;
+
+        let mut pristine = CompressTable::large();
+        pristine.load_dict(dict);
+
+        let mut scratch = CompressTable::large();
+        scratch.copy_from(&pristine);
+
+        let mut compressed = vec![0u8; get_maximum_output_size(input.len())];
+        let n = compress_into_with_loaded_table_and_dict(input, &mut compressed, &mut scratch, dict)
+            .unwrap();
+        compressed.truncate(n);
+
+        assert_lt!(compressed.len(), compress(input).len());
+
+        let mut uncompressed = vec![0u8; input.len()];
+        let uncomp_size = crate::block::decompress::decompress_into_with_dict(
+            &compressed,
+            &mut uncompressed,
+            dict,
+        )
+        .unwrap();
+        uncompressed.truncate(uncomp_size);
+        assert_eq!(input, uncompressed);
+    }
+
+    #[test]
+    fn test_loaded_table_matches_with_dict() {
+        let input: &[u8] = &[
+            10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18, 10, 12, 14, 16, 18,
+        ];
+        let dict = input;
+
+        let mut table_a = CompressTable::large();
+        let mut out_a = vec![0u8; get_maximum_output_size(input.len())];
+        let n_a =
+            compress_into_with_table_and_dict(input, &mut out_a, &mut table_a, dict).unwrap();
+        out_a.truncate(n_a);
+
+        let mut pristine = CompressTable::large();
+        pristine.load_dict(dict);
+        let mut table_b = CompressTable::large();
+        table_b.copy_from(&pristine);
+        let mut out_b = vec![0u8; get_maximum_output_size(input.len())];
+        let n_b = compress_into_with_loaded_table_and_dict(input, &mut out_b, &mut table_b, dict)
+            .unwrap();
+        out_b.truncate(n_b);
+
+        assert_eq!(out_a, out_b);
+    }
+
+    #[test]
+    #[should_panic(expected = "variant mismatch")]
+    fn test_copy_from_variant_mismatch_panics() {
+        let mut small = CompressTable::small();
+        let large = CompressTable::large();
+        small.copy_from(&large);
+    }
 }
