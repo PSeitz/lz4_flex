@@ -759,7 +759,8 @@ mod frame {
     fn dict_id_mismatch_fails() {
         let dict = b"prefix AAA ".repeat(8);
         let msg = b"prefix AAA tail";
-        let mut enc = lz4_flex::frame::FrameEncoder::with_dictionary(Vec::new(), &dict, 0xAAAA_AAAA);
+        let mut enc =
+            lz4_flex::frame::FrameEncoder::with_dictionary(Vec::new(), &dict, 0xAAAA_AAAA);
         enc.write_all(msg).unwrap();
         let compressed = enc.finish().unwrap();
 
