@@ -15,7 +15,7 @@ What changes between the strategies is **how hard they search for matches** and 
 
 `compress_hc()` first clamps the level and maps it to one of these strategies:
 
-- **levels 0-2**: `Mid`
+- **levels 0-2**: `TwoHashTables`
 - **levels 3-9**: `HashChain`
 - **levels 10-12**: `Optimal`
 
@@ -23,7 +23,7 @@ That mapping is defined by `hc_level_params()`.
 
 ---
 
-## 1. Mid strategy
+## 1. Two-hashtables strategy
 
 **Used for levels 0-2**
 
@@ -85,9 +85,9 @@ At each position:
 
 The compression level controls the chain search budget through `max_attempts`.
 
-### Important difference from Mid
+### Important difference from TwoHashTables
 
-Mid asks:
+TwoHashTables asks:
 
 > Is there a good recent match here?
 
@@ -107,7 +107,7 @@ Two matches **overlap** when they cover some of the same input bytes. Since both
 
 This mode is:
 
-- **deeper search** than Mid
+- **deeper search** than TwoHashTables
 - still mostly **local**
 - smarter about **nearby competing matches**
 
@@ -183,7 +183,7 @@ This mode is:
 
 | Strategy | Levels | Match search | Match choice | Speed | Ratio |
 |---|---:|---|---|---|---|
-| Mid | 0-2 | Very shallow | Greedy/local | Fastest of the three | Lowest of the three |
+| TwoHashTables | 0-2 | Very shallow | Greedy/local | Fastest of the three | Lowest of the three |
 | Hash-chain HC | 3-9 | Deep chain walk | Local + lazy overlap resolution | Middle | Better |
 | Optimal | 10-12 | Deep chain walk | Dynamic programming over a window | Slowest | Best |
 
@@ -195,8 +195,8 @@ If you want to read the file top-down, this is the main story:
 
 1. `compress_hc()`
    - chooses the strategy from the level
-2. `compress_mid_internal()`
-   - dual-hash, mostly greedy compression
+2. `compress_two_hash_tables_internal()`
+   - two-hash-tables, mostly greedy compression
 3. `compress_hash_chain_internal()`
    - hash-chain search plus lazy local match resolution
 4. `compress_opt_internal()`

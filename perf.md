@@ -1,4 +1,4 @@
-# Performance notes for lz4mid (level 2)
+# Performance notes for the two-hash-tables strategy (level 2)
 
 ## Baseline
 
@@ -70,7 +70,7 @@ it can discover the first machine word differs.
 Fix: on the **4-byte-table** path only, add an explicit 4-byte equality check
 before calling `count_same_bytes`.
 
-I intentionally did **not** do the same for the 8-byte table: lz4mid's
+I intentionally did **not** do the same for the 8-byte table: the two-hash-tables strategy's
 "8-byte" hash actually uses only the lower 56 bits, so an 8-byte equality
 precheck would change parsing decisions and compressed sizes.
 

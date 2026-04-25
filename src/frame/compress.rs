@@ -170,7 +170,7 @@ impl<W: io::Write> FrameEncoder<W> {
     ///
     /// The compression level ranges from 1 to 12 (matching C LZ4 CLI behavior):
     /// - Level 1: Fast algorithm (same as default)
-    /// - Level 2: lz4mid intermediate algorithm
+    /// - Level 2: two-hash-tables algorithm
     /// - Levels 3-9: HC algorithm with increasing search depth
     /// - Levels 10-12: Optimal parsing algorithm for maximum compression
     ///

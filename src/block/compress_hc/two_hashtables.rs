@@ -1,5 +1,5 @@
-//! Intermediate compression (levels 1-2)
-//! Uses two hash tables (4-byte and 8-byte) for better compression than fast algorithm while being faster than HC.
+//! Two-hash-tables compression (levels 1-2)
+//! Uses two hash tables (4-byte and 8-byte) for better compression than the fast algorithm while being faster than HC.
 //!
 use crate::block::compress::{backtrack_match, count_same_bytes};
 use crate::block::{
@@ -10,22 +10,22 @@ use crate::sink::Sink;
 use alloc::boxed::Box;
 use alloc::vec;
 
-use super::{LZ4MID_HASHTABLE_SIZE, LZ4MID_HASH_LOG};
+use super::{TWO_HASH_TABLES_HASHTABLE_SIZE, TWO_HASH_TABLES_HASH_LOG};
 
-/// Hash table for lz4mid algorithm — two tables keyed by 4-byte and 8-byte input sequences.
-pub(super) struct HashTableMid {
-    table_4byte: Box<[u32; LZ4MID_HASHTABLE_SIZE]>,
-    table_8byte: Box<[u32; LZ4MID_HASHTABLE_SIZE]>,
+/// Two hash tables keyed by 4-byte and 8-byte input sequences.
+pub(super) struct TwoHashTables {
+    table_4byte: Box<[u32; TWO_HASH_TABLES_HASHTABLE_SIZE]>,
+    table_8byte: Box<[u32; TWO_HASH_TABLES_HASHTABLE_SIZE]>,
 }
 
-impl HashTableMid {
+impl TwoHashTables {
     pub(super) fn new() -> Self {
-        HashTableMid {
-            table_4byte: vec![0u32; LZ4MID_HASHTABLE_SIZE]
+        TwoHashTables {
+            table_4byte: vec![0u32; TWO_HASH_TABLES_HASHTABLE_SIZE]
                 .into_boxed_slice()
                 .try_into()
                 .unwrap(),
-            table_8byte: vec![0u32; LZ4MID_HASHTABLE_SIZE]
+            table_8byte: vec![0u32; TWO_HASH_TABLES_HASHTABLE_SIZE]
                 .into_boxed_slice()
                 .try_into()
                 .unwrap(),
@@ -62,13 +62,13 @@ impl HashTableMid {
 
     #[inline]
     fn insert_4byte_hash(&mut self, input: &[u8], pos: usize, stream_offset: usize) {
-        let hash = get_hash4_mid(input, pos);
+        let hash = get_hash4_two_hash_tables(input, pos);
         self.table_4byte[hash] = (pos + stream_offset) as u32;
     }
 
     #[inline]
     fn insert_8byte_hash(&mut self, input: &[u8], pos: usize, stream_offset: usize) {
-        let hash = get_hash8_mid(input, pos);
+        let hash = get_hash8_two_hash_tables(input, pos);
         self.table_8byte[hash] = (pos + stream_offset) as u32;
     }
 
@@ -105,11 +105,11 @@ impl HashTableMid {
     }
 }
 
-/// 4-byte hash for lz4mid (same multiplier as fast algorithm)
+/// 4-byte hash for the two-hash-tables strategy (same multiplier as the fast algorithm)
 #[inline]
-fn get_hash4_mid(input: &[u8], pos: usize) -> usize {
+fn get_hash4_two_hash_tables(input: &[u8], pos: usize) -> usize {
     let sequence = crate::block::compress::get_batch(input, pos);
-    (sequence.wrapping_mul(2654435761) >> (32 - LZ4MID_HASH_LOG)) as usize
+    (sequence.wrapping_mul(2654435761) >> (32 - TWO_HASH_TABLES_HASH_LOG)) as usize
 }
 
 /// Read 8 bytes as a little-endian `u64`.
@@ -125,12 +125,12 @@ fn read_u64_little_endian(input: &[u8], pos: usize) -> u64 {
     }
 }
 
-/// 8-byte hash for lz4mid (hashes the lower 56 bits of a little-endian 8-byte read)
+/// 8-byte hash for the two-hash-tables strategy (hashes the lower 56 bits of a little-endian 8-byte read)
 #[inline]
-fn get_hash8_mid(input: &[u8], pos: usize) -> usize {
+fn get_hash8_two_hash_tables(input: &[u8], pos: usize) -> usize {
     let sequence = read_u64_little_endian(input, pos);
     let lower_56_bits = sequence << 8;
-    ((lower_56_bits.wrapping_mul(58295818150454627)) >> (64 - LZ4MID_HASH_LOG)) as usize
+    ((lower_56_bits.wrapping_mul(58295818150454627)) >> (64 - TWO_HASH_TABLES_HASH_LOG)) as usize
 }
 
 struct MatchCandidate<'a> {
@@ -141,10 +141,10 @@ struct MatchCandidate<'a> {
     offset: u16,
 }
 
-struct MidMatchFinder<'a, const USE_DICT: bool> {
+struct TwoHashTablesMatchFinder<'a, const USE_DICT: bool> {
     input: &'a [u8],
     ext_dict: &'a [u8],
-    table: &'a mut HashTableMid,
+    table: &'a mut TwoHashTables,
     stream_offset: usize,
     ext_dict_stream_offset: usize,
     end_pos_check: usize,
@@ -152,12 +152,12 @@ struct MidMatchFinder<'a, const USE_DICT: bool> {
     input_end: usize,
 }
 
-impl<'a, const USE_DICT: bool> MidMatchFinder<'a, USE_DICT> {
+impl<'a, const USE_DICT: bool> TwoHashTablesMatchFinder<'a, USE_DICT> {
     #[inline]
     fn new(
         input: &'a [u8],
         ext_dict: &'a [u8],
-        table: &'a mut HashTableMid,
+        table: &'a mut TwoHashTables,
         stream_offset: usize,
         end_pos_check: usize,
         match_limit: usize,
@@ -169,7 +169,7 @@ impl<'a, const USE_DICT: bool> MidMatchFinder<'a, USE_DICT> {
             0
         };
 
-        MidMatchFinder {
+        TwoHashTablesMatchFinder {
             input,
             ext_dict,
             table,
@@ -249,7 +249,7 @@ impl<'a, const USE_DICT: bool> MidMatchFinder<'a, USE_DICT> {
 
     #[inline]
     fn probe_8byte(&mut self, cur: usize) -> Option<MatchCandidate<'a>> {
-        let hash = get_hash8_mid(self.input, cur);
+        let hash = get_hash8_two_hash_tables(self.input, cur);
         let candidate = self.table.table_8byte[hash] as usize;
         let cur_absolute = self.cur_absolute(cur);
         self.table.table_8byte[hash] = cur_absolute as u32;
@@ -259,7 +259,7 @@ impl<'a, const USE_DICT: bool> MidMatchFinder<'a, USE_DICT> {
 
     #[inline]
     fn probe_4byte(&mut self, cur: usize) -> Option<MatchCandidate<'a>> {
-        let hash = get_hash4_mid(self.input, cur);
+        let hash = get_hash4_two_hash_tables(self.input, cur);
         let candidate = self.table.table_4byte[hash] as usize;
         let cur_absolute = self.cur_absolute(cur);
         self.table.table_4byte[hash] = cur_absolute as u32;
@@ -301,7 +301,7 @@ impl<'a, const USE_DICT: bool> MidMatchFinder<'a, USE_DICT> {
         }
 
         let lookahead_cur = cur + 1;
-        let lookahead_hash = get_hash8_mid(self.input, lookahead_cur);
+        let lookahead_hash = get_hash8_two_hash_tables(self.input, lookahead_cur);
         let lookahead_candidate = self.table.table_8byte[lookahead_hash] as usize;
         let lookahead_match = self
             .resolve_candidate(lookahead_candidate, lookahead_cur)
@@ -358,14 +358,14 @@ impl<'a, const USE_DICT: bool> MidMatchFinder<'a, USE_DICT> {
     }
 }
 
-/// Internal lz4mid compression.
+/// Internal two-hash-tables compression.
 /// `input_pos` is where the current block starts (positions before it are prefix).
 /// `ext_dict` and `stream_offset` support linked block mode.
-pub(super) fn compress_mid_internal<const USE_DICT: bool>(
+pub(super) fn compress_two_hash_tables_internal<const USE_DICT: bool>(
     input: &[u8],
     input_pos: usize,
     output: &mut impl Sink,
-    dict: &mut HashTableMid,
+    two_hash_tables: &mut TwoHashTables,
     ext_dict: &[u8],
     stream_offset: usize,
 ) -> Result<usize, CompressError> {
@@ -389,10 +389,10 @@ pub(super) fn compress_mid_internal<const USE_DICT: bool>(
     let end_pos_check = input_end.saturating_sub(MFLIMIT);
     // Exclusive end for extending matches: last `END_OFFSET` bytes are handled as literals/trailer.
     let match_limit = input_end - END_OFFSET;
-    let mut match_finder = MidMatchFinder::<USE_DICT>::new(
+    let mut match_finder = TwoHashTablesMatchFinder::<USE_DICT>::new(
         input,
         ext_dict,
-        dict,
+        two_hash_tables,
         stream_offset,
         end_pos_check,
         match_limit,

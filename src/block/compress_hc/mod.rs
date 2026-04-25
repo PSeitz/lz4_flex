@@ -1,11 +1,11 @@
 //! High compression algorithm implementation.
 //!
 //! This module implements the LZ4 high compression algorithm using separate
-//! implementations for the mid, hash-chain, and optimal parsing strategies.
+//! implementations for the two-hash-tables, hash-chain, and optimal parsing strategies.
 //!
 //! It includes three compression strategies:
 //! - `compress_hc`: The shared public entry point
-//! - `Mid`: Intermediate compression for levels 0-2
+//! - `TwoHashTables`: Explicit two-hash-table compression for levels 0-2
 //! - `HashChain` / `Optimal`: Deeper HC parsing for levels 3-12
 
 use crate::block::CompressError;
@@ -19,21 +19,21 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 mod hash_chain;
-mod mid;
 mod optimal;
 #[cfg(test)]
 mod tests;
+mod two_hashtables;
 
 use hash_chain::{compress_hash_chain_internal, HashTableHCU32};
-use mid::{compress_mid_internal, HashTableMid};
 use optimal::compress_opt_internal;
+use two_hashtables::{compress_two_hash_tables_internal, TwoHashTables};
 
 const HASHTABLE_SIZE_HC: usize = 1 << 15;
 const MAX_DISTANCE_HC: usize = 1 << 16;
 
-// LZ4MID constants (for levels 1-2)
-const LZ4MID_HASH_LOG: usize = 15;
-const LZ4MID_HASHTABLE_SIZE: usize = 1 << LZ4MID_HASH_LOG;
+// Two-hash-tables constants (for levels 1-2)
+const TWO_HASH_TABLES_HASH_LOG: usize = 15;
+const TWO_HASH_TABLES_HASHTABLE_SIZE: usize = 1 << TWO_HASH_TABLES_HASH_LOG;
 
 const OPTIMAL_MATCH_LENGTH: usize = 32;
 const MATCH_LENGTH_MASK: usize = 31;
@@ -50,8 +50,8 @@ const RUN_MASK: usize = 15;
 /// Which high-compression strategy applies for a given level (after clamping to 12).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum HcCompressionStrategy {
-    /// Levels 0–2: intermediate (lz4mid-style) compressor.
-    Mid,
+    /// Levels 0–2: explicit two-hash-table compressor.
+    TwoHashTables,
     /// Levels 3–9: hash-chain HC.
     HashChain,
     /// Levels 10–12: optimal parsing.
@@ -66,7 +66,7 @@ pub(crate) enum HcCompressionStrategy {
 pub(crate) struct HcLevelParams {
     pub(crate) strategy: HcCompressionStrategy,
     /// Hash-chain search budget for [`HcCompressionStrategy::HashChain`] and [`HcCompressionStrategy::Optimal`]
-    /// Zero in [`HcCompressionStrategy::Mid`].
+    /// Zero in [`HcCompressionStrategy::TwoHashTables`].
     pub(crate) max_attempts: usize,
     /// Only for [`HcCompressionStrategy::Optimal`]: encode immediately when the first match is at least this long.
     pub(crate) sufficient_match_len: usize,
@@ -80,9 +80,9 @@ pub(crate) const fn hc_level_params(level: u8) -> HcLevelParams {
     match level {
         // The C reference (v1.10.0+) remaps level 0 to 9 (default) and only
         // exposes level 2 as the lz4mid entry point (LZ4HC_CLEVEL_MIN = 2).
-        // We treat 0–2 uniformly as Mid for a simpler "0 = fastest" mapping.
+        // We treat 0–2 uniformly as TwoHashTables for a simpler "0 = fastest" mapping.
         0..=2 => HcLevelParams {
-            strategy: HcCompressionStrategy::Mid,
+            strategy: HcCompressionStrategy::TwoHashTables,
             max_attempts: 0,
             sufficient_match_len: 0,
             full_optimal_update: false,
@@ -121,7 +121,7 @@ pub(crate) const fn hc_level_params(level: u8) -> HcLevelParams {
 /// This is useful when compressing many inputs in a loop (e.g. frame blocks).
 /// Create one table and pass it to [`compress_hc_with_table`] repeatedly.
 ///
-/// The table automatically selects the right internal variant (mid vs HC)
+/// The table automatically selects the right internal variant (two-hash-tables vs HC)
 /// based on the compression level, upgrading transparently when needed.
 ///
 /// # Example
@@ -138,7 +138,7 @@ pub struct CompressTableHC {
 }
 
 enum CompressTableHCInner {
-    Mid(HashTableMid),
+    TwoHashTables(TwoHashTables),
     HC(HashTableHCU32),
 }
 
@@ -152,19 +152,19 @@ impl CompressTableHC {
     /// Create a new table. The internal variant is lazily chosen on first use.
     pub fn new() -> Self {
         CompressTableHC {
-            inner: CompressTableHCInner::Mid(HashTableMid::new()),
+            inner: CompressTableHCInner::TwoHashTables(TwoHashTables::new()),
         }
     }
 
-    /// Get (or create) the Mid table, resetting it for a fresh block.
-    fn reset_mid(&mut self) -> &mut HashTableMid {
-        if !matches!(self.inner, CompressTableHCInner::Mid(_)) {
-            self.inner = CompressTableHCInner::Mid(HashTableMid::new());
+    /// Get (or create) the two-hash-tables state, resetting it for a fresh block.
+    fn reset_two_hash_tables(&mut self) -> &mut TwoHashTables {
+        if !matches!(self.inner, CompressTableHCInner::TwoHashTables(_)) {
+            self.inner = CompressTableHCInner::TwoHashTables(TwoHashTables::new());
         }
         match &mut self.inner {
-            CompressTableHCInner::Mid(mid) => {
-                mid.reset();
-                mid
+            CompressTableHCInner::TwoHashTables(two_hash_tables) => {
+                two_hash_tables.reset();
+                two_hash_tables
             }
             _ => unreachable!(),
         }
@@ -191,12 +191,12 @@ impl CompressTableHC {
     #[cfg(feature = "frame")]
     pub(crate) fn prepare_linked_block(&mut self, params: HcLevelParams, block_start: usize) {
         match params.strategy {
-            HcCompressionStrategy::Mid => match &mut self.inner {
-                CompressTableHCInner::Mid(mid) => {
-                    mid.prepare_linked_block();
+            HcCompressionStrategy::TwoHashTables => match &mut self.inner {
+                CompressTableHCInner::TwoHashTables(two_hash_tables) => {
+                    two_hash_tables.prepare_linked_block();
                 }
                 _ => {
-                    self.inner = CompressTableHCInner::Mid(HashTableMid::new());
+                    self.inner = CompressTableHCInner::TwoHashTables(TwoHashTables::new());
                 }
             },
             HcCompressionStrategy::HashChain | HcCompressionStrategy::Optimal => {
@@ -220,7 +220,9 @@ impl CompressTableHC {
     pub(crate) fn reposition(&mut self, delta: usize) {
         match &mut self.inner {
             CompressTableHCInner::HC(ht) => ht.reposition(delta),
-            CompressTableHCInner::Mid(mid) => mid.reposition(delta),
+            CompressTableHCInner::TwoHashTables(two_hash_tables) => {
+                two_hash_tables.reposition(delta)
+            }
         }
     }
 }
@@ -232,7 +234,7 @@ impl CompressTableHC {
 /// with a reusable [`CompressTableHC`] to avoid repeated allocation.
 ///
 /// # Compression levels
-/// - **Levels 1-2**: lz4mid intermediate algorithm
+/// - **Levels 1-2**: two-hash-tables algorithm
 /// - **Levels 3-9**: HC hash chain algorithm with increasing search depth
 /// - **Levels 10-12**: Optimal parsing (dynamic programming) for maximum compression
 ///
@@ -261,9 +263,16 @@ pub fn compress_hc(
             let mut hash_table = HashTableHCU32::new(params.max_attempts, input.len());
             compress_hash_chain_internal(input, 0, output, &mut hash_table, &[], 0)
         }
-        HcCompressionStrategy::Mid => {
-            let mut mid_table = HashTableMid::new();
-            compress_mid_internal::<false>(input, 0, output, &mut mid_table, &[], 0)
+        HcCompressionStrategy::TwoHashTables => {
+            let mut two_hash_tables = TwoHashTables::new();
+            compress_two_hash_tables_internal::<false>(
+                input,
+                0,
+                output,
+                &mut two_hash_tables,
+                &[],
+                0,
+            )
         }
     }
 }
@@ -272,7 +281,7 @@ pub fn compress_hc(
 /// [`CompressTableHC`] to avoid re-allocating internal hash tables.
 ///
 /// The table is automatically reset before each call. If the level changes
-/// between calls (e.g. mid vs HC), the table is transparently upgraded.
+/// between calls (e.g. two-hash-tables vs HC), the table is transparently upgraded.
 ///
 /// See [`compress_hc`] for compression level details.
 ///
@@ -295,9 +304,9 @@ pub fn compress_hc_with_table(
     let params = hc_level_params(level);
 
     match params.strategy {
-        HcCompressionStrategy::Mid => {
-            let mid_table = table.reset_mid();
-            compress_mid_internal::<false>(input, 0, output, mid_table, &[], 0)
+        HcCompressionStrategy::TwoHashTables => {
+            let two_hash_tables = table.reset_two_hash_tables();
+            compress_two_hash_tables_internal::<false>(input, 0, output, two_hash_tables, &[], 0)
         }
         HcCompressionStrategy::HashChain => {
             let hash_table = table.reset_hc(params.max_attempts, input.len());
@@ -325,28 +334,28 @@ pub(crate) fn compress_hc_linked(
     stream_offset: usize,
 ) -> Result<usize, CompressError> {
     match params.strategy {
-        HcCompressionStrategy::Mid => {
-            let mid_table = match &mut table.inner {
-                CompressTableHCInner::Mid(mid_table) => mid_table,
+        HcCompressionStrategy::TwoHashTables => {
+            let two_hash_tables = match &mut table.inner {
+                CompressTableHCInner::TwoHashTables(two_hash_tables) => two_hash_tables,
                 _ => unreachable!(
-                    "prepare_linked_block should have ensured Mid variant for mid levels"
+                    "prepare_linked_block should have ensured TwoHashTables variant for levels 0-2"
                 ),
             };
             if ext_dict.is_empty() {
-                compress_mid_internal::<false>(
+                compress_two_hash_tables_internal::<false>(
                     input,
                     input_pos,
                     output,
-                    mid_table,
+                    two_hash_tables,
                     ext_dict,
                     stream_offset,
                 )
             } else {
-                compress_mid_internal::<true>(
+                compress_two_hash_tables_internal::<true>(
                     input,
                     input_pos,
                     output,
-                    mid_table,
+                    two_hash_tables,
                     ext_dict,
                     stream_offset,
                 )
