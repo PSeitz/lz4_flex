@@ -62,58 +62,30 @@ There is also a small amount of local lookahead around the 4-byte path, but the 
 
 ### Core idea
 
-Instead of remembering only the latest candidate for each hash, it keeps:
+Hash-chain HC stores previous positions for each 4-byte hash:
 
-- a **dictionary**: the most recent position for each hash
-- a **chain table**: a backward link from each position to an older position with the same hash
+- `dictionary[hash]`: newest position with that hash
+- `chain_table[position % chain_table.len()]`: delta to the previous position with that hash
 
-That means each hash bucket behaves like a short linked list of candidate matches.
+```rust
+previous_position = position - chain_table[position % chain_table.len()]
+```
+
+Only positions within the LZ4 maximum match distance are usable. Each search
+checks at most `max_attempts` chain links.
 
 ### How it works
 
 At each position:
 
-1. Insert the current position into the hash/chain structure
-2. Use the current 4-byte prefix to find the newest candidate
-3. Walk backward through older candidates in the chain
-4. For each candidate:
-   - reject impossible or weak candidates quickly
-   - measure the actual match length
-   - keep the best local match seen so far
-5. After finding `current_match`, run another hash-chain search near `current_match.end() - 2` to see whether a better follow-up match exists
-6. If the follow-up match overlaps the current one, shorten or trim the matches so the emitted sequence stays valid, then emit
+1. Insert the current position into the dictionary and chain table.
+2. Look up the current 4-byte hash in the dictionary to get the newest candidate.
+3. Walk backward through the chain, stopping at `max_attempts` or when the candidate is too old.
+4. For each candidate, check whether it really matches and keep the best match found at this position.
+5. Before emitting, search again near the end of that match, at `match.end() - 2`, for a better follow-up match.
+6. If the matches overlap, trim or shorten them so the emitted LZ4 sequences stay valid, then emit.
 
-The compression level controls the chain search budget through `max_attempts`.
-
-### Important difference from TwoHashTables
-
-TwoHashTables asks:
-
-> Is there a good recent match here?
-
-Hash-chain HC asks:
-
-> Among several older matches with the same hash, which one gives the best local result?
-
-### Lazy evaluation
-
-This strategy does not always emit the first acceptable match immediately.
-
-That is what is **lazy** here: after finding `current_match`, it runs another search near `current_match.end() - 2` before committing. If that second search finds a better follow-up match, it may prefer that one instead.
-
-Two matches **overlap** when they cover some of the same input bytes. Since both cannot be emitted unchanged, the parser may shorten the earlier match or trim the front of the later one before emitting.
-
-### Decision style
-
-This mode is:
-
-- **deeper search** than TwoHashTables
-- still mostly **local**
-- smarter about **nearby competing matches**
-
-### Mental model
-
-> Search several older candidates, keep the best local match, then do a little lookahead before committing.
+For levels 3-9, `max_attempts = 1 << (level - 1)`.
 
 ---
 
