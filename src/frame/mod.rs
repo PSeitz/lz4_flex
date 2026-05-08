@@ -95,7 +95,7 @@ impl From<Error> for io::Error {
 
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {
-        match e.get_ref().map(|e| e.downcast_ref::<Error>()) {
+        match e.get_ref().and_then(|e| e.downcast_ref::<Error>()) {
             Some(_) => *e.into_inner().unwrap().downcast::<Error>().unwrap(),
             None => Error::IoError(e),
         }
