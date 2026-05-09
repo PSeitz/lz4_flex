@@ -33,15 +33,21 @@ fn hash5(sequence: usize) -> u32 {
     (((sequence << 24).wrapping_mul(primebytes)) >> 48) as u32
 }
 
+/// Trait for hash tables used during LZ4 compression.
 pub trait HashTable {
+    /// Returns the value stored at the given hash position.
     fn get_at(&self, pos: usize) -> usize;
+    /// Stores a value at the given hash position.
     fn put_at(&mut self, pos: usize, val: usize);
+    /// Resets all entries to zero.
     fn clear(&mut self);
+    /// Computes a hash for the bytes at `pos` in `input`.
     #[inline]
     #[cfg(target_pointer_width = "64")]
     fn get_hash_at(input: &[u8], pos: usize) -> usize {
         hash5(super::compress::get_batch_arch(input, pos)) as usize
     }
+    /// Computes a hash for the bytes at `pos` in `input`.
     #[inline]
     #[cfg(target_pointer_width = "32")]
     fn get_hash_at(input: &[u8], pos: usize) -> usize {
@@ -134,12 +140,14 @@ impl HashTable for HashTable4K {
 const HASHTABLE_SIZE_8K: usize = 8 * 1024;
 const HASH_TABLE_BIT_SHIFT_8K: usize = 3;
 
+/// An 8K entry hash table using 32-bit values.
 #[derive(Debug)]
 pub struct HashTable8K {
     dict: Box<[u32; HASHTABLE_SIZE_8K]>,
 }
 #[allow(dead_code)]
 impl HashTable8K {
+    /// Creates a new zeroed hash table.
     #[inline]
     pub fn new() -> Self {
         let dict = alloc::vec![0; HASHTABLE_SIZE_8K]
