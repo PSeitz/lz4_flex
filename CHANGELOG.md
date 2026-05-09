@@ -1,3 +1,13 @@
+0.12.1 (2026-03-14)
+==================
+### Security Fix
+- Fix handling of invalid match offsets during decompression [#a0b9154](https://github.com/PSeitz/lz4_flex/commit/a0b9154) (thanks @Marcono1234)
+```
+Invalid match offsets (offset == 0) during decompression were not properly
+handled, which could lead to invalid memory reads on untrusted input.
+Users on 0.12.x should upgrade to 0.12.1.
+```
+
 0.12.0 (2025-11-11)
 ==================
 - Fix integer overflows when decoding large payloads [#192](https://github.com/PSeitz/lz4_flex/pull/192) (thanks @teh-cmc)
