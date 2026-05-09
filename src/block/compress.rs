@@ -1162,8 +1162,9 @@ mod tests {
         scratch.copy_from(&pristine);
 
         let mut compressed = vec![0u8; get_maximum_output_size(input.len())];
-        let n = compress_into_with_loaded_table_and_dict(input, &mut compressed, &mut scratch, dict)
-            .unwrap();
+        let n =
+            compress_into_with_loaded_table_and_dict(input, &mut compressed, &mut scratch, dict)
+                .unwrap();
         compressed.truncate(n);
 
         assert_lt!(compressed.len(), compress(input).len());
@@ -1188,8 +1189,7 @@ mod tests {
 
         let mut table_a = CompressTable::large();
         let mut out_a = vec![0u8; get_maximum_output_size(input.len())];
-        let n_a =
-            compress_into_with_table_and_dict(input, &mut out_a, &mut table_a, dict).unwrap();
+        let n_a = compress_into_with_table_and_dict(input, &mut out_a, &mut table_a, dict).unwrap();
         out_a.truncate(n_a);
 
         let mut pristine = CompressTable::large();

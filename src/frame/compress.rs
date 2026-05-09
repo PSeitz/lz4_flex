@@ -169,9 +169,11 @@ impl<W: io::Write> FrameEncoder<W> {
     /// LZ4 frame spec for dictionary-bound frames and avoids the cross-block prefix
     /// state machine entirely.
     pub fn with_dictionary(wtr: W, dict: &[u8], dict_id: u32) -> Self {
-        let mut frame_info = FrameInfo::default();
-        frame_info.block_mode = BlockMode::Independent;
-        frame_info.dict_id = Some(dict_id);
+        let frame_info = FrameInfo {
+            block_mode: BlockMode::Independent,
+            dict_id: Some(dict_id),
+            ..Default::default()
+        };
         let mut enc = Self::with_frame_info(frame_info, wtr);
         enc.dict = dict.to_vec();
         enc
