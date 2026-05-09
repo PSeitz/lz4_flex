@@ -556,6 +556,10 @@ pub(crate) fn compress_into_sink_with_dict<const USE_DICT: bool>(
     output: &mut impl Sink,
     mut dict_data: &[u8],
 ) -> Result<usize, CompressError> {
+    if USE_DICT && dict_data.len() < MINMATCH {
+        return compress_into_sink_without_dict(input, output);
+    }
+
     if dict_data.len() + input.len() < u16::MAX as usize {
         let mut dict = HashTable4KU16::new();
         init_dict(&mut dict, &mut dict_data);
@@ -565,6 +569,17 @@ pub(crate) fn compress_into_sink_with_dict<const USE_DICT: bool>(
         init_dict(&mut dict, &mut dict_data);
         compress_internal::<_, USE_DICT, _>(input, 0, output, &mut dict, dict_data, dict_data.len())
     }
+}
+
+/// Slow fallback for when the dictionary is too small to be useful. This avoids the overhead of
+/// inlining.
+#[cold]
+#[inline(never)]
+fn compress_into_sink_without_dict(
+    input: &[u8],
+    output: &mut impl Sink,
+) -> Result<usize, CompressError> {
+    compress_into_sink_with_dict::<false>(input, output, b"")
 }
 
 #[inline]
@@ -619,12 +634,12 @@ pub fn compress_into_with_dict(
 fn compress_into_vec_with_dict<const USE_DICT: bool>(
     input: &[u8],
     prepend_size: bool,
-    mut dict_data: &[u8],
+    dict_data: &[u8],
 ) -> Vec<u8> {
     let prepend_size_num_bytes = if prepend_size { 4 } else { 0 };
     let max_compressed_size = get_maximum_output_size(input.len()) + prepend_size_num_bytes;
-    if dict_data.len() <= 3 {
-        dict_data = b"";
+    if USE_DICT && dict_data.len() < MINMATCH {
+        return compress_into_vec_without_dict(input, prepend_size);
     }
     #[cfg(feature = "safe-encode")]
     let mut compressed = {
@@ -665,6 +680,12 @@ fn compress_into_vec_with_dict<const USE_DICT: bool>(
 
     compressed.shrink_to_fit();
     compressed
+}
+
+#[cold]
+#[inline(never)]
+fn compress_into_vec_without_dict(input: &[u8], prepend_size: bool) -> Vec<u8> {
+    compress_into_vec_with_dict::<false>(input, prepend_size, b"")
 }
 
 /// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as a little
@@ -916,6 +937,37 @@ mod tests {
         ];
         let dict = &[10, 12, 14];
         let _compressed = compress_with_dict(input, dict);
+    }
+
+    #[test]
+    fn compress_into_with_short_dict_does_not_panic() {
+        let input = [0u8; 13];
+
+        for dict_len in 0..MINMATCH {
+            let dict = vec![0u8; dict_len];
+            let mut output = vec![0u8; get_maximum_output_size(input.len())];
+            let compressed_len = compress_into_with_dict(&input, &mut output, &dict).unwrap();
+
+            let mut uncompressed = vec![0u8; input.len()];
+            let uncompressed_len = crate::block::decompress::decompress_into_with_dict(
+                &output[..compressed_len],
+                &mut uncompressed,
+                &dict,
+            )
+            .unwrap();
+            uncompressed.truncate(uncompressed_len);
+            assert_eq!(uncompressed, input);
+        }
+    }
+
+    #[test]
+    #[cfg(all(miri, not(feature = "safe-encode")))]
+    fn miri_compress_into_with_short_dict_reads_past_dict() {
+        let input = [0u8; 13];
+        let dict = [0u8; 1];
+        let mut output = vec![0u8; get_maximum_output_size(input.len())];
+
+        let _ = compress_into_with_dict(&input, &mut output, &dict);
     }
 
     #[test]
