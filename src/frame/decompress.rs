@@ -69,6 +69,11 @@ pub struct FrameDecoder<R: io::Read> {
     dst_start: usize,
     /// Index into dst: ending point of bytes not yet read by caller.
     dst_end: usize,
+    /// External dictionary bytes (LZ4 frame format Dict_ID feature). Empty when none.
+    dict: Vec<u8>,
+    /// Expected Dict_ID. Set together with `dict`. Frames with a non-matching Dict_ID
+    /// will be rejected.
+    expected_dict_id: Option<u32>,
 }
 
 impl<R: io::Read> FrameDecoder<R> {
@@ -85,7 +90,22 @@ impl<R: io::Read> FrameDecoder<R> {
             current_frame_info: None,
             content_hasher: XxHash32::with_seed(0),
             content_len: 0,
+            dict: Vec::new(),
+            expected_dict_id: None,
         }
+    }
+
+    /// Creates a new Decoder that decodes frames using the supplied external dictionary.
+    ///
+    /// `dict_id` is the Dict_ID that the decoder will require frames to declare via the
+    /// FLG.DictID flag. Frames whose Dict_ID does not match are rejected with
+    /// [`Error::DictIdMismatch`]; frames without a Dict_ID at all are rejected with
+    /// [`Error::DictionaryRequired`].
+    pub fn with_dictionary(rdr: R, dict: &[u8], dict_id: u32) -> FrameDecoder<R> {
+        let mut dec = Self::new(rdr);
+        dec.dict = dict.to_vec();
+        dec.expected_dict_id = Some(dict_id);
+        dec
     }
 
     /// Gets a reference to the underlying reader in this decoder.
@@ -136,9 +156,14 @@ impl<R: io::Read> FrameDecoder<R> {
         }
 
         let frame_info = FrameInfo::read(&buffer[..required])?;
-        if frame_info.dict_id.is_some() {
-            // Unsupported right now so it must be None
-            return Err(Error::DictionaryNotSupported.into());
+        match (frame_info.dict_id, self.expected_dict_id) {
+            (None, None) => {}
+            (Some(_), None) => return Err(Error::DictionaryNotSupported.into()),
+            (None, Some(_)) => return Err(Error::DictionaryRequired.into()),
+            (Some(actual), Some(expected)) if actual != expected => {
+                return Err(Error::DictIdMismatch { expected, actual }.into());
+            }
+            (Some(_), Some(_)) => {}
         }
 
         let max_block_size = frame_info.block_size.get_size();
@@ -289,6 +314,20 @@ impl<R: io::Read> FrameDecoder<R> {
                         &self.src[..len],
                         &mut SliceSink::new(head, self.dst_start),
                         ext_dict,
+                    )
+                } else if !self.dict.is_empty() {
+                    // Independent blocks (or first linked block) backed by an external
+                    // dictionary supplied via `with_dictionary`.
+                    debug_assert!(self.dst.capacity() - self.dst_start >= max_block_size);
+                    crate::block::decompress::decompress_internal::<true, _>(
+                        &self.src[..len],
+                        &mut vec_sink_for_decompression(
+                            &mut self.dst,
+                            0,
+                            self.dst_start,
+                            self.dst_start + max_block_size,
+                        ),
+                        &self.dict,
                     )
                 } else {
                     // Independent blocks OR linked blocks with only prefix data

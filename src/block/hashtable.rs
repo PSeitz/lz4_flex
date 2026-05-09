@@ -71,6 +71,13 @@ impl HashTable4KU16 {
             .unwrap();
         Self { dict }
     }
+
+    /// Overwrite this table's entries with the contents of `other`. Reuses
+    /// this table's existing allocation (no heap traffic).
+    #[inline]
+    pub fn copy_from(&mut self, other: &Self) {
+        self.dict.copy_from_slice(&*other.dict);
+    }
 }
 impl HashTable for HashTable4KU16 {
     #[inline]
@@ -114,6 +121,13 @@ impl HashTable4K {
         for i in self.dict.iter_mut() {
             *i = i.saturating_sub(offset);
         }
+    }
+
+    /// Overwrite this table's entries with the contents of `other`. Reuses
+    /// this table's existing allocation (no heap traffic).
+    #[inline]
+    pub fn copy_from(&mut self, other: &Self) {
+        self.dict.copy_from_slice(&*other.dict);
     }
 }
 impl HashTable for HashTable4K {

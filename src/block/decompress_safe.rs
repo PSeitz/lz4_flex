@@ -184,7 +184,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
             if literal_length == 15 {
                 // The literal_length length took the maximal value, indicating that there is more
                 // than 15 literal_length bytes. We read the extra integer.
-                literal_length += read_integer(input, &mut input_pos)? as usize;
+                literal_length += read_integer(input, &mut input_pos)?;
             }
 
             if literal_length > input.len() - input_pos {
@@ -220,7 +220,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
         if match_length == MINMATCH + 15 {
             // The match length took the maximal value, indicating that there is more bytes. We
             // read the extra integer.
-            match_length += read_integer(input, &mut input_pos)? as usize;
+            match_length += read_integer(input, &mut input_pos)?;
         }
 
         // could be skipped with unchecked-decode
