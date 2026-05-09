@@ -1,3 +1,13 @@
+0.12.2 (2026-05-09)
+==================
+### Fixes
+- Fix handling of short compression dictionaries [#214](https://github.com/PSeitz/lz4_flex/issues/214)
+```
+Compression with dictionaries shorter than the minimum match length now falls
+back to compression without a dictionary instead of panicking or reading past
+the dictionary.
+```
+
 0.12.1 (2026-03-14)
 ==================
 ### Security Fix
