@@ -494,19 +494,6 @@ impl HashTableHCU32 {
         self.dictionary[hash] as usize
     }
 
-    /// Set dictionary slot at hash index.
-    #[inline]
-    fn set_dictionary_at(&mut self, hash: usize, pos: usize) {
-        self.dictionary[hash] = pos as u32;
-    }
-
-    /// Set chain value at position
-    #[inline]
-    fn set_chain(&mut self, pos: usize, delta: u16) {
-        let chain_index = pos & self.chain_mask();
-        self.chain_table[chain_index] = delta;
-    }
-
     /// Insert hashes for all positions up to the given local offset.
     /// Positions stored in the hash table are absolute (`local_pos + stream_offset`).
     #[inline]
@@ -739,39 +726,6 @@ pub(super) fn find_longer_hash_chain_match(
     }
 }
 
-/// Update the hash chain for the first match found at `cur`.
-///
-/// This mirrors the pre-hash step from the LZ4 HC reference: positions inside the
-/// first accepted match are inserted eagerly so later searches can skip ahead.
-fn prehash_first_match(
-    hash_table: &mut HashTableHCU32,
-    input: &[u8],
-    cur_absolute: usize,
-    stream_offset: usize,
-    first_match_length: usize,
-    delta: usize,
-) {
-    let mut hash_pos = cur_absolute;
-    let end_pos = cur_absolute + first_match_length - 3;
-
-    while hash_pos < end_pos - delta {
-        hash_table.set_chain(hash_pos, delta as u16);
-        hash_pos += 1;
-    }
-
-    loop {
-        hash_table.set_chain(hash_pos, delta as u16);
-        let local_hash_pos = hash_pos - stream_offset;
-        hash_table.set_dictionary_at(get_hash_at(input, local_hash_pos), hash_pos);
-        hash_pos += 1;
-        if hash_pos >= end_pos {
-            break;
-        }
-    }
-
-    hash_table.next_to_update = end_pos;
-}
-
 /// Insert `cur` into the hash/chain tables, then search the chain for the
 /// longest match starting at `cur`.
 ///
@@ -795,8 +749,6 @@ fn find_best_hash_chain_match(
         match_length: 0,
         candidate: 0,
     };
-    let mut first_match_delta = 0usize;
-    let mut first_match_length = 0usize;
 
     let cur_absolute = cur + stream_offset;
     let ext_dict_stream_offset = stream_offset - ext_dict.len();
@@ -805,7 +757,7 @@ fn find_best_hash_chain_match(
 
     let mut candidate = hash_table.get_dictionary_at(get_hash_at(input, cur));
 
-    for attempt in 0..hash_table.max_attempts {
+    for _ in 0..hash_table.max_attempts {
         if !hash_table.in_range(candidate, cur_absolute) {
             break;
         }
@@ -836,26 +788,10 @@ fn find_best_hash_chain_match(
             best_match.match_length = match_length as u32;
         }
 
-        if attempt == 0 && match_length > 0 {
-            first_match_length = match_length;
-            first_match_delta = cur_absolute - candidate;
-        }
-
         let Some(next_candidate) = hash_table.advance(candidate, cur_absolute) else {
             break;
         };
         candidate = next_candidate;
-    }
-
-    if first_match_length != 0 {
-        prehash_first_match(
-            hash_table,
-            input,
-            cur_absolute,
-            stream_offset,
-            first_match_length,
-            first_match_delta,
-        );
     }
 
     if best_match.match_length == 0 {
@@ -1188,13 +1124,14 @@ pub(super) fn compress_hash_chain_internal(
     // Do not extend matches into the last `LAST_LITERALS` bytes (they are literals).
     let match_limit = input_end - LAST_LITERALS;
 
-    let mut cur = input_pos + 1;
+    // Match C's LZ4HC main loop: start at block start and scan through `mflimit` inclusive.
+    let mut cur = input_pos;
     let mut literal_start = input_pos;
     let mut previous_match;
     let mut current_match;
     let mut next_match;
 
-    while cur < end_pos_check {
+    while cur <= end_pos_check {
         let Some(found_match) = find_best_hash_chain_match(
             hash_table,
             input,
