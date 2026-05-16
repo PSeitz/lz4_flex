@@ -253,6 +253,16 @@ fn get_hash_at(input: &[u8], pos: usize) -> usize {
     hash_hc(crate::block::compress::get_batch(input, pos)) as usize
 }
 
+#[inline]
+fn chain_table_size(input_len: usize) -> usize {
+    input_len.clamp(256, MAX_DISTANCE_HC).next_power_of_two()
+}
+
+#[inline(always)]
+fn candidate_position_for_distance(start_position: usize, distance: usize) -> u32 {
+    (start_position as u32).wrapping_sub(distance as u32)
+}
+
 /// Count matching bytes forward. Delegates to the shared `count_same_bytes`
 /// with `input` as both slices (HC always matches within the same buffer).
 #[inline]
@@ -332,27 +342,26 @@ fn count_common_bytes_backward(
     len
 }
 
-/// Compute match length between `candidate` and `cur` in `input`.
-/// Uses `end_bytes_match` as a fast rejection filter when a prior match
-/// already exists, then counts common bytes forward.
-/// Returns 0 if the candidate doesn't match.
-#[inline]
-fn compute_match_length(
+/// Count the match between `candidate` and `cur` in `input`.
+/// Returns 0 if the candidate does not match or cannot beat `best_match_length`.
+#[inline(always)]
+fn count_buffer_match(
     input: &[u8],
     candidate: usize,
     cur: usize,
     match_limit: usize,
-    match_info: &Match,
+    best_match_length: usize,
 ) -> usize {
-    let cant_beat_best = match_info.match_length >= MINMATCH as u32
-        && !end_bytes_match(input, candidate, cur, match_info.match_length as usize);
+    let cant_beat_best =
+        best_match_length >= MINMATCH && !end_bytes_match(input, candidate, cur, best_match_length);
     if cant_beat_best || !read_min_match_equals(input, candidate, cur) {
         return 0;
     }
+
     MINMATCH + count_common_bytes(input, candidate + MINMATCH, cur + MINMATCH, match_limit)
 }
 
-/// Result of pattern/repeat chain optimization inside [`HashTableHCU32::find_longer_match`]
+/// Result of pattern/repeat chain optimization inside [`find_longer_hash_chain_match`]
 /// (mirrors LZ4HC repeat detection).
 enum PatternChainAction {
     /// Continue with normal chain-step logic at the end of the loop body.
@@ -374,7 +383,7 @@ impl HashTableHCU32 {
 
         // Chain table: dynamically sized based on input length
         // min(input_len, MAX_DISTANCE_HC), at least 256, must be power of 2
-        let chain_size = input_len.clamp(256, MAX_DISTANCE_HC).next_power_of_two();
+        let chain_size = chain_table_size(input_len);
 
         Self {
             dictionary,
@@ -388,7 +397,7 @@ impl HashTableHCU32 {
     /// Avoids reallocation if the existing chain table is large enough.
     #[inline]
     pub(super) fn reset(&mut self, max_attempts: usize, input_len: usize) {
-        let needed_chain_size = input_len.clamp(256, MAX_DISTANCE_HC).next_power_of_two();
+        let needed_chain_size = chain_table_size(input_len);
 
         self.dictionary.fill(0);
 
@@ -411,9 +420,7 @@ impl HashTableHCU32 {
         if self.chain_table.len() < MAX_DISTANCE_HC {
             let mut new_chain = vec![0u16; MAX_DISTANCE_HC].into_boxed_slice();
             let old_len = self.chain_table.len();
-            for i in 0..old_len {
-                new_chain[i] = self.chain_table[i];
-            }
+            new_chain[..old_len].copy_from_slice(&self.chain_table);
             self.chain_table = new_chain;
         }
         self.next_to_update = block_start;
@@ -639,26 +646,19 @@ pub(super) fn find_longer_hash_chain_match(
             break;
         }
 
-        let mut match_length = 0usize;
-
         if candidate >= stream_offset {
             let candidate_relative = candidate - stream_offset;
 
-            if (best_match_length < MINMATCH
-                || end_bytes_match(input, candidate_relative, cur, best_match_length))
-                && read_min_match_equals(input, candidate_relative, cur)
-            {
-                match_length = MINMATCH
-                    + count_common_bytes(
-                        input,
-                        candidate_relative + MINMATCH,
-                        cur + MINMATCH,
-                        match_limit,
-                    );
-                if match_length > best_match_length {
-                    best_match_length = match_length;
-                    best_offset = (cur_absolute - candidate) as u16;
-                }
+            let match_length = count_buffer_match(
+                input,
+                candidate_relative,
+                cur,
+                match_limit,
+                best_match_length,
+            );
+            if match_length > best_match_length {
+                best_match_length = match_length;
+                best_offset = (cur_absolute - candidate) as u16;
             }
 
             if match_length == best_match_length
@@ -712,7 +712,7 @@ pub(super) fn find_longer_hash_chain_match(
                 PatternChainAction::NoAction => {}
             }
         } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
-            match_length = try_ext_dict_match(
+            let match_length = try_ext_dict_match(
                 input,
                 cur,
                 match_limit,
@@ -811,12 +811,12 @@ fn find_best_hash_chain_match(
         }
 
         let match_length = if candidate >= stream_offset {
-            compute_match_length(
+            count_buffer_match(
                 input,
                 candidate - stream_offset,
                 cur,
                 match_limit,
-                &best_match,
+                best_match.match_length as usize,
             )
         } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
             try_ext_dict_match(
@@ -832,7 +832,7 @@ fn find_best_hash_chain_match(
 
         if match_length as u32 > best_match.match_length {
             let distance = cur_absolute - candidate;
-            best_match.candidate = (cur as u32).wrapping_sub(distance as u32);
+            best_match.candidate = candidate_position_for_distance(cur, distance);
             best_match.match_length = match_length as u32;
         }
 
@@ -934,7 +934,7 @@ fn find_wider_hash_chain_match(
                     best_match.match_length = match_length as u32;
                     let distance = cur_absolute - candidate;
                     best_match.candidate =
-                        ((cur - backward_length) as u32).wrapping_sub(distance as u32);
+                        candidate_position_for_distance(cur - backward_length, distance);
                     best_match.start_position = (cur - backward_length) as u32;
                 }
             }
@@ -945,7 +945,7 @@ fn find_wider_hash_chain_match(
             if match_length as u32 > best_match.match_length {
                 best_match.match_length = match_length as u32;
                 let distance = cur_absolute - candidate;
-                best_match.candidate = (cur as u32).wrapping_sub(distance as u32);
+                best_match.candidate = candidate_position_for_distance(cur, distance);
                 best_match.start_position = cur as u32;
             }
         }
@@ -976,7 +976,35 @@ fn encode_match_and_advance(
     *literal_start = *cur;
 }
 
-#[inline]
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+fn find_wider_match_before_end(
+    hash_table: &mut HashTableHCU32,
+    input: &[u8],
+    base_match: &Match,
+    bytes_before_end: usize,
+    end_pos_check: usize,
+    match_limit: usize,
+    ext_dict: &[u8],
+    stream_offset: usize,
+) -> Option<Match> {
+    if base_match.end() > end_pos_check {
+        return None;
+    }
+
+    find_wider_hash_chain_match(
+        hash_table,
+        input,
+        base_match.end() - bytes_before_end,
+        base_match.start_position as usize,
+        match_limit,
+        base_match.match_length as usize,
+        ext_dict,
+        stream_offset,
+    )
+}
+
+#[inline(always)]
 fn find_following_wider_match(
     hash_table: &mut HashTableHCU32,
     input: &[u8],
@@ -986,17 +1014,13 @@ fn find_following_wider_match(
     ext_dict: &[u8],
     stream_offset: usize,
 ) -> Option<Match> {
-    if current_match.end() > end_pos_check {
-        return None;
-    }
-
-    find_wider_hash_chain_match(
+    find_wider_match_before_end(
         hash_table,
         input,
-        current_match.end() - 2,
-        current_match.start_position as usize,
+        current_match,
+        2,
+        end_pos_check,
         match_limit,
-        current_match.match_length as usize,
         ext_dict,
         stream_offset,
     )
@@ -1016,6 +1040,27 @@ fn followup_match_overlaps_previous_match(
 #[inline]
 fn next_match_starts_too_close(current_match: &Match, next_match: &Match) -> bool {
     (next_match.start_position - current_match.start_position) < 3
+}
+
+#[inline(always)]
+fn trim_next_match_for_current_overlap(current_match: &Match, next_match: &mut Match) {
+    let start_delta = next_match.start_position - current_match.start_position;
+    if start_delta >= OPTIMAL_MATCH_LENGTH as u32 {
+        return;
+    }
+
+    let mut capped_length = (current_match.match_length as usize).min(OPTIMAL_MATCH_LENGTH);
+    if current_match.start_position as usize + capped_length
+        > next_match.end().saturating_sub(MINMATCH)
+    {
+        capped_length =
+            start_delta as usize + (next_match.match_length as usize).saturating_sub(MINMATCH);
+    }
+
+    let overlap = capped_length.saturating_sub(start_delta as usize);
+    if overlap > 0 {
+        next_match.trim_front(overlap);
+    }
 }
 
 /// Result of the three-match resolution loop.
@@ -1045,40 +1090,18 @@ fn resolve_overlapping_matches(
     literal_start: &mut usize,
 ) -> ResolveAction {
     loop {
-        // Adjust next_match if it overlaps with current_match.
-        if (next_match.start_position - current_match.start_position) < OPTIMAL_MATCH_LENGTH as u32
-        {
-            let mut capped_length = (current_match.match_length as usize).min(OPTIMAL_MATCH_LENGTH);
-            if current_match.start_position as usize + capped_length
-                > next_match.end().saturating_sub(MINMATCH)
-            {
-                capped_length = (next_match.start_position - current_match.start_position) as usize
-                    + (next_match.match_length as usize).saturating_sub(MINMATCH);
-            }
-            let overlap = capped_length.saturating_sub(
-                (next_match.start_position - current_match.start_position) as usize,
-            );
-            if overlap > 0 {
-                next_match.trim_front(overlap);
-            }
-        }
+        trim_next_match_for_current_overlap(current_match, next_match);
 
-        // Try to find third_match near the end of next_match.
-        let Some(third_match) = (next_match.end() <= end_pos_check)
-            .then(|| {
-                find_wider_hash_chain_match(
-                    hash_table,
-                    input,
-                    next_match.end() - 3,
-                    next_match.start_position as usize,
-                    match_limit,
-                    next_match.match_length as usize,
-                    ext_dict,
-                    stream_offset,
-                )
-            })
-            .flatten()
-        else {
+        let Some(third_match) = find_wider_match_before_end(
+            hash_table,
+            input,
+            next_match,
+            3,
+            end_pos_check,
+            match_limit,
+            ext_dict,
+            stream_offset,
+        ) else {
             if (next_match.start_position as usize) < current_match.end() {
                 current_match.match_length =
                     next_match.start_position - current_match.start_position;
