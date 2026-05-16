@@ -1,4 +1,7 @@
-Note: Copied from the lz4 repository, https://github.com/lz4/lz4
+Note: Copied from the upstream lz4 repository, https://github.com/lz4/lz4
+Note: Original work Copyright (C) Yann Collet.
+Note: The upstream lz4 project is distributed under the BSD 2-Clause license;
+please retain this attribution when redistributing this copied document.
 
 LZ4 Block Format Description
 ============================
