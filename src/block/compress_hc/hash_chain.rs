@@ -342,21 +342,6 @@ fn count_common_bytes_backward(
     len
 }
 
-#[inline(always)]
-fn count_wider_match_backward_bytes(
-    input: &[u8],
-    candidate_relative: usize,
-    cur: usize,
-    start_limit: usize,
-    look_back_length: usize,
-) -> usize {
-    if look_back_length == 0 {
-        return 0;
-    }
-
-    count_common_bytes_backward(input, candidate_relative, cur, 0, start_limit)
-}
-
 /// Count the match between `candidate` and `cur` in `input`.
 /// Returns 0 if the candidate does not match or cannot beat `best_match_length`.
 #[inline(always)]
@@ -832,13 +817,8 @@ fn find_wider_hash_chain_match(
                         cur + MINMATCH,
                         match_limit,
                     );
-                let backward_length = count_wider_match_backward_bytes(
-                    input,
-                    candidate_relative,
-                    cur,
-                    start_limit,
-                    look_back_length,
-                );
+                let backward_length =
+                    count_common_bytes_backward(input, candidate_relative, cur, 0, start_limit);
                 let match_length = backward_length + forward_length;
 
                 if match_length as u32 > best_match.match_length {
