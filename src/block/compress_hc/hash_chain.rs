@@ -372,6 +372,31 @@ enum PatternChainAction {
     StopSearch,
 }
 
+/// Which byte slice contains a hash-chain candidate position. Stored value is slice-relative.
+enum CandidateSource {
+    Input(usize),
+    ExternalDictionary(usize),
+    Unavailable,
+}
+
+#[inline(always)]
+fn candidate_source(
+    candidate: usize,
+    stream_offset: usize,
+    ext_dict_len: usize,
+) -> CandidateSource {
+    let ext_dict_stream_offset = stream_offset - ext_dict_len;
+    if candidate >= stream_offset {
+        return CandidateSource::Input(candidate - stream_offset);
+    }
+
+    if ext_dict_len != 0 && candidate >= ext_dict_stream_offset {
+        return CandidateSource::ExternalDictionary(candidate - ext_dict_stream_offset);
+    }
+
+    CandidateSource::Unavailable
+}
+
 impl HashTableHCU32 {
     #[inline]
     pub(super) fn new(max_attempts: usize, input_len: usize) -> Self {
@@ -617,7 +642,6 @@ pub(super) fn find_longer_hash_chain_match(
     hash_table.insert(cur as u32, input, stream_offset);
 
     let cur_absolute = cur + stream_offset;
-    let ext_dict_stream_offset = stream_offset - ext_dict.len();
 
     let mut best_match_length = min_match_length;
     let mut best_offset: u16 = 0;
@@ -633,83 +657,80 @@ pub(super) fn find_longer_hash_chain_match(
             break;
         }
 
-        if candidate >= stream_offset {
-            let candidate_relative = candidate - stream_offset;
+        match candidate_source(candidate, stream_offset, ext_dict.len()) {
+            CandidateSource::Input(candidate_relative) => {
+                let match_length = count_buffer_match(
+                    input,
+                    candidate_relative,
+                    cur,
+                    match_limit,
+                    best_match_length,
+                );
+                if match_length > best_match_length {
+                    best_match_length = match_length;
+                    best_offset = (cur_absolute - candidate) as u16;
+                }
 
-            let match_length = count_buffer_match(
-                input,
-                candidate_relative,
-                cur,
-                match_limit,
-                best_match_length,
-            );
-            if match_length > best_match_length {
-                best_match_length = match_length;
-                best_offset = (cur_absolute - candidate) as u16;
-            }
-
-            if match_length == best_match_length
-                && match_length >= MINMATCH
-                && candidate + best_match_length <= cur_absolute
-            {
-                const K_TRIGGER: i32 = 4;
-                let mut distance_to_next = 1u16;
-                let end = (best_match_length - MINMATCH + 1) as i32;
-                let mut acceleration = 1 << K_TRIGGER;
-                let mut pos = 0i32;
-                while pos < end {
-                    let candidate_dist =
-                        hash_table.chain_delta(candidate.wrapping_add(pos as usize));
-                    let step = acceleration >> K_TRIGGER;
-                    acceleration += 1;
-                    if candidate_dist > distance_to_next {
-                        distance_to_next = candidate_dist;
-                        chain_pos = pos as usize;
-                        acceleration = 1 << K_TRIGGER;
+                if match_length == best_match_length
+                    && match_length >= MINMATCH
+                    && candidate + best_match_length <= cur_absolute
+                {
+                    const K_TRIGGER: i32 = 4;
+                    let mut distance_to_next = 1u16;
+                    let end = (best_match_length - MINMATCH + 1) as i32;
+                    let mut acceleration = 1 << K_TRIGGER;
+                    let mut pos = 0i32;
+                    while pos < end {
+                        let candidate_dist =
+                            hash_table.chain_delta(candidate.wrapping_add(pos as usize));
+                        let step = acceleration >> K_TRIGGER;
+                        acceleration += 1;
+                        if candidate_dist > distance_to_next {
+                            distance_to_next = candidate_dist;
+                            chain_pos = pos as usize;
+                            acceleration = 1 << K_TRIGGER;
+                        }
+                        pos += step;
                     }
-                    pos += step;
-                }
-                if distance_to_next > 1 {
-                    if (distance_to_next as usize) > candidate {
-                        break;
+                    if distance_to_next > 1 {
+                        if (distance_to_next as usize) > candidate {
+                            break;
+                        }
+                        candidate -= distance_to_next as usize;
+                        continue;
                     }
-                    candidate -= distance_to_next as usize;
-                    continue;
                 }
-            }
 
-            match hash_table.pattern_chain_action(
-                input,
-                cur,
-                match_limit,
-                cur_absolute,
-                stream_offset,
-                candidate,
-                chain_pos,
-                &mut repeat,
-                &mut source_pattern_length,
-                &mut best_match_length,
-                &mut best_offset,
-            ) {
-                PatternChainAction::RetryCandidate(new_abs) => {
-                    candidate = new_abs;
-                    continue;
+                match hash_table.pattern_chain_action(
+                    input,
+                    cur,
+                    match_limit,
+                    cur_absolute,
+                    stream_offset,
+                    candidate,
+                    chain_pos,
+                    &mut repeat,
+                    &mut source_pattern_length,
+                    &mut best_match_length,
+                    &mut best_offset,
+                ) {
+                    PatternChainAction::RetryCandidate(new_abs) => {
+                        candidate = new_abs;
+                        continue;
+                    }
+                    PatternChainAction::StopSearch => break,
+                    PatternChainAction::NoAction => {}
                 }
-                PatternChainAction::StopSearch => break,
-                PatternChainAction::NoAction => {}
             }
-        } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
-            let match_length = try_ext_dict_match(
-                input,
-                cur,
-                match_limit,
-                ext_dict,
-                candidate - ext_dict_stream_offset,
-            );
-            if match_length > best_match_length {
-                best_match_length = match_length;
-                best_offset = (cur_absolute - candidate) as u16;
+            CandidateSource::ExternalDictionary(candidate_relative) => {
+                let match_length =
+                    try_ext_dict_match(input, cur, match_limit, ext_dict, candidate_relative);
+                if match_length > best_match_length {
+                    best_match_length = match_length;
+                    best_offset = (cur_absolute - candidate) as u16;
+                }
             }
+            CandidateSource::Unavailable => {}
         }
 
         let delta = hash_table.chain_delta(candidate + chain_pos) as usize;
@@ -785,7 +806,6 @@ fn find_wider_hash_chain_match(
     };
 
     let cur_absolute = cur + stream_offset;
-    let ext_dict_stream_offset = stream_offset - ext_dict.len();
     let look_back_length = cur - start_limit;
 
     hash_table.insert(cur as u32, input, stream_offset);
@@ -797,48 +817,50 @@ fn find_wider_hash_chain_match(
             break;
         }
 
-        if candidate >= stream_offset {
-            let candidate_relative = candidate - stream_offset;
-            let can_check_tail = best_match.match_length >= MINMATCH as u32
-                && candidate_relative >= look_back_length;
-            if (!can_check_tail
-                || end_bytes_match(
-                    input,
-                    candidate_relative - look_back_length,
-                    start_limit,
-                    best_match.match_length as usize,
-                ))
-                && read_min_match_equals(input, candidate_relative, cur)
-            {
-                let forward_length = MINMATCH
-                    + count_common_bytes(
+        match candidate_source(candidate, stream_offset, ext_dict.len()) {
+            CandidateSource::Input(candidate_relative) => {
+                let can_check_tail = best_match.match_length >= MINMATCH as u32
+                    && candidate_relative >= look_back_length;
+                if (!can_check_tail
+                    || end_bytes_match(
                         input,
-                        candidate_relative + MINMATCH,
-                        cur + MINMATCH,
-                        match_limit,
-                    );
-                let backward_length =
-                    count_common_bytes_backward(input, candidate_relative, cur, 0, start_limit);
-                let match_length = backward_length + forward_length;
+                        candidate_relative - look_back_length,
+                        start_limit,
+                        best_match.match_length as usize,
+                    ))
+                    && read_min_match_equals(input, candidate_relative, cur)
+                {
+                    let forward_length = MINMATCH
+                        + count_common_bytes(
+                            input,
+                            candidate_relative + MINMATCH,
+                            cur + MINMATCH,
+                            match_limit,
+                        );
+                    let backward_length =
+                        count_common_bytes_backward(input, candidate_relative, cur, 0, start_limit);
+                    let match_length = backward_length + forward_length;
 
+                    if match_length as u32 > best_match.match_length {
+                        best_match.match_length = match_length as u32;
+                        let distance = cur_absolute - candidate;
+                        best_match.candidate =
+                            candidate_position_for_distance(cur - backward_length, distance);
+                        best_match.start_position = (cur - backward_length) as u32;
+                    }
+                }
+            }
+            CandidateSource::ExternalDictionary(candidate_relative) => {
+                let match_length =
+                    try_ext_dict_match(input, cur, match_limit, ext_dict, candidate_relative);
                 if match_length as u32 > best_match.match_length {
                     best_match.match_length = match_length as u32;
                     let distance = cur_absolute - candidate;
-                    best_match.candidate =
-                        candidate_position_for_distance(cur - backward_length, distance);
-                    best_match.start_position = (cur - backward_length) as u32;
+                    best_match.candidate = candidate_position_for_distance(cur, distance);
+                    best_match.start_position = cur as u32;
                 }
             }
-        } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
-            let candidate_relative = candidate - ext_dict_stream_offset;
-            let match_length =
-                try_ext_dict_match(input, cur, match_limit, ext_dict, candidate_relative);
-            if match_length as u32 > best_match.match_length {
-                best_match.match_length = match_length as u32;
-                let distance = cur_absolute - candidate;
-                best_match.candidate = candidate_position_for_distance(cur, distance);
-                best_match.start_position = cur as u32;
-            }
+            CandidateSource::Unavailable => {}
         }
 
         let Some(next_candidate) = hash_table.advance(candidate, cur_absolute) else {
