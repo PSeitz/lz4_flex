@@ -342,6 +342,21 @@ fn count_common_bytes_backward(
     len
 }
 
+#[inline(always)]
+fn count_wider_match_backward_bytes(
+    input: &[u8],
+    candidate_relative: usize,
+    cur: usize,
+    start_limit: usize,
+    look_back_length: usize,
+) -> usize {
+    if look_back_length == 0 {
+        return 0;
+    }
+
+    count_common_bytes_backward(input, candidate_relative, cur, 0, start_limit)
+}
+
 /// Count the match between `candidate` and `cur` in `input`.
 /// Returns 0 if the candidate does not match or cannot beat `best_match_length`.
 #[inline(always)]
@@ -744,61 +759,16 @@ fn find_best_hash_chain_match(
     ext_dict: &[u8],
     stream_offset: usize,
 ) -> Option<Match> {
-    let mut best_match = Match {
-        start_position: cur as u32,
-        match_length: 0,
-        candidate: 0,
-    };
-
-    let cur_absolute = cur + stream_offset;
-    let ext_dict_stream_offset = stream_offset - ext_dict.len();
-
-    hash_table.insert(cur as u32, input, stream_offset);
-
-    let mut candidate = hash_table.get_dictionary_at(get_hash_at(input, cur));
-
-    for _ in 0..hash_table.max_attempts {
-        if !hash_table.in_range(candidate, cur_absolute) {
-            break;
-        }
-
-        let match_length = if candidate >= stream_offset {
-            count_buffer_match(
-                input,
-                candidate - stream_offset,
-                cur,
-                match_limit,
-                best_match.match_length as usize,
-            )
-        } else if !ext_dict.is_empty() && candidate >= ext_dict_stream_offset {
-            try_ext_dict_match(
-                input,
-                cur,
-                match_limit,
-                ext_dict,
-                candidate - ext_dict_stream_offset,
-            )
-        } else {
-            0
-        };
-
-        if match_length as u32 > best_match.match_length {
-            let distance = cur_absolute - candidate;
-            best_match.candidate = candidate_position_for_distance(cur, distance);
-            best_match.match_length = match_length as u32;
-        }
-
-        let Some(next_candidate) = hash_table.advance(candidate, cur_absolute) else {
-            break;
-        };
-        candidate = next_candidate;
-    }
-
-    if best_match.match_length == 0 {
-        None
-    } else {
-        Some(best_match)
-    }
+    find_wider_hash_chain_match(
+        hash_table,
+        input,
+        cur,
+        cur,
+        match_limit,
+        0,
+        ext_dict,
+        stream_offset,
+    )
 }
 
 /// Insert `cur` into the hash/chain tables, then search the chain for a match
@@ -862,8 +832,13 @@ fn find_wider_hash_chain_match(
                         cur + MINMATCH,
                         match_limit,
                     );
-                let backward_length =
-                    count_common_bytes_backward(input, candidate_relative, cur, 0, start_limit);
+                let backward_length = count_wider_match_backward_bytes(
+                    input,
+                    candidate_relative,
+                    cur,
+                    start_limit,
+                    look_back_length,
+                );
                 let match_length = backward_length + forward_length;
 
                 if match_length as u32 > best_match.match_length {
