@@ -1,7 +1,6 @@
 //! Tests.
 
-#[macro_use]
-extern crate more_asserts;
+use assertables::*;
 
 use std::iter;
 
