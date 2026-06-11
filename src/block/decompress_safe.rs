@@ -5,8 +5,10 @@ use crate::block::MINMATCH;
 use crate::sink::Sink;
 use crate::sink::SliceSink;
 
+#[cfg(feature = "alloc")]
 #[allow(unused_imports)]
 use alloc::vec;
+#[cfg(feature = "alloc")]
 #[allow(unused_imports)]
 use alloc::vec::Vec;
 
@@ -338,6 +340,8 @@ pub fn decompress_into_with_dict(
 
 /// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in
 /// little endian. Can be used in conjunction with `compress_prepend_size`
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[inline]
 pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressError> {
     let (uncompressed_size, input) = super::uncompressed_size(input)?;
@@ -350,6 +354,8 @@ pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressErro
 /// # Panics
 /// May panic if the parameter `min_uncompressed_size` is smaller than the
 /// uncompressed data.
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[inline]
 pub fn decompress(input: &[u8], min_uncompressed_size: usize) -> Result<Vec<u8>, DecompressError> {
     let mut decompressed: Vec<u8> = vec![0; min_uncompressed_size];
@@ -361,6 +367,8 @@ pub fn decompress(input: &[u8], min_uncompressed_size: usize) -> Result<Vec<u8>,
 
 /// Decompress all bytes of `input` into a new vec. The first 4 bytes are the uncompressed size in
 /// little endian. Can be used in conjunction with `compress_prepend_size_with_dict`
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[inline]
 pub fn decompress_size_prepended_with_dict(
     input: &[u8],
@@ -376,6 +384,8 @@ pub fn decompress_size_prepended_with_dict(
 /// # Panics
 /// May panic if the parameter `min_uncompressed_size` is smaller than the
 /// uncompressed data.
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[inline]
 pub fn decompress_with_dict(
     input: &[u8],

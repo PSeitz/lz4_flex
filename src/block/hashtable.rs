@@ -1,3 +1,4 @@
+#[cfg(feature = "alloc")]
 #[allow(unused_imports)]
 use alloc::boxed::Box;
 
@@ -56,10 +57,14 @@ const HASHTABLE_BIT_SHIFT_4K: usize = 4;
 #[derive(Debug)]
 #[repr(align(64))]
 pub struct HashTable4KU16 {
+    #[cfg(feature = "alloc")]
     dict: Box<[u16; HASHTABLE_SIZE_4K]>,
+    #[cfg(not(feature = "alloc"))]
+    dict: [u16; HASHTABLE_SIZE_4K],
 }
 impl HashTable4KU16 {
     /// Creates a new zeroed hash table.
+    #[cfg(feature = "alloc")]
     #[inline]
     pub fn new() -> Self {
         // This generates more efficient assembly in contrast to Box::new(slice), because of an
@@ -70,6 +75,15 @@ impl HashTable4KU16 {
             .try_into()
             .unwrap();
         Self { dict }
+    }
+
+    /// Creates a new zeroed hash table.
+    #[cfg(not(feature = "alloc"))]
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            dict: [0; HASHTABLE_SIZE_4K],
+        }
     }
 }
 impl HashTable for HashTable4KU16 {
@@ -94,10 +108,14 @@ impl HashTable for HashTable4KU16 {
 /// A 4K entry hash table using 32-bit values.
 #[derive(Debug)]
 pub struct HashTable4K {
+    #[cfg(feature = "alloc")]
     dict: Box<[u32; HASHTABLE_SIZE_4K]>,
+    #[cfg(not(feature = "alloc"))]
+    dict: [u32; HASHTABLE_SIZE_4K],
 }
 impl HashTable4K {
     /// Creates a new zeroed hash table.
+    #[cfg(feature = "alloc")]
     #[inline]
     pub fn new() -> Self {
         let dict = alloc::vec![0; HASHTABLE_SIZE_4K]
@@ -105,6 +123,15 @@ impl HashTable4K {
             .try_into()
             .unwrap();
         Self { dict }
+    }
+
+    /// Creates a new zeroed hash table.
+    #[cfg(not(feature = "alloc"))]
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            dict: [0; HASHTABLE_SIZE_4K],
+        }
     }
 
     /// Shifts all entries down by `offset`, clamping at zero.
@@ -136,10 +163,14 @@ const HASH_TABLE_BIT_SHIFT_8K: usize = 3;
 
 #[derive(Debug)]
 pub struct HashTable8K {
+    #[cfg(feature = "alloc")]
     dict: Box<[u32; HASHTABLE_SIZE_8K]>,
+    #[cfg(not(feature = "alloc"))]
+    dict: [u32; HASHTABLE_SIZE_8K],
 }
 #[allow(dead_code)]
 impl HashTable8K {
+    #[cfg(feature = "alloc")]
     #[inline]
     pub fn new() -> Self {
         let dict = alloc::vec![0; HASHTABLE_SIZE_8K]
@@ -148,6 +179,13 @@ impl HashTable8K {
             .unwrap();
 
         Self { dict }
+    }
+    #[cfg(not(feature = "alloc"))]
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            dict: [0; HASHTABLE_SIZE_8K],
+        }
     }
 }
 impl HashTable for HashTable8K {

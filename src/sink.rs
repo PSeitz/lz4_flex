@@ -1,3 +1,4 @@
+#[cfg(feature = "alloc")]
 #[allow(unused_imports)]
 use alloc::vec::Vec;
 
@@ -44,6 +45,7 @@ pub fn vec_sink_for_decompression(
 pub trait Sink {
     /// Returns a raw ptr to the first unfilled byte of the Sink. Analogous to `[pos..].as_ptr()`.
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
+    #[allow(dead_code)]
     unsafe fn pos_mut_ptr(&mut self) -> *mut u8;
 
     /// read byte at position
@@ -202,7 +204,10 @@ impl Sink for SliceSink<'_> {
 /// space.
 ///
 ///
-#[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
+#[cfg(all(
+    feature = "alloc",
+    not(all(feature = "safe-encode", feature = "safe-decode"))
+))]
 pub struct PtrSink {
     /// The working slice, which may contain uninitialized bytes
     output: *mut u8,
@@ -212,7 +217,10 @@ pub struct PtrSink {
     cap: usize,
 }
 
-#[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
+#[cfg(all(
+    feature = "alloc",
+    not(all(feature = "safe-encode", feature = "safe-decode"))
+))]
 impl PtrSink {
     /// Creates a `Sink` backed by the given byte slice.
     /// `pos` defines the initial output position in the Sink.
@@ -235,7 +243,10 @@ impl PtrSink {
     }
 }
 
-#[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
+#[cfg(all(
+    feature = "alloc",
+    not(all(feature = "safe-encode", feature = "safe-decode"))
+))]
 impl Sink for PtrSink {
     /// Returns a raw ptr to the first unfilled byte of the Sink. Analogous to `[pos..].as_ptr()`.
     #[inline]

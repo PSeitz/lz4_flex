@@ -51,7 +51,7 @@ lz4_flex = { version = "0.12" }
 
 Performance:
 ```
-lz4_flex = { version = "0.12", default-features = false }
+lz4_flex = { version = "0.12", default-features = false, features = ["alloc"] }
 ```
 
 ### Block Format
@@ -73,6 +73,11 @@ fn main(){
 ## no_std support
 
 no_std support is currently only for the block format, since the frame format uses `std::io::Write`, which is not available in core.
+
+For environments without an allocator, additionally disable the `alloc` feature. The `_into` variants
+(`compress_into`, `decompress_into`, ...) operate on user-provided slices, the compression hash table is
+either placed on the stack (8-16KB depending on input size) or provided by the caller via
+`compress_into_with_table`.
 
 ## Benchmarks
 The benchmark is run with criterion, the test files are in the benches folder.

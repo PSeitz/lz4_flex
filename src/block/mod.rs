@@ -3,6 +3,7 @@
 //! As defined in <https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md>
 //!
 //! Currently for no_std support only the block format is supported.
+//! Without the `alloc` feature only the `_into` variants are available, e.g. [`compress_into`].
 //!
 //! # Example: block format roundtrip
 //! ```

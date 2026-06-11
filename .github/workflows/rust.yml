@@ -29,6 +29,10 @@ jobs:
       run: cargo build --no-default-features --features safe-encode
     - name: Ensure no_std compiles for safe-encode and safe-decode
       run: cargo build --no-default-features --features safe-encode --features safe-decode
+    - name: Ensure no_std compiles with alloc
+      run: cargo build --no-default-features --features alloc
+    - name: Ensure no_std compiles with alloc for safe-encode and safe-decode
+      run: cargo build --no-default-features --features alloc --features safe-encode --features safe-decode
     - name: Build
       run: cargo build --verbose
     - name: Check Formatting
@@ -47,6 +51,10 @@ jobs:
       run: cargo +nightly test --no-default-features --features frame --features nightly
     - name: Run tests unsafe with checked-decode and frame
       run: cargo test --no-default-features --features frame
+    - name: Run tests without alloc
+      run: cargo test --no-default-features --test no_alloc
+    - name: Run tests without alloc for safe-encode and safe-decode
+      run: cargo test --no-default-features --features safe-encode --features safe-decode --test no_alloc
     - name: Install cargo fuzz
       run: cargo install cargo-fuzz
     - name: Run fuzz tests (safe)
