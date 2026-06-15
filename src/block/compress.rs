@@ -74,7 +74,7 @@ fn token_from_literal(lit_len: usize) -> u8 {
 }
 
 #[inline]
-fn token_from_literal_and_match_length(lit_len: usize, duplicate_length: usize) -> u8 {
+pub(super) fn token_from_literal_and_match_length(lit_len: usize, duplicate_length: usize) -> u8 {
     let mut token = if lit_len < 0xF {
         // Since we can fit the literals length into it, there is no need for saturation.
         (lit_len as u8) << 4
@@ -490,13 +490,13 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool, S: Sink>(
 
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn push_byte(output: &mut impl Sink, el: u8) {
+pub(super) fn push_byte(output: &mut impl Sink, el: u8) {
     output.push(el);
 }
 
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn push_byte(output: &mut impl Sink, el: u8) {
+pub(super) fn push_byte(output: &mut impl Sink, el: u8) {
     unsafe {
         core::ptr::write(output.pos_mut_ptr(), el);
         output.set_pos(output.pos() + 1);
@@ -505,13 +505,13 @@ fn push_byte(output: &mut impl Sink, el: u8) {
 
 #[inline]
 #[cfg(feature = "safe-encode")]
-fn push_u16(output: &mut impl Sink, el: u16) {
+pub(super) fn push_u16(output: &mut impl Sink, el: u16) {
     output.extend_from_slice(&el.to_le_bytes());
 }
 
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn push_u16(output: &mut impl Sink, el: u16) {
+pub(super) fn push_u16(output: &mut impl Sink, el: u16) {
     unsafe {
         core::ptr::copy_nonoverlapping(el.to_le_bytes().as_ptr(), output.pos_mut_ptr(), 2);
         output.set_pos(output.pos() + 2);

@@ -44,6 +44,9 @@ safe-encode = []
 checked-decode = [] # Adds important checks while decoding. Only remove on trusted input!
 frame = ["std", "dep:twox-hash"]
 std = []
+# Optimal-parse "ultra" block compressor (slower, higher ratio). Pure Rust, no extra deps.
+# Produces standard LZ4 blocks decodable by any LZ4 decompressor. Requires alloc.
+ultra = []
 # use nightly compiler features
 nightly = []
 

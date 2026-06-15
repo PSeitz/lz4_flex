@@ -20,6 +20,12 @@ use super::{
 };
 use crate::block::WINDOW_SIZE;
 
+/// Selects the block compressor used by a [`FrameEncoder`] — the same enum as the block API's
+/// [`crate::block::CompressionMode`]. Purely a compressor-side choice; the frame format is unchanged,
+/// so streams produced with any mode are decodable by any LZ4 frame decoder.
+#[cfg(feature = "ultra")]
+pub use crate::block::CompressionMode;
+
 /// A writer for compressing a LZ4 stream.
 ///
 /// This `FrameEncoder` wraps any other writer that implements `io::Write`.
@@ -90,6 +96,17 @@ pub struct FrameEncoder<W: io::Write> {
     data_to_frame_written: bool,
     /// The frame information to be used in this encoder.
     frame_info: FrameInfo,
+    /// Which block compressor to use ([`CompressionMode::Fast`], [`Ultra`](CompressionMode::Ultra),
+    /// or [`Hc`](CompressionMode::Hc)).
+    #[cfg(feature = "ultra")]
+    ultra_mode: CompressionMode,
+    /// Reusable optimal-parse context, only used by the non-`Fast` modes.
+    #[cfg(feature = "ultra")]
+    ultra_compressor: crate::block::ultra::UltraCompressor,
+    /// Reusable buffer holding the contiguous lookback window (ext_dict ++ prefix ++ block) handed
+    /// to the ultra compressor in linked-block mode.
+    #[cfg(feature = "ultra")]
+    ultra_window: Vec<u8>,
 }
 
 impl<W: io::Write> FrameEncoder<W> {
@@ -149,12 +166,31 @@ impl<W: io::Write> FrameEncoder<W> {
             ext_dict_offset: 0,
             ext_dict_len: 0,
             src_stream_offset: 0,
+            #[cfg(feature = "ultra")]
+            ultra_mode: CompressionMode::Fast,
+            #[cfg(feature = "ultra")]
+            ultra_compressor: crate::block::ultra::UltraCompressor::new(),
+            #[cfg(feature = "ultra")]
+            ultra_window: Vec::new(),
         }
     }
 
     /// Creates a new Encoder with the default settings.
     pub fn new(wtr: W) -> Self {
         Self::with_frame_info(Default::default(), wtr)
+    }
+
+    /// Sets the block compressor used for this stream.
+    ///
+    /// Defaults to [`CompressionMode::Fast`]. [`Ultra`](CompressionMode::Ultra) (best ratio,
+    /// decode-optimised, slowest) and [`Hc`](CompressionMode::Hc) (fast, low memory, ratio close to
+    /// Ultra) use the optimal-parse compressor. The frame format is unchanged, so the output remains
+    /// decodable by any LZ4 frame decoder.
+    #[cfg(feature = "ultra")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ultra")))]
+    pub fn set_compression_mode(&mut self, mode: CompressionMode) -> &mut Self {
+        self.ultra_mode = mode;
+        self
     }
 
     /// The frame information used by this Encoder.
@@ -263,46 +299,20 @@ impl<W: io::Write> FrameEncoder<W> {
         let max_block_size = self.frame_info.block_size.get_size();
         debug_assert!(self.src_end - self.src_start <= max_block_size);
 
-        // Reposition the compression table if we're anywhere near an overflowing hazard
-        if self.src_stream_offset + max_block_size + WINDOW_SIZE >= u32::MAX as usize / 2 {
-            self.compression_table
-                .reposition((self.src_stream_offset - self.ext_dict_len) as _);
-            self.src_stream_offset = self.ext_dict_len;
-        }
-
-        // input to the compressor, which may include a prefix when blocks are linked
-        let input = &self.src[..self.src_end];
         // the contents of the block are between src_start and src_end
-        let src = &input[self.src_start..];
+        let src_len = self.src_end - self.src_start;
 
-        let dst_required_size = crate::block::compress::get_maximum_output_size(src.len());
-
-        let compress_result = if self.ext_dict_len != 0 {
-            debug_assert_eq!(self.frame_info.block_mode, BlockMode::Linked);
-            compress_internal::<_, true, _>(
-                input,
-                self.src_start,
-                &mut vec_sink_for_compression(&mut self.dst, 0, 0, dst_required_size),
-                &mut self.compression_table,
-                &self.src[self.ext_dict_offset..self.ext_dict_offset + self.ext_dict_len],
-                self.src_stream_offset,
-            )
-        } else {
-            compress_internal::<_, false, _>(
-                input,
-                self.src_start,
-                &mut vec_sink_for_compression(&mut self.dst, 0, 0, dst_required_size),
-                &mut self.compression_table,
-                b"",
-                self.src_stream_offset,
-            )
-        };
+        // Compress the block into self.dst (fast or ultra path).
+        let compress_result = self.compress_current_block();
 
         let (block_info, block_data) = match compress_result.map_err(Error::CompressionError)? {
-            comp_len if comp_len < src.len() => {
+            comp_len if comp_len < src_len => {
                 (BlockInfo::Compressed(comp_len as _), &self.dst[..comp_len])
             }
-            _ => (BlockInfo::Uncompressed(src.len() as _), src),
+            _ => (
+                BlockInfo::Uncompressed(src_len as _),
+                &self.src[self.src_start..self.src_end],
+            ),
         };
 
         // Write the (un)compressed block to the writer and the block checksum (if applicable).
@@ -317,12 +327,13 @@ impl<W: io::Write> FrameEncoder<W> {
 
         // Content checksum, if applicable
         if self.frame_info.content_checksum {
-            self.content_hasher.write(src);
+            self.content_hasher
+                .write(&self.src[self.src_start..self.src_end]);
         }
 
         // Buffer and offsets maintenance
-        self.content_len += src.len() as u64;
-        self.src_start += src.len();
+        self.content_len += src_len as u64;
+        self.src_start += src_len;
         debug_assert_eq!(self.src_start, self.src_end);
         if self.frame_info.block_mode == BlockMode::Linked {
             // In linked mode we consume the input (bumping src_start) but leave the
@@ -363,11 +374,103 @@ impl<W: io::Write> FrameEncoder<W> {
             self.src_end = 0;
             // Advance stream offset so we don't have to reset the match dict
             // for the next block.
-            self.src_stream_offset += src.len();
+            self.src_stream_offset += src_len;
         }
         debug_assert!(self.src_start <= self.src_end);
         debug_assert!(self.src_start + max_block_size <= self.src.capacity());
         Ok(())
+    }
+
+    /// Compress the current block (`src[src_start..src_end]`, possibly with a prefix/ext_dict for
+    /// lookback) into `self.dst`, returning the compressed length. Dispatches to the fast or ultra
+    /// compressor.
+    fn compress_current_block(&mut self) -> Result<usize, crate::block::CompressError> {
+        #[cfg(feature = "ultra")]
+        if self.ultra_mode != CompressionMode::Fast {
+            return self.compress_current_block_ultra();
+        }
+
+        let max_block_size = self.frame_info.block_size.get_size();
+        // Reposition the compression table if we're anywhere near an overflowing hazard
+        if self.src_stream_offset + max_block_size + WINDOW_SIZE >= u32::MAX as usize / 2 {
+            self.compression_table
+                .reposition((self.src_stream_offset - self.ext_dict_len) as _);
+            self.src_stream_offset = self.ext_dict_len;
+        }
+
+        // input to the compressor, which may include a prefix when blocks are linked
+        let input = &self.src[..self.src_end];
+        let dst_required_size =
+            crate::block::compress::get_maximum_output_size(self.src_end - self.src_start);
+
+        if self.ext_dict_len != 0 {
+            debug_assert_eq!(self.frame_info.block_mode, BlockMode::Linked);
+            compress_internal::<_, true, _>(
+                input,
+                self.src_start,
+                &mut vec_sink_for_compression(&mut self.dst, 0, 0, dst_required_size),
+                &mut self.compression_table,
+                &self.src[self.ext_dict_offset..self.ext_dict_offset + self.ext_dict_len],
+                self.src_stream_offset,
+            )
+        } else {
+            compress_internal::<_, false, _>(
+                input,
+                self.src_start,
+                &mut vec_sink_for_compression(&mut self.dst, 0, 0, dst_required_size),
+                &mut self.compression_table,
+                b"",
+                self.src_stream_offset,
+            )
+        }
+    }
+
+    /// Optimal-parse ("ultra") compression of the current block into `self.dst`.
+    ///
+    /// Builds a single contiguous lookback window. In independent mode (and before the first linked
+    /// rotation) the encoder's `src` buffer already holds `prefix ++ block` contiguously, so it is
+    /// used directly. Once an external dictionary exists (linked mode after rotation), `ext_dict` and
+    /// `src[..src_end]` are concatenated into the reusable `ultra_window` buffer. Either way the
+    /// match offsets produced are true LZ4 back-distances, since the window bytes are exactly the
+    /// stream-contiguous predecessors the decoder holds.
+    #[cfg(feature = "ultra")]
+    fn compress_current_block_ultra(&mut self) -> Result<usize, crate::block::CompressError> {
+        // Only reached for the non-`Fast` modes, so `ultra_engine()` is always `Some`.
+        let (favor, finder) = self
+            .ultra_mode
+            .ultra_engine()
+            .expect("compress_current_block_ultra called in Fast mode");
+        let src_len = self.src_end - self.src_start;
+        let dst_required_size = crate::block::compress::get_maximum_output_size(src_len);
+
+        if self.ext_dict_len == 0 {
+            let mut sink = vec_sink_for_compression(&mut self.dst, 0, 0, dst_required_size);
+            self.ultra_compressor.compress_block(
+                &self.src[..self.src_end],
+                self.src_start,
+                favor,
+                finder,
+                &mut sink,
+            )
+        } else {
+            debug_assert_eq!(self.frame_info.block_mode, BlockMode::Linked);
+            self.ultra_window.clear();
+            self.ultra_window.extend_from_slice(
+                &self.src[self.ext_dict_offset..self.ext_dict_offset + self.ext_dict_len],
+            );
+            self.ultra_window
+                .extend_from_slice(&self.src[..self.src_end]);
+            let prefix_len = self.ext_dict_len + self.src_start;
+
+            let mut sink = vec_sink_for_compression(&mut self.dst, 0, 0, dst_required_size);
+            self.ultra_compressor.compress_block(
+                &self.ultra_window,
+                prefix_len,
+                favor,
+                finder,
+                &mut sink,
+            )
+        }
     }
 }
 

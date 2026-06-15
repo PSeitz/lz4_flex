@@ -27,8 +27,96 @@ pub(crate) use decompress_safe as decompress;
 #[cfg(not(feature = "safe-decode"))]
 pub(crate) mod decompress;
 
+#[cfg(feature = "ultra")]
+#[cfg_attr(feature = "safe-encode", forbid(unsafe_code))]
+pub(crate) mod ultra;
+
 pub use compress::*;
 pub use decompress::*;
+
+/// Selects which compressor the `compress_*_with_mode` entry points (and the
+/// [frame encoder][crate::frame::FrameEncoder::set_compression_mode]) use.
+///
+/// [`Fast`](Self::Fast) is the default greedy/lazy compressor (exactly [`compress`]); the other two
+/// are optimal-parse "ultra" engines that compress better at the cost of speed/memory.
+#[cfg(feature = "ultra")]
+#[cfg_attr(docsrs, doc(cfg(feature = "ultra")))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CompressionMode {
+    /// Fast greedy/lazy compressor — identical to [`compress`]. The default.
+    #[default]
+    Fast,
+    /// Optimal-parse suffix-array compressor. Best ratio and a decode-optimised stream (favours
+    /// decompression speed), but the slowest and most memory-hungry.
+    Ultra,
+    /// Hash-chain optimal compressor (matches `lz4hc -12`): ratio close to [`Ultra`](Self::Ultra),
+    /// several times faster, far less memory.
+    Hc,
+}
+
+#[cfg(feature = "ultra")]
+impl CompressionMode {
+    /// `(favor, finder)` for the optimal-parse engines; `None` for [`Fast`](Self::Fast).
+    #[inline]
+    pub(crate) fn ultra_engine(self) -> Option<(ultra::Favor, ultra::Finder)> {
+        match self {
+            CompressionMode::Fast => None,
+            CompressionMode::Ultra => {
+                Some((ultra::Favor::DecompressionSpeed, ultra::Finder::SuffixArray))
+            }
+            CompressionMode::Hc => Some((ultra::Favor::Ratio, ultra::Finder::Lz4Hc)),
+        }
+    }
+}
+
+/// Compress `input` with the chosen [`CompressionMode`], optionally using `dict` for lookback
+/// (pass `b""` for none). With [`CompressionMode::Fast`] this is exactly [`compress`] /
+/// [`compress_with_dict`]. The result is a standard LZ4 block decodable by [`decompress`].
+#[cfg(feature = "ultra")]
+#[cfg_attr(docsrs, doc(cfg(feature = "ultra")))]
+pub fn compress_with_mode(input: &[u8], dict: &[u8], mode: CompressionMode) -> alloc::vec::Vec<u8> {
+    match mode.ultra_engine() {
+        None if dict.is_empty() => compress(input),
+        None => compress_with_dict(input, dict),
+        Some((favor, finder)) => ultra::compress_into_vec(input, false, dict, favor, finder),
+    }
+}
+
+/// Like [`compress_with_mode`], prepending the uncompressed size as a little-endian `u32` (pairs
+/// with [`decompress_size_prepended`] / [`decompress_size_prepended_with_dict`]).
+#[cfg(feature = "ultra")]
+#[cfg_attr(docsrs, doc(cfg(feature = "ultra")))]
+pub fn compress_prepend_size_with_mode(
+    input: &[u8],
+    dict: &[u8],
+    mode: CompressionMode,
+) -> alloc::vec::Vec<u8> {
+    match mode.ultra_engine() {
+        None if dict.is_empty() => compress_prepend_size(input),
+        None => compress_prepend_size_with_dict(input, dict),
+        Some((favor, finder)) => ultra::compress_into_vec(input, true, dict, favor, finder),
+    }
+}
+
+/// Like [`compress_with_mode`], writing into the pre-allocated `output` (size it with
+/// [`get_maximum_output_size`]). Returns the number of bytes written.
+#[cfg(feature = "ultra")]
+#[cfg_attr(docsrs, doc(cfg(feature = "ultra")))]
+pub fn compress_into_with_mode(
+    input: &[u8],
+    output: &mut [u8],
+    dict: &[u8],
+    mode: CompressionMode,
+) -> Result<usize, CompressError> {
+    match mode.ultra_engine() {
+        None if dict.is_empty() => compress_into(input, output),
+        None => compress_into_with_dict(input, output, dict),
+        Some((favor, finder)) => {
+            let mut sink = crate::sink::SliceSink::new(output, 0);
+            ultra::compress_one_shot(input, dict, favor, finder, &mut sink)
+        }
+    }
+}
 
 use core::{error::Error, fmt};
 

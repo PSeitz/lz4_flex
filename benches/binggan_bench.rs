@@ -136,6 +136,21 @@ fn block_compress(mut runner: InputGroup<Vec<u8>, usize>) {
         let out = black_box(lz4_cpp_block_compress(i).unwrap());
         out.len()
     });
+    // Optimal-parse comparison: our ultra vs the C reference lz4hc at max level.
+    #[cfg(feature = "ultra")]
+    runner.register("lz4 flex ultra", move |i| {
+        let out = black_box(lz4_flex::block::compress_with_mode(
+            i,
+            b"",
+            lz4_flex::block::CompressionMode::Ultra,
+        ));
+        out.len()
+    });
+    runner.register("lz4 c hc12", move |i| {
+        let mut out = Vec::new();
+        lzzzz::lz4_hc::compress_to_vec(i, &mut out, lzzzz::lz4_hc::CLEVEL_MAX).unwrap();
+        black_box(out).len()
+    });
     runner.register("snap", move |i| {
         let out = black_box(compress_snap(i));
         out.len()
