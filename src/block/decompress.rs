@@ -23,7 +23,15 @@ unsafe fn duplicate(
     if (output_ptr.offset_from(start) as usize) < match_length + 16 - 1
         || (output_end.offset_from(*output_ptr) as usize) < match_length + 16 - 1
     {
-        duplicate_overlapping(output_ptr, start, match_length);
+        // Only long matches reach here (the hot <=18 fast loop calls `duplicate_overlapping`
+        // directly), so this is where the doubling copy pays off for run/periodic data. Pass the
+        // pointer by value, not `&mut`: a `&mut` to a non-inlined function would force `output_ptr`
+        // onto the stack across the whole decode loop, which costs ~10% on general data.
+        if match_length >= OVERLAP_DOUBLE_MIN {
+            *output_ptr = duplicate_overlapping_long(*output_ptr, start, match_length);
+        } else {
+            duplicate_overlapping(output_ptr, start, match_length);
+        }
     } else {
         debug_assert!(
             output_ptr.add(match_length / 16 * 16 + ((match_length % 16) != 0) as usize * 16)
@@ -79,6 +87,34 @@ unsafe fn duplicate_overlapping(
         core::ptr::copy(start, *output_ptr, 1);
         *output_ptr = output_ptr.add(1);
     }
+}
+
+/// Match length at or above which `duplicate` uses the doubling copy. Only reached on the
+/// general/long-match path (never the hot `<=18` fast loop), so short matches keep the byte loop.
+const OVERLAP_DOUBLE_MIN: usize = 33;
+
+/// Long overlapping/near-end copy by pattern doubling: the first `offset` bytes already hold one
+/// period, so we repeatedly copy the whole valid prefix forward by its own length — O(log n) memcpys
+/// instead of n byte writes (10-40x on run/periodic data). Each step is non-overlapping and never
+/// overruns. Returns the advanced output pointer (by value, to avoid a stack spill in the caller).
+/// `#[cold]`/`#[inline(never)]` keeps it out of the hot decode loop.
+#[cold]
+#[inline(never)]
+unsafe fn duplicate_overlapping_long(
+    out: *mut u8,
+    start: *const u8,
+    match_length: usize,
+) -> *mut u8 {
+    let offset = out.offset_from(start) as usize;
+    let base = out.sub(offset);
+    let total = offset + match_length;
+    let mut filled = offset;
+    while filled < total {
+        let chunk = filled.min(total - filled);
+        core::ptr::copy_nonoverlapping(base as *const u8, base.add(filled), chunk);
+        filled += chunk;
+    }
+    out.add(match_length)
 }
 
 #[inline]

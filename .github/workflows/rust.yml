@@ -63,6 +63,27 @@ jobs:
       # But setting up llvm-symbolizer here might not be worth it; can do that locally when reproducing the issue
       run: cargo +nightly fuzz run fuzz_decomp_corrupt_block --no-default-features --sanitizer=memory --dev -- -max_total_time=30
 
+  miri:
+    name: miri (overlapping-copy unsafe)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup nightly + miri
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          components: miri
+      # Validates the unsafe self-referential `duplicate_overlapping` pointer code (and the safe
+      # `extend_from_within_overlapping`) is UB-free. FFI-free test so it runs under miri.
+      - name: Miri (unsafe decoder)
+        run: cargo +nightly miri test --no-default-features --features std --test overlap_miri
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation
+      - name: Miri (safe decoder)
+        run: cargo +nightly miri test --no-default-features --features std,safe-decode --test overlap_miri
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation
+
   semver:
     name: semver
     runs-on: ubuntu-latest
