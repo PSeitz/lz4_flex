@@ -25,6 +25,9 @@ pub(crate) mod compress;
 pub(crate) mod decompress;
 pub(crate) mod header;
 
+#[cfg(feature = "ultra")]
+#[cfg_attr(docsrs, doc(cfg(feature = "ultra")))]
+pub use compress::CompressionMode;
 pub use compress::{AutoFinishEncoder, FrameEncoder};
 pub use decompress::FrameDecoder;
 pub use header::{BlockMode, BlockSize, FrameInfo};

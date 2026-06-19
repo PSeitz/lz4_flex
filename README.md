@@ -40,6 +40,7 @@ AMD Ryzen 7 5900HX, rustc 1.69.0 (84c898d65 2023-04-16), Manjaro, CPU Boost Disa
 - Feature flags to configure safe/unsafe code usage
 - no-std support with block format (thanks @coolreader18)
 - 32-bit support
+- Optional optimal-parse `ultra` mode for maximum compression ratio (pure-Rust port of [lz4ultra](https://github.com/emmanuel-marty/lz4ultra))
 
 ## Usage: 
 Compression and decompression uses no unsafe via the default feature flags "safe-encode" and "safe-decode". If you need more performance you can disable them (e.g. with no-default-features).
@@ -67,6 +68,46 @@ fn main(){
     let uncompressed = decompress_size_prepended(&compressed).unwrap();
     assert_eq!(input, uncompressed);
 }
+```
+
+### Ultra mode (optimal parsing)
+
+Enable the `ultra` feature for an optimal-parse compressor — a pure-Rust port of
+[lz4ultra](https://github.com/emmanuel-marty/lz4ultra). It compresses noticeably smaller than the
+default fast parser (matching `lz4hc -12` / `lz4ultra` byte-for-byte), at the cost of speed and
+memory. The output is a standard LZ4 block/frame, decodable by any LZ4 decompressor.
+
+```toml
+lz4_flex = { version = "0.13", features = ["ultra"] }
+```
+
+```rust
+use lz4_flex::block::{compress_with_mode, decompress, CompressionMode};
+
+let input: &[u8] = b"Hello people, what's up? Hello people, what's up?";
+// `b""` is the (empty) dictionary; pass a slice to compress against one.
+let compressed = compress_with_mode(input, b"", CompressionMode::Ultra);
+let uncompressed = decompress(&compressed, input.len()).unwrap();
+assert_eq!(input, uncompressed);
+```
+
+The optimal-parse engine is chosen with [`CompressionMode`]:
+
+- `CompressionMode::Ultra` — a faithful port of [lz4ultra](https://github.com/emmanuel-marty/lz4ultra):
+  a suffix-array match finder feeding a global optimal-parse DP, producing a decode-optimised LZ4
+  stream (it decompresses faster than `lz4hc` at the same ratio — it favours decompression speed,
+  lz4ultra's own default). Best ratio, but the slowest and most memory-hungry.
+- `CompressionMode::Hc` — a port of LZ4's `LZ4HC_compress_optimal` (level 12, byte-identical to
+  `lz4hc -12`): ratio close to `Ultra`, **several times faster**, far less memory.
+- `CompressionMode::Fast` — the default greedy/lazy compressor (same as `compress`).
+
+The same `CompressionMode` works for the frame format:
+
+```rust,ignore
+use lz4_flex::frame::{CompressionMode, FrameEncoder};
+
+let mut enc = FrameEncoder::new(Vec::new());
+enc.set_compression_mode(CompressionMode::Hc);
 ```
 
 
