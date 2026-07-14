@@ -1,4 +1,4 @@
-0.14.0 (unreleased)
+0.14.0 (2026-07-14)
 ==================
 ### Features
 - Add `alloc` feature to allow `no_std` operation without an allocator. The `std` feature now implies `alloc`. Without `alloc` only the `_into` variants of the block API are available, e.g. `compress_into`; the compression hash table is placed on the stack or can be provided via `compress_into_with_table`.
