@@ -1,3 +1,12 @@
+0.14.0 (unreleased)
+==================
+### Features
+- Add `alloc` feature to allow `no_std` operation without an allocator. The `std` feature now implies `alloc`. Without `alloc` only the `_into` variants of the block API are available, e.g. `compress_into`; the compression hash table is placed on the stack or can be provided via `compress_into_with_table`.
+```
+Note: Users with `default-features = false` need to additionally enable the `alloc`
+feature to keep the APIs returning `Vec`, e.g. `compress` and `decompress`.
+```
+
 0.13.1 (2026-05-09)
 ==================
 ### Fixes

@@ -10,13 +10,15 @@ use crate::block::LZ4_MIN_LENGTH;
 use crate::block::MAX_DISTANCE;
 use crate::block::MFLIMIT;
 use crate::block::MINMATCH;
-#[cfg(not(feature = "safe-encode"))]
+#[cfg(all(feature = "alloc", not(feature = "safe-encode")))]
 use crate::sink::PtrSink;
 use crate::sink::Sink;
 use crate::sink::SliceSink;
+#[cfg(feature = "alloc")]
 #[allow(unused_imports)]
 use alloc::vec;
 
+#[cfg(feature = "alloc")]
 #[allow(unused_imports)]
 use alloc::vec::Vec;
 
@@ -630,6 +632,7 @@ pub fn compress_into_with_dict(
     compress_into_sink_with_dict::<true>(input, &mut SliceSink::new(output, 0), dict_data)
 }
 
+#[cfg(feature = "alloc")]
 #[inline]
 fn compress_into_vec_with_dict<const USE_DICT: bool>(
     input: &[u8],
@@ -682,6 +685,7 @@ fn compress_into_vec_with_dict<const USE_DICT: bool>(
     compressed
 }
 
+#[cfg(feature = "alloc")]
 #[cold]
 #[inline(never)]
 fn compress_into_vec_without_dict(input: &[u8], prepend_size: bool) -> Vec<u8> {
@@ -690,18 +694,24 @@ fn compress_into_vec_without_dict(input: &[u8], prepend_size: bool) -> Vec<u8> {
 
 /// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as a little
 /// endian u32. Can be used in conjunction with `decompress_size_prepended`
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[inline]
 pub fn compress_prepend_size(input: &[u8]) -> Vec<u8> {
     compress_into_vec_with_dict::<false>(input, true, b"")
 }
 
 /// Compress all bytes of `input`.
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[inline]
 pub fn compress(input: &[u8]) -> Vec<u8> {
     compress_into_vec_with_dict::<false>(input, false, b"")
 }
 
 /// Compress all bytes of `input` with an external dictionary.
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[inline]
 pub fn compress_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
     compress_into_vec_with_dict::<true>(input, false, ext_dict)
@@ -709,6 +719,8 @@ pub fn compress_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
 
 /// Compress all bytes of `input` into `output`. The uncompressed size will be prepended as a little
 /// endian u32. Can be used in conjunction with `decompress_size_prepended_with_dict`
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[inline]
 pub fn compress_prepend_size_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8> {
     compress_into_vec_with_dict::<true>(input, true, ext_dict)
@@ -744,12 +756,27 @@ impl Default for CompressTable {
 impl CompressTable {
     /// Create a small table (16-bit entries). More memory efficient, but only usable when the
     /// total input size is less than 65535 bytes.
+    #[cfg(feature = "alloc")]
     pub fn small() -> Self {
         CompressTable::Small(HashTable4KU16::new())
     }
 
+    /// Create a small table (16-bit entries). More memory efficient, but only usable when the
+    /// total input size is less than 65535 bytes.
+    #[cfg(not(feature = "alloc"))]
+    pub const fn small() -> Self {
+        CompressTable::Small(HashTable4KU16::new())
+    }
+
     /// Create a large table (32-bit entries). Works for any input size.
+    #[cfg(feature = "alloc")]
     pub fn large() -> Self {
+        CompressTable::Large(HashTable4K::new())
+    }
+
+    /// Create a large table (32-bit entries). Works for any input size.
+    #[cfg(not(feature = "alloc"))]
+    pub const fn large() -> Self {
         CompressTable::Large(HashTable4K::new())
     }
 }
@@ -763,7 +790,8 @@ impl CompressTable {
 ///
 /// **Note:** If the table variant doesn't match the input size (e.g. a `Small` table is used
 /// with input >= 64KB), the table will be transparently upgraded. However, it won't be
-/// downgraded automatically.
+/// downgraded automatically. Without the `alloc` feature the upgrade constructs the new table
+/// on the stack, use [`CompressTable::large`] upfront to avoid this.
 #[inline]
 pub fn compress_into_with_table(
     input: &[u8],

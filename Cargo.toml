@@ -43,7 +43,8 @@ safe-decode = []
 safe-encode = []
 checked-decode = [] # Adds important checks while decoding. Only remove on trusted input!
 frame = ["std", "dep:twox-hash"]
-std = []
+std = ["alloc"]
+alloc = []
 # use nightly compiler features
 nightly = []
 

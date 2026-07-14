@@ -61,11 +61,19 @@
 //! - `safe-encode` uses only safe rust for encode. _enabled by default_
 //! - `safe-decode` uses only safe rust for encode. _enabled by default_
 //! - `frame` support for LZ4 frame format. _implies `std`, enabled by default_
-//! - `std` enables dependency on the standard library. _enabled by default_
+//! - `std` enables dependency on the standard library. _implies `alloc`, enabled by default_
+//! - `alloc` enables APIs that allocate, e.g. [`compress`](block/fn.compress.html) returning a
+//!   `Vec`. _enabled by default_
 //!
 //! For maximum performance use `no-default-features`.
 //!
 //! For no_std support only the [`block format`](block/index.html) is supported.
+//!
+//! Without the `alloc` feature only the `_into` variants are available, e.g.
+//! [`compress_into`](block/fn.compress_into.html). Compression then places its hash table
+//! (8-16KB) on the stack. Alternatively
+//! [`compress_into_with_table`](block/fn.compress_into_with_table.html) can be used with a
+//! statically allocated [`CompressTable`](block/enum.CompressTable.html).
 //!
 //!
 #![deny(warnings)]
@@ -74,6 +82,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "nightly", feature(optimize_attribute))]
 
+#[cfg(feature = "alloc")]
 #[cfg_attr(test, macro_use)]
 extern crate alloc;
 
@@ -97,12 +106,24 @@ mod fastcpy_unsafe;
     since = "0.11.0",
     note = "This re-export is deprecated as it can be confused with the frame API and is not suitable for very large data, use block:: instead"
 )]
-pub use block::{compress, compress_into, compress_prepend_size};
+pub use block::compress_into;
 #[deprecated(
     since = "0.11.0",
     note = "This re-export is deprecated as it can be confused with the frame API and is not suitable for very large data, use block:: instead"
 )]
-pub use block::{decompress, decompress_into, decompress_size_prepended};
+pub use block::decompress_into;
+#[cfg(feature = "alloc")]
+#[deprecated(
+    since = "0.11.0",
+    note = "This re-export is deprecated as it can be confused with the frame API and is not suitable for very large data, use block:: instead"
+)]
+pub use block::{compress, compress_prepend_size};
+#[cfg(feature = "alloc")]
+#[deprecated(
+    since = "0.11.0",
+    note = "This re-export is deprecated as it can be confused with the frame API and is not suitable for very large data, use block:: instead"
+)]
+pub use block::{decompress, decompress_size_prepended};
 
 #[cfg_attr(
     all(feature = "safe-encode", feature = "safe-decode"),
