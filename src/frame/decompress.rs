@@ -422,7 +422,7 @@ impl<R: io::Read> io::BufRead for FrameDecoder<R> {
 }
 
 impl<R: fmt::Debug + io::Read> fmt::Debug for FrameDecoder<R> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FrameDecoder")
             .field("r", &self.r)
             .field("content_hasher", &self.content_hasher)

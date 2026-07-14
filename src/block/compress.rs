@@ -740,6 +740,7 @@ pub fn compress_prepend_size_with_dict(input: &[u8], ext_dict: &[u8]) -> Vec<u8>
 /// let mut output = vec![0u8; get_maximum_output_size(input.len())];
 /// let compressed_len = compress_into_with_table(input, &mut output, &mut table).unwrap();
 /// ```
+#[derive(Debug)]
 pub enum CompressTable {
     /// Table using 16-bit entries, suitable for inputs where `input.len() < u16::MAX`.
     Small(HashTable4KU16),

@@ -419,6 +419,14 @@ pub struct AutoFinishEncoder<W: Write> {
     encoder: Option<FrameEncoder<W>>,
 }
 
+impl<W: fmt::Debug + Write> fmt::Debug for AutoFinishEncoder<W> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AutoFinishEncoder")
+            .field("encoder", &self.encoder)
+            .finish()
+    }
+}
+
 impl<W: io::Write> Drop for AutoFinishEncoder<W> {
     fn drop(&mut self) {
         if let Some(mut encoder) = self.encoder.take() {
@@ -438,7 +446,7 @@ impl<W: Write> Write for AutoFinishEncoder<W> {
 }
 
 impl<W: fmt::Debug + io::Write> fmt::Debug for FrameEncoder<W> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FrameEncoder")
             .field("w", &self.w)
             .field("frame_info", &self.frame_info)

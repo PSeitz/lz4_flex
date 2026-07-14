@@ -23,17 +23,19 @@ unsafe fn duplicate(
     // Considering that `wild_copy_match_16` can copy up to `16 - 1` extra bytes.
     // Defer to `duplicate_overlapping` in case of an overlapping match
     // OR the if the wild copy would copy beyond the end of the output.
-    if (output_ptr.offset_from(start) as usize) < match_length + 16 - 1
-        || (output_end.offset_from(*output_ptr) as usize) < match_length + 16 - 1
-    {
-        duplicate_overlapping(output_ptr, start, match_length);
-    } else {
-        debug_assert!(
-            output_ptr.add(match_length / 16 * 16 + ((match_length % 16) != 0) as usize * 16)
-                <= output_end
-        );
-        wild_copy_from_src_16(start, *output_ptr, match_length);
-        *output_ptr = output_ptr.add(match_length);
+    unsafe {
+        if (output_ptr.offset_from(start) as usize) < match_length + 16 - 1
+            || (output_end.offset_from(*output_ptr) as usize) < match_length + 16 - 1
+        {
+            duplicate_overlapping(output_ptr, start, match_length);
+        } else {
+            debug_assert!(
+                output_ptr.add(match_length / 16 * 16 + ((match_length % 16) != 0) as usize * 16)
+                    <= output_end
+            );
+            wild_copy_from_src_16(start, *output_ptr, match_length);
+            *output_ptr = output_ptr.add(match_length);
+        }
     }
 }
 
@@ -62,25 +64,27 @@ unsafe fn duplicate_overlapping(
     mut start: *const u8,
     match_length: usize,
 ) {
-    let dst_ptr_end = output_ptr.add(match_length);
+    unsafe {
+        let dst_ptr_end = output_ptr.add(match_length);
 
-    while output_ptr.add(1) < dst_ptr_end {
-        // Note that this loop unrolling is done, so that the compiler doesn't do it in a awful
-        // way.
-        // Without that the compiler will unroll/auto-vectorize the copy with a lot of branches.
-        // This is not what we want, as large overlapping copies are not that common.
-        core::ptr::copy(start, *output_ptr, 1);
-        start = start.add(1);
-        *output_ptr = output_ptr.add(1);
+        while output_ptr.add(1) < dst_ptr_end {
+            // Note that this loop unrolling is done, so that the compiler doesn't do it in a awful
+            // way.
+            // Without that the compiler will unroll/auto-vectorize the copy with a lot of branches.
+            // This is not what we want, as large overlapping copies are not that common.
+            core::ptr::copy(start, *output_ptr, 1);
+            start = start.add(1);
+            *output_ptr = output_ptr.add(1);
 
-        core::ptr::copy(start, *output_ptr, 1);
-        start = start.add(1);
-        *output_ptr = output_ptr.add(1);
-    }
+            core::ptr::copy(start, *output_ptr, 1);
+            start = start.add(1);
+            *output_ptr = output_ptr.add(1);
+        }
 
-    if *output_ptr < dst_ptr_end {
-        core::ptr::copy(start, *output_ptr, 1);
-        *output_ptr = output_ptr.add(1);
+        if *output_ptr < dst_ptr_end {
+            core::ptr::copy(start, *output_ptr, 1);
+            *output_ptr = output_ptr.add(1);
+        }
     }
 }
 
@@ -92,23 +96,25 @@ unsafe fn copy_from_dict(
     offset: usize,
     match_length: usize,
 ) -> usize {
-    // If we're here we know offset > output pos, so we have at least 1 byte to copy from dict
-    debug_assert!(output_ptr.offset_from(output_base) >= 0);
-    debug_assert!(offset > output_ptr.offset_from(output_base) as usize);
-    // offset falls within ext_dict
-    debug_assert!(ext_dict.len() + output_ptr.offset_from(output_base) as usize >= offset);
+    unsafe {
+        // If we're here we know offset > output pos, so we have at least 1 byte to copy from dict
+        debug_assert!(output_ptr.offset_from(output_base) >= 0);
+        debug_assert!(offset > output_ptr.offset_from(output_base) as usize);
+        // offset falls within ext_dict
+        debug_assert!(ext_dict.len() + output_ptr.offset_from(output_base) as usize >= offset);
 
-    let dict_offset = ext_dict.len() + output_ptr.offset_from(output_base) as usize - offset;
-    // Can't copy past ext_dict len, the match may cross dict and output
-    let dict_match_length = match_length.min(ext_dict.len() - dict_offset);
-    // TODO test fastcpy_unsafe
-    core::ptr::copy_nonoverlapping(
-        ext_dict.as_ptr().add(dict_offset),
-        *output_ptr,
-        dict_match_length,
-    );
-    *output_ptr = output_ptr.add(dict_match_length);
-    dict_match_length
+        let dict_offset = ext_dict.len() + output_ptr.offset_from(output_base) as usize - offset;
+        // Can't copy past ext_dict len, the match may cross dict and output
+        let dict_match_length = match_length.min(ext_dict.len() - dict_offset);
+        // TODO test fastcpy_unsafe
+        core::ptr::copy_nonoverlapping(
+            ext_dict.as_ptr().add(dict_offset),
+            *output_ptr,
+            dict_match_length,
+        );
+        *output_ptr = output_ptr.add(dict_match_length);
+        dict_match_length
+    }
 }
 
 /// Read an integer.

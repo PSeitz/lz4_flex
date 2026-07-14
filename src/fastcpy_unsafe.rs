@@ -18,7 +18,7 @@
 //!
 
 #[inline]
-pub fn slice_copy(src: *const u8, dst: *mut u8, num_bytes: usize) {
+pub(crate) fn slice_copy(src: *const u8, dst: *mut u8, num_bytes: usize) {
     if num_bytes < 4 {
         short_copy(src, dst, num_bytes);
         return;

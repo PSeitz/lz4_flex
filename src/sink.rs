@@ -11,7 +11,7 @@ use crate::fastcpy::slice_copy;
 /// The argument `pos` defines the initial output position in the Sink.
 #[inline]
 #[cfg(feature = "frame")]
-pub fn vec_sink_for_compression(
+pub(crate) fn vec_sink_for_compression(
     vec: &mut Vec<u8>,
     offset: usize,
     pos: usize,
@@ -30,7 +30,7 @@ pub fn vec_sink_for_compression(
 /// The argument `pos` defines the initial output position in the Sink.
 #[cfg(feature = "frame")]
 #[inline]
-pub fn vec_sink_for_decompression(
+pub(crate) fn vec_sink_for_decompression(
     vec: &mut Vec<u8>,
     offset: usize,
     pos: usize,
@@ -42,7 +42,7 @@ pub fn vec_sink_for_decompression(
     }
 }
 
-pub trait Sink {
+pub(crate) trait Sink {
     /// Returns a raw ptr to the first unfilled byte of the Sink. Analogous to `[pos..].as_ptr()`.
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
     #[allow(dead_code)]
@@ -93,7 +93,7 @@ pub trait Sink {
 ///
 /// # Invariants
 ///   - Bytes `[..pos()]` are always initialized.
-pub struct SliceSink<'a> {
+pub(crate) struct SliceSink<'a> {
     /// The working slice, which may contain uninitialized bytes
     output: &'a mut [u8],
     /// Number of bytes in start of `output` guaranteed to be initialized
@@ -106,7 +106,7 @@ impl<'a> SliceSink<'a> {
     /// # Panics
     /// Panics if `pos` is out of bounds.
     #[inline]
-    pub fn new(output: &'a mut [u8], pos: usize) -> Self {
+    pub(crate) fn new(output: &'a mut [u8], pos: usize) -> Self {
         // SAFETY: Caller guarantees that all elements of `output[..pos]` are initialized.
         let _ = &mut output[..pos]; // bounds check pos
         SliceSink { output, pos }
@@ -118,7 +118,7 @@ impl Sink for SliceSink<'_> {
     #[inline]
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
     unsafe fn pos_mut_ptr(&mut self) -> *mut u8 {
-        self.base_mut_ptr().add(self.pos()) as *mut u8
+        unsafe { self.base_mut_ptr().add(self.pos()) as *mut u8 }
     }
 
     /// Pushes a byte to the end of the Sink.
@@ -208,7 +208,7 @@ impl Sink for SliceSink<'_> {
     feature = "alloc",
     not(all(feature = "safe-encode", feature = "safe-decode"))
 ))]
-pub struct PtrSink {
+pub(crate) struct PtrSink {
     /// The working slice, which may contain uninitialized bytes
     output: *mut u8,
     /// Number of bytes in start of `output` guaranteed to be initialized
@@ -227,7 +227,7 @@ impl PtrSink {
     /// # Panics
     /// Panics if `pos` is out of bounds.
     #[inline]
-    pub fn from_vec(output: &mut Vec<u8>, pos: usize) -> Self {
+    pub(crate) fn from_vec(output: &mut Vec<u8>, pos: usize) -> Self {
         assert!(
             pos <= output.len(),
             "invalid pos {pos} for vec with len {}",
@@ -252,7 +252,7 @@ impl Sink for PtrSink {
     #[inline]
     #[cfg(not(all(feature = "safe-encode", feature = "safe-decode")))]
     unsafe fn pos_mut_ptr(&mut self) -> *mut u8 {
-        self.base_mut_ptr().add(self.pos()) as *mut u8
+        unsafe { self.base_mut_ptr().add(self.pos()) as *mut u8 }
     }
 
     /// Pushes a byte to the end of the Sink.

@@ -18,7 +18,7 @@
 //!
 
 #[inline]
-pub fn slice_copy(src: &[u8], dst: &mut [u8]) {
+pub(crate) fn slice_copy(src: &[u8], dst: &mut [u8]) {
     #[inline(never)]
     #[cold]
     #[track_caller]

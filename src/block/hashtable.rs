@@ -34,7 +34,7 @@ fn hash5(sequence: usize) -> u32 {
     (((sequence << 24).wrapping_mul(primebytes)) >> 48) as u32
 }
 
-pub trait HashTable {
+pub(crate) trait HashTable {
     fn get_at(&self, pos: usize) -> usize;
     fn put_at(&mut self, pos: usize, val: usize);
     fn clear(&mut self);
@@ -162,7 +162,7 @@ const HASHTABLE_SIZE_8K: usize = 8 * 1024;
 const HASH_TABLE_BIT_SHIFT_8K: usize = 3;
 
 #[derive(Debug)]
-pub struct HashTable8K {
+pub(crate) struct HashTable8K {
     #[cfg(feature = "alloc")]
     dict: Box<[u32; HASHTABLE_SIZE_8K]>,
     #[cfg(not(feature = "alloc"))]
@@ -172,7 +172,7 @@ pub struct HashTable8K {
 impl HashTable8K {
     #[cfg(feature = "alloc")]
     #[inline]
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let dict = alloc::vec![0; HASHTABLE_SIZE_8K]
             .into_boxed_slice()
             .try_into()
@@ -182,7 +182,7 @@ impl HashTable8K {
     }
     #[cfg(not(feature = "alloc"))]
     #[inline]
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             dict: [0; HASHTABLE_SIZE_8K],
         }

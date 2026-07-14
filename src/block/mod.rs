@@ -107,7 +107,7 @@ pub enum CompressError {
 }
 
 impl fmt::Display for DecompressError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DecompressError::OutputTooSmall { expected, actual } => {
                 write!(
@@ -131,7 +131,7 @@ impl fmt::Display for DecompressError {
 }
 
 impl fmt::Display for CompressError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CompressError::OutputTooSmall => f.write_str(
                 "output is too small for the compressed data, use get_maximum_output_size to \
