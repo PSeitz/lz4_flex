@@ -79,15 +79,12 @@
 #![deny(warnings)]
 #![deny(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
-
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(rustdoc::bare_urls)]
-
 #![warn(unreachable_pub)]
 #![warn(missing_debug_implementations)]
 #![warn(rust_2018_idioms)]
 #![warn(future_incompatible)]
-
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "nightly", feature(optimize_attribute))]
