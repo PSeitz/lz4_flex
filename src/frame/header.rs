@@ -49,6 +49,15 @@ pub enum BlockSize {
     /// 4MB block size.
     Max4MB = 7,
     /// 8MB block size.
+    ///
+    /// This size is only used by the legacy frame format, which lz4_flex reads but never writes.
+    /// It has no encoding in the frame descriptor of the current frame format, so it is not a
+    /// valid choice for compression.
+    ///
+    /// It is `#[non_exhaustive]` so it can't be constructed outside of this crate. It is still
+    /// returned by [`FrameInfo`] when reading a legacy frame, and can still be matched on from
+    /// outside the crate as `BlockSize::Max8MB { .. }`.
+    #[non_exhaustive]
     Max8MB = 8,
 }
 
@@ -72,6 +81,7 @@ impl BlockSize {
             BlockSize::Max256KB => 256 * 1024,
             BlockSize::Max1MB => 1024 * 1024,
             BlockSize::Max4MB => 4 * 1024 * 1024,
+            // Still reachable, legacy frames decode with this block size.
             BlockSize::Max8MB => 8 * 1024 * 1024,
         }
     }
@@ -284,6 +294,7 @@ impl FrameInfo {
         };
         if magic_num == LZ4F_LEGACY_MAGIC_NUMBER {
             return Ok(FrameInfo {
+                // Legacy frames have a fixed 8MB block size.
                 block_size: BlockSize::Max8MB,
                 legacy_frame: true,
                 ..FrameInfo::default()
@@ -407,5 +418,18 @@ impl BlockInfo {
         };
         output.write_all(&value.to_le_bytes())?;
         Ok(4)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_frames_read_back_as_max_8mb() {
+        let frame_info = FrameInfo::read(&LZ4F_LEGACY_MAGIC_NUMBER.to_le_bytes()).unwrap();
+        assert!(frame_info.legacy_frame);
+        assert_eq!(frame_info.block_size, BlockSize::Max8MB);
+        assert_eq!(frame_info.block_size.get_size(), 8 * 1024 * 1024);
     }
 }

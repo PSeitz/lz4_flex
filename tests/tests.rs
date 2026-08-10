@@ -709,6 +709,27 @@ mod frame {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
+    // `Max8MB` is missing on purpose: it's `#[non_exhaustive]`, so it can't be named from outside
+    // the crate. That it can't be encoded is asserted by a unit test in `src/frame/header.rs`.
+    fn block_size_roundtrip() {
+        for &block_size in &[
+            BlockSize::Auto,
+            BlockSize::Max64KB,
+            BlockSize::Max256KB,
+            BlockSize::Max1MB,
+            BlockSize::Max4MB,
+        ] {
+            let mut frame_info = lz4_flex::frame::FrameInfo::new();
+            frame_info.block_size = block_size;
+            let compressed = lz4_flex_frame_compress_with(frame_info, COMPRESSION1K)
+                .expect("compression failed");
+            let uncompressed = lz4_flex_frame_decompress(&compressed).unwrap();
+            assert_eq!(uncompressed, COMPRESSION1K, "{:?}", block_size);
+        }
+    }
+
+    #[test]
     fn content_size() {
         let mut frame_info = lz4_flex::frame::FrameInfo::new();
         frame_info.content_size = Some(COMPRESSION1K.len() as u64);
