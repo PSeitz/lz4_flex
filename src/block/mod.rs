@@ -17,6 +17,7 @@
 
 #[cfg_attr(feature = "safe-encode", forbid(unsafe_code))]
 pub(crate) mod compress;
+pub(crate) mod compress_hc;
 pub(crate) mod hashtable;
 
 #[cfg(feature = "safe-decode")]
@@ -29,6 +30,10 @@ pub(crate) use decompress_safe as decompress;
 pub(crate) mod decompress;
 
 pub use compress::*;
+pub use compress_hc::{
+    compress_hc, compress_hc_to_vec, compress_hc_to_vec_with_table, compress_hc_with_table,
+    CompressTableHC,
+};
 pub use decompress::*;
 
 use core::{error::Error, fmt};
@@ -55,7 +60,7 @@ const LAST_LITERALS: usize = 5;
 /// spec.
 const END_OFFSET: usize = LAST_LITERALS + 1;
 
-/// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-restrictions
+/// https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md#end-of-block-conditions
 /// Minimum length of a block
 ///
 /// MFLIMIT + 1 for the token.
@@ -64,18 +69,8 @@ const LZ4_MIN_LENGTH: usize = MFLIMIT + 1;
 const MAXD_LOG: usize = 16;
 const MAX_DISTANCE: usize = (1 << MAXD_LOG) - 1;
 
-#[allow(dead_code)]
-const MATCH_LENGTH_MASK: u32 = (1_u32 << 4) - 1; // 0b1111 / 15
-
 /// The minimum length of a duplicate
 const MINMATCH: usize = 4;
-
-#[allow(dead_code)]
-const FASTLOOP_SAFE_DISTANCE: usize = 64;
-
-/// Switch for the hashtable size byU16
-#[allow(dead_code)]
-static LZ4_64KLIMIT: usize = (64 * 1024) + (MFLIMIT - 1);
 
 /// An error representing invalid compressed data.
 #[derive(Debug)]

@@ -23,7 +23,7 @@ more-asserts = "0.3.1"
 snap = "1.1.0"
 serde_json = "1.0.91"
 proptest = "1.0.0"
-binggan = { version = "0.16.0"}
+binggan = { version = "0.17.0"}
 jemallocator = "0.5.4"
 
 [dev-dependencies.lz-fear]
@@ -55,6 +55,7 @@ twox-hash = { version = "2.0.0", default-features = false, features = ["xxhash32
 codegen-units = 1
 lto = true
 opt-level = 3
+debug = true
 
 [profile.release]
 codegen-units = 1
