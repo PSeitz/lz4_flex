@@ -19,7 +19,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dev-dependencies]
 lzzzz = "2.0.0"
 lz4-compress = "0.1.1"
-more-asserts = "0.3.1"
+assertables = "10.0.0"
 snap = "1.1.0"
 serde_json = "1.0.91"
 proptest = "1.0.0"
