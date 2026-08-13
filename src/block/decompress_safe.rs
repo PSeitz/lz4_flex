@@ -27,7 +27,11 @@ use alloc::vec::Vec;
 /// is encoded to _255 + 255 + 255 + 4 = 769_. The bytes after the first 4 is ignored, because
 /// 4 is the first non-0xFF byte.
 #[inline]
-pub(super) fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<usize, DecompressError> {
+pub(super) fn read_integer(
+    input: &[u8],
+    input_pos: &mut usize,
+    max: usize,
+) -> Result<usize, DecompressError> {
     // We start at zero and count upwards.
     let mut n: usize = 0;
     // If this byte takes value 255 (the maximum value it can take), another byte is read
@@ -38,7 +42,16 @@ pub(super) fn read_integer(input: &[u8], input_pos: &mut usize) -> Result<usize,
             .get(*input_pos)
             .ok_or(DecompressError::ExpectedAnotherByte)?;
         *input_pos += 1;
-        n += extra as usize;
+        // Reject as soon as the value exceeds the caller's bound. This both prevents
+        // integer overflow on 32-bit targets and bounds the work for a malicious
+        // run of `0xFF` bytes (CWE-190 / CWE-400).
+        n = n
+            .checked_add(extra as usize)
+            .filter(|&v| v <= max)
+            .ok_or(DecompressError::OutputTooSmall {
+                expected: max.saturating_add(1),
+                actual: max,
+            })?;
 
         // We continue if we got 255, break otherwise.
         if extra != 0xFF {
@@ -185,8 +198,15 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
         if literal_length != 0 {
             if literal_length == 15 {
                 // The literal_length length took the maximal value, indicating that there is more
-                // than 15 literal_length bytes. We read the extra integer.
-                literal_length += read_integer(input, &mut input_pos)? as usize;
+                // than 15 literal_length bytes. We read the extra integer. A literal is bounded by
+                // both the remaining input and the remaining output capacity.
+                let max = (input.len() - input_pos).min(output.capacity() - output.pos());
+                literal_length = literal_length
+                    .checked_add(read_integer(input, &mut input_pos, max)?)
+                    .ok_or(DecompressError::OutputTooSmall {
+                        expected: usize::MAX,
+                        actual: max,
+                    })?;
             }
 
             if literal_length > input.len() - input_pos {
@@ -195,7 +215,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
             // could be skipped with unchecked-decode
             if literal_length > output.capacity() - output.pos() {
                 return Err(DecompressError::OutputTooSmall {
-                    expected: output.pos() + literal_length,
+                    expected: output.pos().saturating_add(literal_length),
                     actual: output.capacity(),
                 });
             }
@@ -221,14 +241,21 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
         let mut match_length = MINMATCH + (token & 0xF) as usize;
         if match_length == MINMATCH + 15 {
             // The match length took the maximal value, indicating that there is more bytes. We
-            // read the extra integer.
-            match_length += read_integer(input, &mut input_pos)? as usize;
+            // read the extra integer. A match back-reference is bounded by the remaining output
+            // capacity.
+            let max = output.capacity() - output.pos();
+            match_length = match_length
+                .checked_add(read_integer(input, &mut input_pos, max)?)
+                .ok_or(DecompressError::OutputTooSmall {
+                    expected: usize::MAX,
+                    actual: max,
+                })?;
         }
 
         // could be skipped with unchecked-decode
-        if output.pos() + match_length > output.capacity() {
+        if match_length > output.capacity() - output.pos() {
             return Err(DecompressError::OutputTooSmall {
-                expected: output.pos() + match_length,
+                expected: output.pos().saturating_add(match_length),
                 actual: output.capacity(),
             });
         }
@@ -491,5 +518,53 @@ mod test {
             decompress(&[0x0E, 0, 0, 0x70, 0, 0, 0, 0, 0, 0, 0], 256),
             Err(DecompressError::OffsetZero)
         ));
+    }
+
+    // Regression for https://github.com/PSeitz/lz4_flex/issues/215
+    // (integer overflow panic on 32-bit targets).
+    //
+    // A malicious run of `0xFF` bytes in a length field must be rejected as
+    // soon as it exceeds the caller's bound, rather than accumulating until it
+    // overflows a `usize` (and, on 32-bit targets, panics in debug builds or
+    // wraps silently in release builds).
+    #[test]
+    fn extended_length_bounded_by_cap() {
+        // `read_integer` must reject the very first `0xFF` when `max` is small.
+        let input = [0xFF, 0xFF, 0xFF, 0x01];
+        let mut pos = 0;
+        assert!(matches!(
+            read_integer(&input, &mut pos, 100),
+            Err(DecompressError::OutputTooSmall { .. })
+        ));
+
+        // It must also reject a value that exceeds the cap only after
+        // accumulating several bytes (255 + 255 = 510 > 300). This exercises
+        // the "accumulate, then bail" path, not just the first-byte bail.
+        let mut pos = 0;
+        assert!(matches!(
+            read_integer(&input, &mut pos, 300),
+            Err(DecompressError::OutputTooSmall { .. })
+        ));
+        // Two `0xFF` bytes were consumed before the third one pushed the sum
+        // past the cap.
+        assert_eq!(pos, 2);
+    }
+
+    // A full decode with a crafted extended match length must return an error
+    // rather than panic. The bound here is the remaining output capacity (32),
+    // which is far smaller than any overflow, so this is pointer-width
+    // independent and runs in CI.
+    #[test]
+    fn crafted_extended_match_length_is_rejected() {
+        // token 0x0F: literal len 0, match nibble 15 -> match_length starts at 19.
+        let mut input = vec![0x0F, 0x01, 0x00];
+        // A long run of 0xFF makes read_integer exceed the 32-byte output
+        // capacity immediately.
+        input.extend(core::iter::repeat(0xFFu8).take(64));
+        input.push(0xED);
+
+        let mut output = [0u8; 32];
+        let res = decompress_into(&input, &mut output);
+        assert!(matches!(res, Err(DecompressError::OutputTooSmall { .. })));
     }
 }
