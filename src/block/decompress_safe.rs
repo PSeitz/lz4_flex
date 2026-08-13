@@ -215,7 +215,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
             // could be skipped with unchecked-decode
             if literal_length > output.capacity() - output.pos() {
                 return Err(DecompressError::OutputTooSmall {
-                    expected: output.pos() + literal_length,
+                    expected: output.pos().saturating_add(literal_length),
                     actual: output.capacity(),
                 });
             }

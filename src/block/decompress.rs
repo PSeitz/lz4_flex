@@ -376,7 +376,7 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
                 if literal_length > unsafe { output_end.offset_from(output_ptr) as usize } {
                     return Err(DecompressError::OutputTooSmall {
                         expected: unsafe { output_ptr.offset_from(output_base) as usize }
-                            + literal_length,
+                            .saturating_add(literal_length),
                         actual: output.capacity(),
                     });
                 }
