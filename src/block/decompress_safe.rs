@@ -537,14 +537,17 @@ mod test {
             Err(DecompressError::OutputTooSmall { .. })
         ));
 
-        // And it must not scan the whole input when the bound is exceeded early.
+        // It must also reject a value that exceeds the cap only after
+        // accumulating several bytes (255 + 255 = 510 > 300). This exercises
+        // the "accumulate, then bail" path, not just the first-byte bail.
         let mut pos = 0;
         assert!(matches!(
-            read_integer(&input, &mut pos, 200),
+            read_integer(&input, &mut pos, 300),
             Err(DecompressError::OutputTooSmall { .. })
         ));
-        // `pos` advanced by one byte only: we bailed at the first 0xFF.
-        assert_eq!(pos, 1);
+        // Two `0xFF` bytes were consumed before the third one pushed the sum
+        // past the cap.
+        assert_eq!(pos, 2);
     }
 
     // A full decode with a crafted extended match length must return an error
