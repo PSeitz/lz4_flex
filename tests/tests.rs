@@ -817,3 +817,26 @@ mod test_compression {
         }
     }
 }
+
+// Regression for https://github.com/PSeitz/lz4_flex/issues/215
+//
+// On 32-bit targets a crafted extended match length used to overflow a
+// `usize` and panic (debug) or wrap (release). This is the exact payload from
+// the issue. With the fix, the remaining-output bound (32 bytes) rejects the
+// extended length at the first `0xFF`, so the payload never accumulates to the
+// near-usize::MAX value that used to overflow. Only runs where the overflow
+// was reachable (32-bit).
+#[cfg(all(feature = "safe-decode", target_pointer_width = "32"))]
+#[test]
+fn issue_215_32bit_overflow_is_rejected() {
+    use lz4_flex::block::decompress_into;
+
+    // token: literal len = 0, match nibble = 15 => initial match_length = 19
+    let mut input = vec![0x0F, 0x01, 0x00];
+    input.extend(std::iter::repeat(0xFFu8).take(16_843_008));
+    input.push(0xED);
+
+    let mut output = [0u8; 32];
+    // Must return an error, never panic.
+    assert!(decompress_into(&input, &mut output).is_err());
+}

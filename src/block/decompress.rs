@@ -135,6 +135,7 @@ unsafe fn copy_from_dict(
 pub(super) fn read_integer_ptr(
     input_ptr: &mut *const u8,
     _input_ptr_end: *const u8,
+    max: usize,
 ) -> Result<usize, DecompressError> {
     // We start at zero and count upwards.
     let mut n: usize = 0;
@@ -151,7 +152,16 @@ pub(super) fn read_integer_ptr(
         }
         let extra = unsafe { input_ptr.read() };
         *input_ptr = unsafe { input_ptr.add(1) };
-        n += extra as usize;
+        // Reject as soon as the value exceeds the caller's bound. This both prevents
+        // integer overflow on 32-bit targets and bounds the work for a malicious
+        // run of `0xFF` bytes (CWE-190 / CWE-400).
+        n = n
+            .checked_add(extra as usize)
+            .filter(|&v| v <= max)
+            .ok_or(DecompressError::OutputTooSmall {
+                expected: max.saturating_add(1),
+                actual: max,
+            })?;
 
         // We continue if we got 255, break otherwise.
         if extra != 0xFF {
@@ -344,8 +354,16 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
         if literal_length != 0 {
             if literal_length == 15 {
                 // The literal_length length took the maximal value, indicating that there is more
-                // than 15 literal_length bytes. We read the extra integer.
-                literal_length += read_integer_ptr(&mut input_ptr, input_ptr_end)? as usize;
+                // than 15 literal_length bytes. We read the extra integer. A literal is bounded by
+                // both the remaining input and the remaining output capacity.
+                let max = (input_ptr_end as usize - input_ptr as usize)
+                    .min(unsafe { output_end.offset_from(output_ptr) as usize });
+                literal_length = literal_length
+                    .checked_add(read_integer_ptr(&mut input_ptr, input_ptr_end, max)?)
+                    .ok_or(DecompressError::OutputTooSmall {
+                        expected: usize::MAX,
+                        actual: max,
+                    })?;
             }
 
             // could be skipped with unchecked-decode
@@ -395,8 +413,15 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
         let mut match_length = MINMATCH + (token & 0xF) as usize;
         if match_length == MINMATCH + 15 {
             // The match length took the maximal value, indicating that there is more bytes. We
-            // read the extra integer.
-            match_length += read_integer_ptr(&mut input_ptr, input_ptr_end)? as usize;
+            // read the extra integer. A match back-reference is bounded by the remaining output
+            // capacity.
+            let max = unsafe { output_end.offset_from(output_ptr) as usize };
+            match_length = match_length
+                .checked_add(read_integer_ptr(&mut input_ptr, input_ptr_end, max)?)
+                .ok_or(DecompressError::OutputTooSmall {
+                    expected: usize::MAX,
+                    actual: max,
+                })?;
         }
 
         // We now copy from the already decompressed buffer. This allows us for storing duplicates
@@ -636,5 +661,23 @@ mod test {
             decompress(&[0x0E, 0, 0, 0x70, 0, 0, 0, 0, 0, 0, 0], 256),
             Err(DecompressError::OffsetZero)
         ));
+    }
+
+    // Regression for https://github.com/PSeitz/lz4_flex/issues/215
+    // (integer overflow panic on 32-bit targets, unsafe decoder path).
+    //
+    // Mirrors the safe-decode regression: a malicious run of `0xFF` in an
+    // extended length must be rejected by the remaining-capacity bound rather
+    // than accumulated past `usize::MAX`.
+    #[test]
+    fn crafted_extended_match_length_is_rejected() {
+        // token 0x0F: literal len 0, match nibble 15 -> match_length starts at 19.
+        let mut input = vec![0x0F, 0x01, 0x00];
+        input.extend(core::iter::repeat(0xFFu8).take(64));
+        input.push(0xED);
+
+        let mut output = [0u8; 32];
+        let res = decompress_into(&input, &mut output);
+        assert!(matches!(res, Err(DecompressError::OutputTooSmall { .. })));
     }
 }
