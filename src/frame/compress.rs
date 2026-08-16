@@ -178,8 +178,11 @@ impl<W: io::Write> FrameEncoder<W> {
                 if !self.is_frame_open && !self.data_to_frame_written {
                     self.begin_frame(0)?;
                 }
-                self.end_frame()?;
-                self.data_to_frame_written = true;
+                // Already finished: do not write a second EndMark.
+                if self.is_frame_open {
+                    self.end_frame()?;
+                    self.data_to_frame_written = true;
+                }
                 Ok(())
             }
             Err(err) => Err(err.into()),
