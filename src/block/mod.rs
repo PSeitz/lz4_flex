@@ -96,6 +96,14 @@ pub enum DecompressError {
     OffsetZero,
     /// Deduplication offset out of bounds (not in buffer).
     OffsetOutOfBounds,
+    /// The size prepended to the input is larger than the compressed data could possibly
+    /// decompress to.
+    UncompressedSizeTooLarge {
+        /// Uncompressed size read from the size prefix
+        declared: usize,
+        /// Maximum size the compressed data can decompress to
+        max: usize,
+    },
 }
 
 #[derive(Debug)]
@@ -126,6 +134,13 @@ impl fmt::Display for DecompressError {
             DecompressError::OffsetOutOfBounds => {
                 f.write_str("the offset to copy is not contained in the decompressed buffer")
             }
+            DecompressError::UncompressedSizeTooLarge { declared, max } => {
+                write!(
+                    f,
+                    "prepended uncompressed size {declared} is larger than the compressed data \
+                     can decompress to (at most {max})"
+                )
+            }
         }
     }
 }
@@ -154,6 +169,29 @@ pub fn uncompressed_size(input: &[u8]) -> Result<(usize, &[u8]), DecompressError
     let size: &[u8; 4] = size.try_into().unwrap();
     let uncompressed_size = u32::from_le_bytes(*size) as usize;
     let rest = &input[4..];
+    Ok((uncompressed_size, rest))
+}
+
+/// An LZ4 block expands at most 255x: literals are copied 1:1, a match costs at least 3 bytes
+/// (token and offset) for at most 19 bytes of output, and every additional match length byte
+/// adds at most 255 bytes of output.
+#[cfg(feature = "alloc")]
+const MAX_EXPANSION: usize = 255;
+
+/// Like [`uncompressed_size`], but rejects a size the rest of the input can't decompress to.
+/// `decompress_size_prepended` allocates the uncompressed size up front, so without this check
+/// 4 bytes of untrusted or non size-prepended input could request an allocation of up to 4 GiB.
+#[cfg(feature = "alloc")]
+#[inline]
+pub(crate) fn uncompressed_size_checked(input: &[u8]) -> Result<(usize, &[u8]), DecompressError> {
+    let (uncompressed_size, rest) = uncompressed_size(input)?;
+    let max = rest.len().saturating_mul(MAX_EXPANSION);
+    if uncompressed_size > max {
+        return Err(DecompressError::UncompressedSizeTooLarge {
+            declared: uncompressed_size,
+            max,
+        });
+    }
     Ok((uncompressed_size, rest))
 }
 
