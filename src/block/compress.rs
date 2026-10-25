@@ -44,23 +44,20 @@ pub(super) fn get_batch(input: &[u8], n: usize) -> u32 {
     u32::from_ne_bytes(input[n..n + 4].try_into().unwrap())
 }
 
-/// Read an usize sized "batch" from some position.
+/// Read an 8-byte "batch" from some position.
 ///
-/// This will read a native-endian usize from some position.
+/// This will read a native-endian u64 from some position, on every target: wasm32 and other
+/// 32-bit targets with native 64-bit integers hash 5 bytes the same as a 64-bit one.
 #[inline]
-#[allow(dead_code)]
 #[cfg(not(feature = "safe-encode"))]
-pub(super) fn get_batch_arch(input: &[u8], n: usize) -> usize {
-    unsafe { read_usize_ptr(input.as_ptr().add(n)) }
+pub(super) fn get_batch_u64(input: &[u8], n: usize) -> u64 {
+    unsafe { read_u64_ptr(input.as_ptr().add(n)) }
 }
 
 #[inline]
-#[allow(dead_code)]
 #[cfg(feature = "safe-encode")]
-pub(super) fn get_batch_arch(input: &[u8], n: usize) -> usize {
-    const USIZE_SIZE: usize = core::mem::size_of::<usize>();
-    let arr: &[u8; USIZE_SIZE] = input[n..n + USIZE_SIZE].try_into().unwrap();
-    usize::from_ne_bytes(*arr)
+pub(super) fn get_batch_u64(input: &[u8], n: usize) -> u64 {
+    u64::from_ne_bytes(input[n..n + 8].try_into().unwrap())
 }
 
 #[inline]
@@ -590,7 +587,8 @@ fn init_dict<T: HashTable>(dict: &mut T, dict_data: &mut &[u8]) {
         *dict_data = &dict_data[dict_data.len() - WINDOW_SIZE..];
     }
     let mut i = 0usize;
-    while i + core::mem::size_of::<usize>() <= dict_data.len() {
+    // `get_hash_at` may read a u64, whatever the pointer width.
+    while i + core::mem::size_of::<u64>() <= dict_data.len() {
         let hash = T::get_hash_at(dict_data, i);
         dict.put_at(hash, i);
         // Note: The 3 byte step was copied from the reference implementation, it could be
@@ -837,6 +835,16 @@ fn read_u32_ptr(input: *const u8) -> u32 {
 
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
+fn read_u64_ptr(input: *const u8) -> u64 {
+    let mut num: u64 = 0;
+    unsafe {
+        core::ptr::copy_nonoverlapping(input, &mut num as *mut u64 as *mut u8, 8);
+    }
+    num
+}
+
+#[inline]
+#[cfg(not(feature = "safe-encode"))]
 fn read_usize_ptr(input: *const u8) -> usize {
     let mut num: usize = 0;
     unsafe {
@@ -986,6 +994,27 @@ mod tests {
             .unwrap();
             uncompressed.truncate(uncompressed_len);
             assert_eq!(uncompressed, input);
+        }
+    }
+
+    #[test]
+    fn compress_into_with_dict_on_the_large_table_does_not_read_past_dict() {
+        // dict + input >= 64 KiB takes `HashTable4K`, whose hash reads 8 bytes.
+        let input: Vec<u8> = (0..u16::MAX as usize).map(|i| (i % 251) as u8).collect();
+
+        for dict_len in (MINMATCH..=16).chain([100, WINDOW_SIZE + 5]) {
+            let dict: Vec<u8> = (0..dict_len).map(|i| (i % 13) as u8).collect();
+            let mut output = vec![0u8; get_maximum_output_size(input.len())];
+            let compressed_len = compress_into_with_dict(&input, &mut output, &dict).unwrap();
+
+            let mut uncompressed = vec![0u8; input.len()];
+            let uncompressed_len = crate::block::decompress::decompress_into_with_dict(
+                &output[..compressed_len],
+                &mut uncompressed,
+                &dict,
+            )
+            .unwrap();
+            assert_eq!(&uncompressed[..uncompressed_len], &input[..]);
         }
     }
 
