@@ -66,3 +66,21 @@ name = "fuzz_decomp_no_output_leak"
 path = "fuzz_targets/fuzz_decomp_no_output_leak.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_roundtrip_hc"
+path = "fuzz_targets/fuzz_roundtrip_hc.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_roundtrip_hc_cpp"
+path = "fuzz_targets/fuzz_roundtrip_hc_cpp.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_roundtrip_hc_frame"
+path = "fuzz_targets/fuzz_roundtrip_hc_frame.rs"
+test = false
+doc = false
