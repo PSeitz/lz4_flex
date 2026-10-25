@@ -647,6 +647,22 @@ mod frame {
     }
 
     #[test]
+    fn try_finish_empty_twice() {
+        let mut enc = lz4_flex::frame::FrameEncoder::new(Vec::new());
+        enc.write_all(b"").unwrap();
+        enc.try_finish().unwrap();
+        let after_first = enc.get_ref().len();
+        enc.try_finish().unwrap();
+        assert_eq!(enc.get_ref().len(), after_first);
+
+        let compressed = enc.finish().unwrap();
+        let mut dec = lz4_flex::frame::FrameDecoder::new(&*compressed);
+        let mut uncompressed = Vec::new();
+        dec.read_to_end(&mut uncompressed).unwrap();
+        assert_eq!(&*uncompressed, b"");
+    }
+
+    #[test]
     fn checksums() {
         for &input in &[COMPRESSION34K, COMPRESSION66JSON] {
             // Block checksum
