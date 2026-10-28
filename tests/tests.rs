@@ -780,6 +780,54 @@ mod frame {
         let uncompressed = lz4_flex_frame_decompress(DECOMPRESSION10MB_LEGACY).unwrap();
         assert_eq!(uncompressed, COMPRESSION10MB);
     }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn legacy_frame_incompressible_block() {
+        // Legacy frames have no uncompressed blocks, so `lz4 -l` writes blocks past 8MB.
+        let mut x = 0x9E37_79B9u32;
+        let input: Vec<u8> = (0..8 << 20)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 17;
+                x ^= x << 5;
+                x as u8
+            })
+            .collect();
+        let block = lz4_flex::block::compress(&input);
+        assert!(block.len() > input.len());
+        let legacy = |len: usize, block: &[u8]| {
+            let mut frame = 0x184C2102u32.to_le_bytes().to_vec();
+            frame.extend_from_slice(&(len as u32).to_le_bytes());
+            frame.extend_from_slice(block);
+            frame
+        };
+        let uncompressed = lz4_flex_frame_decompress(&legacy(block.len(), &block)).unwrap();
+        assert_eq!(uncompressed, input);
+
+        // A block of LZ4_COMPRESSBOUND(8MB) reaches the block decoder; one byte more does not.
+        let bound = (8 << 20) + (8 << 20) / 255 + 16;
+        assert!(matches!(
+            lz4_flex_frame_decompress(&legacy(bound, &vec![0; bound])),
+            Err(lz4_flex::frame::Error::DecompressionError(_))
+        ));
+        assert!(matches!(
+            lz4_flex_frame_decompress(&legacy(bound + 1, &[])),
+            Err(lz4_flex::frame::Error::BlockTooBig)
+        ));
+    }
+
+    #[test]
+    fn compressed_block_too_big() {
+        let frame_info = lz4_flex::frame::FrameInfo::new().block_size(BlockSize::Max64KB);
+        let mut compressed = lz4_flex_frame_compress_with(frame_info, COMPRESSION1K).unwrap();
+        // The first block header follows the 7-byte frame descriptor.
+        compressed[7..11].copy_from_slice(&(64 * 1024 + 1u32).to_le_bytes());
+        assert!(matches!(
+            lz4_flex_frame_decompress(&compressed),
+            Err(lz4_flex::frame::Error::BlockTooBig)
+        ));
+    }
 }
 
 #[cfg(test)]
