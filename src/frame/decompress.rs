@@ -265,7 +265,13 @@ impl<R: io::Read> FrameDecoder<R> {
             }
             BlockInfo::Compressed(len) => {
                 let len = len as usize;
-                if len > max_block_size {
+                // Legacy frames have no uncompressed blocks: allow LZ4_COMPRESSBOUND.
+                let max_len = if frame_info.legacy_frame {
+                    max_block_size + max_block_size / 255 + 16
+                } else {
+                    max_block_size
+                };
+                if len > max_len {
                     return Err(Error::BlockTooBig.into());
                 }
                 // TODO: Attempt to avoid initialization of read buffer when
