@@ -344,7 +344,7 @@ pub fn decompress_into_with_dict(
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[inline]
 pub fn decompress_size_prepended(input: &[u8]) -> Result<Vec<u8>, DecompressError> {
-    let (uncompressed_size, input) = super::uncompressed_size_checked(input)?;
+    let (uncompressed_size, input) = super::uncompressed_size(input)?;
     decompress(input, uncompressed_size)
 }
 
@@ -374,7 +374,7 @@ pub fn decompress_size_prepended_with_dict(
     input: &[u8],
     ext_dict: &[u8],
 ) -> Result<Vec<u8>, DecompressError> {
-    let (uncompressed_size, input) = super::uncompressed_size_checked(input)?;
+    let (uncompressed_size, input) = super::uncompressed_size(input)?;
     decompress_with_dict(input, uncompressed_size, ext_dict)
 }
 
