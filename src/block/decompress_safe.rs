@@ -88,6 +88,13 @@ fn does_token_fit(token: u8) -> bool {
         || (token & FIT_TOKEN_MASK_MATCH) == FIT_TOKEN_MASK_MATCH)
 }
 
+/// Returns the literal length in the upper 4 bits of the token. 15 means that more length bytes
+/// follow the token.
+#[inline]
+fn literal_len(token: u8) -> u8 {
+    token >> 4
+}
+
 /// Decompress all bytes of `input` into `output`.
 ///
 /// Returns the number of bytes written (decompressed) into `output`.
@@ -177,6 +184,25 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
             continue;
         }
 
+        // A short literal followed by a long match (match length field 15): copy the literal the
+        // way the fast path does, then read the rest of the match length and copy the match like
+        // the slow path does.
+        if literal_len(token) != 15 && input_pos <= safe_input_pos && output.pos() < safe_output_pos
+        {
+            let literal_length = literal_len(token) as usize;
+            let literals: &[u8; 16] = input[input_pos..input_pos + 16].try_into().unwrap();
+            output.extend_from_slice_wild(literals, literal_length);
+            input_pos += literal_length;
+
+            // clone as we don't want to mutate
+            let offset = read_match_offset(literals, &mut literal_length.clone())? as usize;
+            input_pos += 2;
+
+            let match_length = MINMATCH + 15 + read_integer(input, &mut input_pos)?;
+            copy_match::<USE_DICT>(output, ext_dict, offset, match_length)?;
+            continue;
+        }
+
         // Now, we read the literals section.
         // Literal Section
         // If the initial value is 15, it is indicated that another byte will be read and added to
@@ -225,27 +251,39 @@ pub(crate) fn decompress_internal<const USE_DICT: bool, S: Sink>(
             match_length += read_integer(input, &mut input_pos)?;
         }
 
-        // could be skipped with unchecked-decode
-        if output.pos() + match_length > output.capacity() {
-            return Err(DecompressError::OutputTooSmall {
-                expected: output.pos() + match_length,
-                actual: output.capacity(),
-            });
-        }
-        if USE_DICT && offset > output.pos() {
-            let copied = copy_from_dict(output, ext_dict, offset, match_length)?;
-            if copied == match_length {
-                continue;
-            }
-            // match crosses ext_dict and output, offset is still correct as output_len was
-            // increased
-            match_length -= copied;
-        }
-        // We now copy from the already decompressed buffer. This allows us for storing duplicates
-        // by simply referencing the other location.
-        duplicate_slice(output, offset, match_length)?;
+        copy_match::<USE_DICT>(output, ext_dict, offset, match_length)?;
     }
     Ok(output.pos() - initial_output_pos)
+}
+
+/// Copies a match of `match_length` bytes that starts `offset` bytes back from the end of `output`.
+/// With `USE_DICT`, the match may start in `ext_dict`.
+#[inline(always)] // (always) an outlined call would keep `output` on the stack in the decoder loop
+fn copy_match<const USE_DICT: bool>(
+    output: &mut impl Sink,
+    ext_dict: &[u8],
+    offset: usize,
+    mut match_length: usize,
+) -> Result<(), DecompressError> {
+    // could be skipped with unchecked-decode
+    if output.pos() + match_length > output.capacity() {
+        return Err(DecompressError::OutputTooSmall {
+            expected: output.pos() + match_length,
+            actual: output.capacity(),
+        });
+    }
+    if USE_DICT && offset > output.pos() {
+        let copied = copy_from_dict(output, ext_dict, offset, match_length)?;
+        if copied == match_length {
+            return Ok(());
+        }
+        // match crosses ext_dict and output, offset is still correct as output_len was
+        // increased
+        match_length -= copied;
+    }
+    // We now copy from the already decompressed buffer. This allows us for storing duplicates
+    // by simply referencing the other location.
+    duplicate_slice(output, offset, match_length)
 }
 
 #[inline]
@@ -299,7 +337,7 @@ fn duplicate_slice(
 
 /// self-referential copy for the case data start (end of output - offset) + match_length overlaps
 /// into output
-#[inline]
+#[inline(always)]
 fn duplicate_overlapping_slice(
     sink: &mut impl Sink,
     offset: usize,
@@ -490,6 +528,52 @@ mod test {
         assert!(matches!(
             decompress(&[0x0E, 0, 0, 0x70, 0, 0, 0, 0, 0, 0, 0], 256),
             Err(DecompressError::OffsetZero)
+        ));
+    }
+
+    // The blocks below start with a short literal followed by a long match (match length field
+    // 15). At least 18 bytes follow the token and the output has room for the fast path's copies,
+    // so the sequence takes the path for these sequences rather than the slow path.
+
+    #[test]
+    fn short_literal_long_match() {
+        // "ab", a 20-byte match at offset 2 (15 + 1 extra length byte), then 14 literals.
+        let mut block = vec![0x2F, b'a', b'b', 2, 0, 1, 0xE0];
+        block.extend_from_slice(b"cdefghijklmnop");
+        let mut expected = b"ab".repeat(11);
+        expected.extend_from_slice(b"cdefghijklmnop");
+        assert_eq!(decompress(&block, expected.len()).unwrap(), expected);
+    }
+
+    #[test]
+    fn short_literal_long_match_errors() {
+        let padded = |head: &[u8]| [head, &[0; 16]].concat();
+        // zero offset
+        assert!(matches!(
+            decompress(&padded(&[0x1F, b'a', 0, 0, 0]), 256),
+            Err(DecompressError::OffsetZero)
+        ));
+        // unterminated match length
+        assert!(matches!(
+            decompress(&[&[0x1F, b'a', 1, 0][..], &[255; 16]].concat(), 256),
+            Err(DecompressError::ExpectedAnotherByte)
+        ));
+        // match too large for output
+        assert!(matches!(
+            decompress(&padded(&[0x1F, b'a', 1, 0, 100]), 64),
+            Err(DecompressError::OutputTooSmall {
+                expected: 120,
+                actual: 64
+            })
+        ));
+        // match before the start of the output, overlapping and non-overlapping
+        assert!(matches!(
+            decompress(&padded(&[0x1F, b'a', 5, 0, 0]), 256),
+            Err(DecompressError::OffsetOutOfBounds)
+        ));
+        assert!(matches!(
+            decompress(&padded(&[0x1F, b'a', 100, 0, 0]), 256),
+            Err(DecompressError::OffsetOutOfBounds)
         ));
     }
 }
