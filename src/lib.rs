@@ -88,6 +88,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "nightly", feature(optimize_attribute))]
+// Stable since 1.101, and still named above for older nightlies.
+#![cfg_attr(feature = "nightly", allow(stable_features))]
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(test, macro_use)]
