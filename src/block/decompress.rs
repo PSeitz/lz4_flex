@@ -64,7 +64,7 @@ unsafe fn duplicate_overlapping(
 ) {
     let dst_ptr_end = output_ptr.add(match_length);
 
-    while output_ptr.add(1) < dst_ptr_end {
+    while dst_ptr_end.offset_from(*output_ptr) > 1 {
         // Note that this loop unrolling is done, so that the compiler doesn't do it in a awful
         // way.
         // Without that the compiler will unroll/auto-vectorize the copy with a lot of branches.
