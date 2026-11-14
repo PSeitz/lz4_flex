@@ -1,3 +1,15 @@
+0.13.2 (2026-11-14)
+==================
+### Security Fix
+- Fix out-of-bounds pointer arithmetic in the unsafe decoder [GHSA-9pg8-3269-vfrc](https://github.com/PSeitz/lz4_flex/security/advisories/GHSA-9pg8-3269-vfrc) (thanks @kris-gaudel)
+```
+With `safe-decode` disabled, decompressing an overlapping match that exactly
+fills the remaining output computed a pointer two bytes past the end of the
+output buffer. This is undefined behavior. The pointer was only compared and
+never dereferenced. Default builds (`safe-decode` enabled) are not affected.
+Users on 0.13.x should upgrade to 0.13.2.
+```
+
 0.13.1 (2026-05-09)
 ==================
 ### Fixes
