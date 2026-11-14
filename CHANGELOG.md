@@ -1,3 +1,13 @@
+0.14.2 (2026-11-14)
+==================
+### Fixes
+- Fix docs.rs build: remove the `optimize_attribute` feature gate, which is stable since Rust 1.101 [#248](https://github.com/PSeitz/lz4_flex/pull/248)
+```
+With the `nightly` feature enabled, nightly compilers from 1.101 on rejected the
+crate. docs.rs builds with all features on nightly, so the 0.14.1 docs failed to build.
+The `nightly` feature now requires a nightly compiler from 1.101 on.
+```
+
 0.14.1 (2026-11-14)
 ==================
 ### Security Fix
