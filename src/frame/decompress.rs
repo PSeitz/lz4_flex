@@ -122,7 +122,6 @@ impl<R: io::Read> FrameDecoder<R> {
                 .r
                 .read(&mut buffer[MAGIC_NUMBER_SIZE..MIN_FRAME_INFO_SIZE])?
             {
-                0 => return Ok(0),
                 MIN_FRAME_INFO_SIZE => (),
                 read => self
                     .r
@@ -231,7 +230,8 @@ impl<R: io::Read> FrameDecoder<R> {
         let block_info = {
             let mut buffer = [0u8; 4];
             if let Err(err) = self.r.read_exact(&mut buffer) {
-                if err.kind() == ErrorKind::UnexpectedEof {
+                // Legacy frames have no EndMark and end at EOF; other frames must have one.
+                if err.kind() == ErrorKind::UnexpectedEof && frame_info.legacy_frame {
                     return Ok(0);
                 } else {
                     return Err(err);
