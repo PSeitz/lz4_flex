@@ -1,3 +1,25 @@
+0.11.7 (2026-11-14)
+==================
+### Security Fix
+- Fix out-of-bounds pointer arithmetic in the unsafe decoder [GHSA-9pg8-3269-vfrc](https://github.com/PSeitz/lz4_flex/security/advisories/GHSA-9pg8-3269-vfrc) (thanks @kris-gaudel)
+```
+With `safe-decode` disabled, decompressing an overlapping match that exactly
+fills the remaining output computed a pointer two bytes past the end of the
+output buffer. This is undefined behavior. The pointer was only compared and
+never dereferenced. Default builds (`safe-decode` enabled) are not affected.
+Users on 0.11.x should upgrade to 0.11.7.
+```
+
+0.11.6 (2026-03-14)
+==================
+### Security Fix
+- Fix handling of invalid match offsets during decompression [#84cdafb](https://github.com/PSeitz/lz4_flex/commit/84cdafb) (thanks @Marcono1234)
+```
+Invalid match offsets (offset == 0) during decompression were not properly
+handled, which could lead to invalid memory reads on untrusted input.
+Users on 0.11.x should upgrade to 0.11.6.
+```
+
 0.11.5 (2025-06-19)
 ==================
 - Fix incorrect rust-version field name in Cargo.toml [#180](https://github.com/PSeitz/lz4_flex/pull/187)
