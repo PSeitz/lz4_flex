@@ -87,7 +87,8 @@
 #![warn(future_incompatible)]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![cfg_attr(feature = "nightly", feature(optimize_attribute))]
+// TODO: `optimize(size)` is stable since Rust 1.101. Once `rust-version` is bumped to 1.101,
+// apply it unconditionally instead of behind the `nightly` feature.
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(test, macro_use)]
