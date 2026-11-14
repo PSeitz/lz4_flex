@@ -1,3 +1,51 @@
+0.14.1 (2026-11-14)
+==================
+### Security Fix
+- Fix out-of-bounds pointer arithmetic in the unsafe decoder [GHSA-9pg8-3269-vfrc](https://github.com/PSeitz/lz4_flex/security/advisories/GHSA-9pg8-3269-vfrc) (thanks @kris-gaudel)
+```
+With `safe-decode` disabled, decompressing an overlapping match that exactly
+fills the remaining output computed a pointer two bytes past the end of the
+output buffer. This is undefined behavior. The pointer was only compared and
+never dereferenced. Default builds (`safe-decode` enabled) are not affected.
+Users on 0.14.x should upgrade to 0.14.1.
+```
+
+0.13.2 (2026-11-14)
+==================
+### Security Fix
+- Fix out-of-bounds pointer arithmetic in the unsafe decoder [GHSA-9pg8-3269-vfrc](https://github.com/PSeitz/lz4_flex/security/advisories/GHSA-9pg8-3269-vfrc) (thanks @kris-gaudel)
+```
+With `safe-decode` disabled, decompressing an overlapping match that exactly
+fills the remaining output computed a pointer two bytes past the end of the
+output buffer. This is undefined behavior. The pointer was only compared and
+never dereferenced. Default builds (`safe-decode` enabled) are not affected.
+Users on 0.13.x should upgrade to 0.13.2.
+```
+
+0.12.3 (2026-11-14)
+==================
+### Security Fix
+- Fix out-of-bounds pointer arithmetic in the unsafe decoder [GHSA-9pg8-3269-vfrc](https://github.com/PSeitz/lz4_flex/security/advisories/GHSA-9pg8-3269-vfrc) (thanks @kris-gaudel)
+```
+With `safe-decode` disabled, decompressing an overlapping match that exactly
+fills the remaining output computed a pointer two bytes past the end of the
+output buffer. This is undefined behavior. The pointer was only compared and
+never dereferenced. Default builds (`safe-decode` enabled) are not affected.
+Users on 0.12.x should upgrade to 0.12.3.
+```
+
+0.11.7 (2026-11-14)
+==================
+### Security Fix
+- Fix out-of-bounds pointer arithmetic in the unsafe decoder [GHSA-9pg8-3269-vfrc](https://github.com/PSeitz/lz4_flex/security/advisories/GHSA-9pg8-3269-vfrc) (thanks @kris-gaudel)
+```
+With `safe-decode` disabled, decompressing an overlapping match that exactly
+fills the remaining output computed a pointer two bytes past the end of the
+output buffer. This is undefined behavior. The pointer was only compared and
+never dereferenced. Default builds (`safe-decode` enabled) are not affected.
+Users on 0.11.x should upgrade to 0.11.7.
+```
+
 0.14.0 (2026-07-14)
 ==================
 ### Features
