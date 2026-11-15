@@ -234,6 +234,33 @@ pub(super) fn write_integer(output: &mut impl Sink, mut n: usize) {
     push_byte(output, n as u8);
 }
 
+fn literal_cost(len: usize) -> usize {
+    1 + len + if len < 15 { 0 } else { (len - 15) / 255 + 1 }
+}
+
+fn fitting_literals(capacity: usize, remaining: usize) -> usize {
+    let mut len = remaining.min(capacity.saturating_sub(1));
+    while literal_cost(len) > capacity && len != 0 {
+        len = len.saturating_sub(literal_cost(len) - capacity);
+    }
+    len
+}
+
+fn finish_literals<const LIMITED: bool>(
+    output: &mut impl Sink,
+    input: &[u8],
+    start: usize,
+    output_start: usize,
+) -> (usize, usize) {
+    let end = if LIMITED {
+        start + fitting_literals(output.capacity() - output.pos(), input.len() - start)
+    } else {
+        input.len()
+    };
+    handle_last_literals(output, &input[..end], start);
+    (end, output.pos() - output_start)
+}
+
 /// Handle the last bytes from the input as literals
 #[cold]
 fn handle_last_literals(output: &mut impl Sink, input: &[u8], start: usize) {
@@ -325,6 +352,31 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool, S: Sink>(
     ext_dict: &[u8],
     input_stream_offset: usize,
 ) -> Result<usize, CompressError> {
+    compress_internal_bounded::<T, USE_DICT, false, S>(
+        input,
+        input_pos,
+        output,
+        dict,
+        ext_dict,
+        input_stream_offset,
+    )
+    .map(|(_, written)| written)
+}
+
+#[inline(never)]
+fn compress_internal_bounded<T: HashTable, const USE_DICT: bool, const LIMITED: bool, S: Sink>(
+    input: &[u8],
+    input_pos: usize,
+    output: &mut S,
+    dict: &mut T,
+    ext_dict: &[u8],
+    input_stream_offset: usize,
+) -> Result<(usize, usize), CompressError> {
+    if LIMITED {
+        assert!(!USE_DICT && input_pos == 0 && input_stream_offset == 0);
+    }
+    let input_pos = if LIMITED { 0 } else { input_pos };
+    let input_stream_offset = if LIMITED { 0 } else { input_stream_offset };
     assert!(input_pos <= input.len());
     if USE_DICT {
         assert!(ext_dict.len() <= super::WINDOW_SIZE);
@@ -337,14 +389,21 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool, S: Sink>(
     } else {
         assert!(ext_dict.is_empty());
     }
-    if output.capacity() - output.pos() < get_maximum_output_size(input.len() - input_pos) {
+    if output.capacity() == output.pos()
+        || (!LIMITED
+            && output.capacity() - output.pos() < get_maximum_output_size(input.len() - input_pos))
+    {
         return Err(CompressError::OutputTooSmall);
     }
 
     let output_start_pos = output.pos();
     if input.len() - input_pos < LZ4_MIN_LENGTH {
-        handle_last_literals(output, input, input_pos);
-        return Ok(output.pos() - output_start_pos);
+        return Ok(finish_literals::<LIMITED>(
+            output,
+            input,
+            input_pos,
+            output_start_pos,
+        ));
     }
 
     let ext_dict_stream_offset = input_stream_offset - ext_dict.len();
@@ -361,6 +420,11 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool, S: Sink>(
     }
 
     loop {
+        let end_pos_check = if LIMITED {
+            end_pos_check.min(literal_start + (output.capacity() - output.pos()).saturating_sub(8))
+        } else {
+            end_pos_check
+        };
         // Read the next block into two sections, the literals and the duplicates.
         let mut step_size;
         let mut candidate;
@@ -381,8 +445,12 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool, S: Sink>(
 
             // Same as cur + MFLIMIT > input.len()
             if cur > end_pos_check {
-                handle_last_literals(output, input, literal_start);
-                return Ok(output.pos() - output_start_pos);
+                return Ok(finish_literals::<LIMITED>(
+                    output,
+                    input,
+                    literal_start,
+                    output_start_pos,
+                ));
             }
             // Find a candidate in the dictionary with the hash of the current four bytes.
             // Unchecked is safe as long as the values from the hash function don't exceed the size
@@ -455,7 +523,45 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool, S: Sink>(
         // Generate the higher half of the token.
         cur += MINMATCH;
         candidate += MINMATCH;
-        let duplicate_length = count_same_bytes(input, &mut cur, candidate_source, candidate);
+        let (duplicate_length, cut) = if LIMITED {
+            let remaining = output.capacity() - output.pos();
+            let literals = literal_cost(lit_len);
+            // Reserve the offset, final token, and at least five final literals.
+            let Some(extra) = remaining.checked_sub(literals + 2 + 1 + super::LAST_LITERALS) else {
+                return Ok(finish_literals::<LIMITED>(
+                    output,
+                    input,
+                    literal_start,
+                    output_start_pos,
+                ));
+            };
+            let max_duplicate_length = extra.saturating_mul(255).saturating_add(14);
+            // count_same_bytes excludes END_OFFSET bytes from its input.
+            let scan_end = cur
+                .saturating_add(max_duplicate_length)
+                .saturating_add(END_OFFSET)
+                .min(input.len());
+            let duplicate_length =
+                count_same_bytes(&input[..scan_end], &mut cur, candidate_source, candidate);
+            // Short matches need extra literals to start at least 12 bytes before the block end.
+            let tail = (MFLIMIT - MINMATCH)
+                .saturating_sub(duplicate_length)
+                .max(super::LAST_LITERALS);
+            if literals + 2 + 1 + tail > remaining {
+                return Ok(finish_literals::<LIMITED>(
+                    output,
+                    input,
+                    literal_start,
+                    output_start_pos,
+                ));
+            }
+            (duplicate_length, duplicate_length == max_duplicate_length)
+        } else {
+            (
+                count_same_bytes(input, &mut cur, candidate_source, candidate),
+                false,
+            )
+        };
 
         // Note: The `- 2` offset was copied from the reference implementation, it could be
         // arbitrary.
@@ -487,6 +593,56 @@ pub(crate) fn compress_internal<T: HashTable, const USE_DICT: bool, S: Sink>(
             write_integer(output, duplicate_length - 0xF);
         }
         literal_start = cur;
+        // At the match budget, only the final literals fit.
+        if cut {
+            return Ok(finish_literals::<LIMITED>(
+                output,
+                input,
+                literal_start,
+                output_start_pos,
+            ));
+        }
+    }
+}
+
+/// Encodes an independent prefix into a bounded output, returning (consumed, written).
+///
+/// Clears table history on every call while reusing its storage.
+/// Small tables are upgraded for large inputs as in [`compress_into_with_table`],
+/// and are not downgraded automatically.
+/// Zero consumed bytes are possible if only the empty block fits.
+#[cfg(feature = "safe-encode")]
+pub fn compress_prefix_into_with_table(
+    input: &[u8],
+    output: &mut [u8],
+    table: &mut CompressTable,
+) -> Result<(usize, usize), CompressError> {
+    if input.len() >= u16::MAX as usize && matches!(table, CompressTable::Small(_)) {
+        *table = CompressTable::Large(HashTable4K::new());
+    }
+    match table {
+        CompressTable::Small(dict) => {
+            dict.clear();
+            compress_internal_bounded::<_, false, true, _>(
+                input,
+                0,
+                &mut SliceSink::new(output, 0),
+                dict,
+                b"",
+                0,
+            )
+        }
+        CompressTable::Large(dict) => {
+            dict.clear();
+            compress_internal_bounded::<_, false, true, _>(
+                input,
+                0,
+                &mut SliceSink::new(output, 0),
+                dict,
+                b"",
+                0,
+            )
+        }
     }
 }
 
@@ -852,6 +1008,163 @@ fn read_usize_ptr(input: *const u8) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(feature = "safe-encode")]
+    fn prefix_match_budget_boundaries() {
+        let mut table = CompressTable::small();
+        // Zero, one, and two match-length extension bytes.
+        for (capacity, match_end) in [(10, 19), (11, 274), (12, 529)] {
+            for mismatch in [match_end - 1, match_end, match_end + 1] {
+                let mut input = vec![b'a'; match_end + 8];
+                input[mismatch] = b'b';
+                let mut output = vec![0; capacity];
+                let (used, written) =
+                    compress_prefix_into_with_table(&input, &mut output, &mut table).unwrap();
+                assert_eq!((used, written), (mismatch.min(match_end) + 5, capacity));
+                assert_eq!(output[0] >> 4, 1);
+                assert!(used > MFLIMIT);
+                assert_eq!(output[written - 6], 0x50);
+                assert_eq!(
+                    crate::block::decompress(&output[..written], used).unwrap(),
+                    input[..used]
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "safe-encode")]
+    fn prefix_roundtrips_and_reuses_tables() {
+        let mut seed = 7u32;
+        let random: Vec<_> = (0..(1 << 20))
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                seed as u8
+            })
+            .collect();
+        let repeated: Vec<_> = (0..(1 << 20)).map(|i| (i % 251) as u8).collect();
+        let zeros = vec![0; 1 << 20];
+        let mut mixed = random.clone();
+        for chunk in mixed.chunks_mut(8192) {
+            chunk.copy_within(..4096, 4096);
+        }
+        for large in [false, true] {
+            let mut table = if large {
+                CompressTable::large()
+            } else {
+                CompressTable::small()
+            };
+            for input in [
+                &random[..0],
+                &random[..1],
+                &zeros[..12],
+                &zeros[..13],
+                &zeros[..14],
+                &random[..65534],
+                &random[..65535],
+                &random[..65536],
+                &random[..65537],
+                &random[..],
+                &mixed[..],
+                &repeated[..],
+                &zeros[..],
+                &mixed[..4096],
+                &repeated[..4096],
+            ] {
+                for capacity in [
+                    1,
+                    2,
+                    9,
+                    10,
+                    11,
+                    15,
+                    16,
+                    17,
+                    269,
+                    270,
+                    271,
+                    4096,
+                    65536,
+                    131072,
+                    get_maximum_output_size(input.len()),
+                ] {
+                    let mut output = vec![0xa5; capacity + 1];
+                    let expected_large = matches!(table, CompressTable::Large(_))
+                        || input.len() >= u16::MAX as usize;
+                    let result =
+                        compress_prefix_into_with_table(input, &mut output[..capacity], &mut table)
+                            .unwrap();
+                    let (used, written) = result;
+                    assert_eq!(matches!(table, CompressTable::Large(_)), expected_large);
+                    assert!(used <= input.len() && written <= capacity);
+                    if capacity >= get_maximum_output_size(input.len()) {
+                        assert_eq!(used, input.len());
+                    }
+                    assert!(output[written..].iter().all(|&byte| byte == 0xa5));
+                    if capacity == 1 {
+                        assert_eq!(result, (0, 1));
+                    }
+                    assert_eq!(
+                        crate::block::decompress(&output[..written], used).unwrap(),
+                        input[..used],
+                    );
+                    #[cfg(not(miri))]
+                    {
+                        let mut decoded = vec![0; used];
+                        assert_eq!(
+                            lzzzz::lz4::decompress(&output[..written], &mut decoded).unwrap(),
+                            used,
+                        );
+                        assert_eq!(decoded, input[..used]);
+                    }
+                    let mut fresh = if expected_large {
+                        CompressTable::large()
+                    } else {
+                        CompressTable::small()
+                    };
+                    let mut expected = vec![0; capacity];
+                    assert_eq!(
+                        compress_prefix_into_with_table(input, &mut expected, &mut fresh).unwrap(),
+                        result,
+                    );
+                    assert_eq!(&output[..written], &expected[..written]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "safe-encode")]
+    fn prefix_rejects_empty_output_without_writing() {
+        for mut table in [CompressTable::small(), CompressTable::large()] {
+            let mut output = [0xa5; 16];
+            assert!(matches!(
+                compress_prefix_into_with_table(b"prefix", &mut output[..0], &mut table),
+                Err(CompressError::OutputTooSmall),
+            ));
+            assert_eq!(output, [0xa5; 16]);
+            assert_eq!(
+                compress_prefix_into_with_table(&[], &mut output, &mut table).unwrap(),
+                (0, 1),
+            );
+            assert_eq!(output[0], 0);
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "safe-encode")]
+    fn prefix_literal_cost_boundaries() {
+        for capacity in 1..=512 {
+            for remaining in [0, 1, 14, 15, 16, 269, 270, 271, 65536] {
+                let len = fitting_literals(capacity, remaining);
+                assert!(len <= remaining && literal_cost(len) <= capacity);
+                assert!(len > 0 || remaining == 0 || capacity == 1);
+            }
+        }
+    }
 
     #[test]
     fn test_count_same_bytes() {
