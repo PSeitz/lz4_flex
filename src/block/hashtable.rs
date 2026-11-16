@@ -23,13 +23,12 @@ fn hash(sequence: u32) -> u32 {
 
 /// hashes and right shifts to a maximum value of 16bit, 65535
 /// The right shift is done in order to not exceed, the hashtables capacity
-#[cfg(target_pointer_width = "64")]
 #[inline]
-fn hash5(sequence: usize) -> u32 {
+fn hash5(sequence: u64) -> u32 {
     let primebytes = if cfg!(target_endian = "little") {
-        889523592379_usize
+        889523592379_u64
     } else {
-        11400714785074694791_usize
+        11400714785074694791_u64
     };
     (((sequence << 24).wrapping_mul(primebytes)) >> 48) as u32
 }
@@ -39,14 +38,8 @@ pub(crate) trait HashTable {
     fn put_at(&mut self, pos: usize, val: usize);
     fn clear(&mut self);
     #[inline]
-    #[cfg(target_pointer_width = "64")]
     fn get_hash_at(input: &[u8], pos: usize) -> usize {
-        hash5(super::compress::get_batch_arch(input, pos)) as usize
-    }
-    #[inline]
-    #[cfg(target_pointer_width = "32")]
-    fn get_hash_at(input: &[u8], pos: usize) -> usize {
-        hash(super::compress::get_batch(input, pos)) as usize
+        hash5(super::compress::get_batch_u64(input, pos)) as usize
     }
 }
 
