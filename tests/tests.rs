@@ -350,6 +350,78 @@ mod checked_decode {
     }
 }
 
+#[cfg(test)]
+mod size_prepended_bound {
+    use lz4_flex::block::DecompressError;
+
+    use super::*;
+
+    fn assert_too_large(res: Result<Vec<u8>, DecompressError>, declared: usize, max: usize) {
+        match res {
+            Err(DecompressError::UncompressedSizeTooLarge {
+                declared: d,
+                max: m,
+            }) => assert_eq!((d, m), (declared, max)),
+            other => panic!("expected UncompressedSizeTooLarge, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_size_larger_than_input_can_decompress_to() {
+        // 5 bytes must not request a 4 GiB allocation
+        assert_too_large(
+            decompress_size_prepended(&[0xFF, 0xFF, 0xFF, 0xFF, 0x00]),
+            u32::MAX as usize,
+            255,
+        );
+        assert_too_large(
+            decompress_size_prepended_with_dict(&[0xFF, 0xFF, 0xFF, 0xFF, 0x00], b"dict"),
+            u32::MAX as usize,
+            255,
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "frame")]
+    fn rejects_lz4_frame() {
+        // A frame passed to the block API: its magic number 04 22 4D 18 reads as
+        // a size of 407,708,164 bytes
+        use std::io::Write;
+        let mut enc = lz4_flex::frame::FrameEncoder::new(Vec::new());
+        enc.write_all(&b"hello world ".repeat(200)).unwrap();
+        let frame = enc.finish().unwrap();
+        assert_too_large(
+            decompress_size_prepended(&frame),
+            0x184D2204,
+            (frame.len() - 4) * 255,
+        );
+    }
+
+    #[test]
+    fn size_at_bound_is_accepted() {
+        // the token alone decodes to 0 bytes, the size check must still let 255 through
+        assert_eq!(
+            decompress_size_prepended(&[255, 0, 0, 0, 0x00]).unwrap(),
+            b""
+        );
+        assert_too_large(decompress_size_prepended(&[0, 1, 0, 0, 0x00]), 256, 255);
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn highly_compressible_input_roundtrips() {
+        let input = vec![0u8; 16 * 1024 * 1024];
+        let compressed = compress_prepend_size(&input);
+        let ratio = input.len() / (compressed.len() - 4);
+        assert_ge!(ratio, 250);
+        assert_eq!(decompress_size_prepended(&compressed).unwrap(), input);
+        assert_eq!(
+            decompress_size_prepended_with_dict(&compressed, b"").unwrap(),
+            input
+        );
+    }
+}
+
 #[test]
 fn test_end_offset() {
     // the last 5 bytes need to be literals, so the last match block is not allowed to match to the
