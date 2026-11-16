@@ -26,7 +26,7 @@ pub(crate) mod decompress;
 pub(crate) mod header;
 
 pub use compress::{AutoFinishEncoder, FrameEncoder};
-pub use decompress::FrameDecoder;
+pub use decompress::{FrameDecoder, MultiFrameDecoder};
 pub use header::{BlockMode, BlockSize, FrameInfo};
 
 #[derive(Debug)]
