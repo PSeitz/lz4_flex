@@ -95,8 +95,7 @@
 extern crate alloc;
 
 #[cfg(test)]
-#[macro_use]
-extern crate more_asserts;
+extern crate assertables;
 
 pub mod block;
 #[cfg(feature = "frame")]
