@@ -833,3 +833,19 @@ mod test_compression {
         }
     }
 }
+
+/// The compressed block does not depend on the target: 32-bit targets
+/// (wasm32, i686, ARMv7) hash like 64-bit ones, so a block compressed in a
+/// browser and on a server is the same.
+#[test]
+fn block_output_is_the_same_on_every_target() {
+    fn fnv1a(data: &[u8]) -> u64 {
+        data.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3)
+        })
+    }
+    // Over 64 KiB, so the 32-bit position table (`HashTable4K`) is used.
+    let compressed = lz4_flex::block::compress(COMPRESSION66JSON);
+    assert_eq!(compressed.len(), 15268);
+    assert_eq!(fnv1a(&compressed), 0x440a_c7d9_5501_593d);
+}
