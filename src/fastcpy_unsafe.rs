@@ -17,20 +17,23 @@
 //! ///       [3, 4, 5, 6]
 //!
 
+/// # Safety
+/// `num_bytes` must be at least 1, `src` must be valid for reads and `dst` valid for writes of
+/// `num_bytes` bytes, and the two ranges must not overlap.
 #[inline]
-pub(crate) fn slice_copy(src: *const u8, dst: *mut u8, num_bytes: usize) {
+pub(crate) unsafe fn slice_copy(src: *const u8, dst: *mut u8, num_bytes: usize) {
     if num_bytes < 4 {
-        short_copy(src, dst, num_bytes);
+        unsafe { short_copy(src, dst, num_bytes) };
         return;
     }
 
     if num_bytes < 8 {
-        double_copy_trick::<4>(src, dst, num_bytes);
+        unsafe { double_copy_trick::<4>(src, dst, num_bytes) };
         return;
     }
 
     if num_bytes <= 16 {
-        double_copy_trick::<8>(src, dst, num_bytes);
+        unsafe { double_copy_trick::<8>(src, dst, num_bytes) };
         return;
     }
 
@@ -56,12 +59,14 @@ pub(crate) fn slice_copy(src: *const u8, dst: *mut u8, num_bytes: usize) {
     // The bounds checks in `copy_from_slice` are elided.
 
     //unsafe { core::ptr::copy_nonoverlapping(src, dst, num_bytes) }
-    wild_copy_from_src::<16>(src, dst, num_bytes)
+    unsafe { wild_copy_from_src::<16>(src, dst, num_bytes) }
 }
 
 // Inline never because otherwise we get a call to memcpy -.-
+/// # Safety
+/// Same contract as [`slice_copy`], with `num_bytes >= SIZE`.
 #[inline]
-fn wild_copy_from_src<const SIZE: usize>(
+unsafe fn wild_copy_from_src<const SIZE: usize>(
     mut source: *const u8,
     mut dst: *mut u8,
     num_bytes: usize,
@@ -89,13 +94,15 @@ fn wild_copy_from_src<const SIZE: usize>(
     }
 }
 
+/// # Safety
+/// Same contract as [`slice_copy`], with `len < 4`.
 #[inline]
-fn short_copy(src: *const u8, dst: *mut u8, len: usize) {
+unsafe fn short_copy(src: *const u8, dst: *mut u8, len: usize) {
     unsafe {
         *dst = *src;
     }
     if len >= 2 {
-        double_copy_trick::<2>(src, dst, len);
+        unsafe { double_copy_trick::<2>(src, dst, len) };
     }
 }
 
@@ -103,7 +110,10 @@ fn short_copy(src: *const u8, dst: *mut u8, len: usize) {
 /// [1, 2, 3, 4, 5, 6]
 /// [1, 2, 3, 4]
 ///       [3, 4, 5, 6]
-fn double_copy_trick<const SIZE: usize>(src: *const u8, dst: *mut u8, len: usize) {
+///
+/// # Safety
+/// Same contract as [`slice_copy`], with `SIZE <= len`.
+unsafe fn double_copy_trick<const SIZE: usize>(src: *const u8, dst: *mut u8, len: usize) {
     let l_end = unsafe { src.add(len - SIZE) };
     let r_end = unsafe { dst.add(len - SIZE) };
 
@@ -125,7 +135,7 @@ mod tests {
                 return Ok(());
             }
             let mut right = vec![0u8; left.len()];
-            slice_copy(left.as_ptr(), right.as_mut_ptr(), left.len());
+            unsafe { slice_copy(left.as_ptr(), right.as_mut_ptr(), left.len()) };
             prop_assert_eq!(&left, &right);
         }
     }
@@ -135,7 +145,7 @@ mod tests {
         for len in 1..(512 * 2) {
             let left = (0..len).map(|i| i as u8).collect::<Vec<_>>();
             let mut right = vec![0u8; len];
-            slice_copy(left.as_ptr(), right.as_mut_ptr(), left.len());
+            unsafe { slice_copy(left.as_ptr(), right.as_mut_ptr(), left.len()) };
             assert_eq!(left, right);
         }
     }
@@ -147,7 +157,7 @@ mod tests {
             24, 25, 26, 27, 28, 29, 30, 31, 32,
         ];
         let mut right = vec![0u8; left.len()];
-        slice_copy(left.as_ptr(), right.as_mut_ptr(), left.len());
+        unsafe { slice_copy(left.as_ptr(), right.as_mut_ptr(), left.len()) };
         assert_eq!(left, right);
     }
 
@@ -159,7 +169,7 @@ mod tests {
             0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         let mut right = vec![0u8; left.len()];
-        slice_copy(left.as_ptr(), right.as_mut_ptr(), left.len());
+        unsafe { slice_copy(left.as_ptr(), right.as_mut_ptr(), left.len()) };
         assert_eq!(left, right);
     }
 }
