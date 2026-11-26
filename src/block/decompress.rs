@@ -67,7 +67,7 @@ unsafe fn duplicate_overlapping(
     unsafe {
         let dst_ptr_end = output_ptr.add(match_length);
 
-        while output_ptr.add(1) < dst_ptr_end {
+        while dst_ptr_end.offset_from(*output_ptr) > 1 {
             // Note that this loop unrolling is done, so that the compiler doesn't do it in a awful
             // way.
             // Without that the compiler will unroll/auto-vectorize the copy with a lot of branches.
@@ -574,6 +574,11 @@ mod test {
             decompress(&[0x0F, 1, 0], 255),
             Err(DecompressError::ExpectedAnotherByte)
         ));
+    }
+
+    #[test]
+    fn overlapping_match_fills_output() {
+        assert_eq!(decompress(&[0x14, b'a', 1, 0, 0], 9).unwrap(), b"aaaaaaaaa");
     }
 
     // this error test is only valid in safe-decode.
