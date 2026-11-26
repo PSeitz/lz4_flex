@@ -647,6 +647,19 @@ mod frame {
     }
 
     #[test]
+    fn truncated_frame() {
+        let compressed =
+            lz4_flex_frame_compress_with(lz4_flex::frame::FrameInfo::new(), COMPRESSION1K).unwrap();
+        // magic only, partial header, no EndMark, partial EndMark
+        for len in [4, 6, compressed.len() - 4, compressed.len() - 2] {
+            let mut dec = lz4_flex::frame::FrameDecoder::new(&compressed[..len]);
+            let mut uncompressed = Vec::new();
+            let err = dec.read_to_end(&mut uncompressed).unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof, "len {len}");
+        }
+    }
+
+    #[test]
     fn try_finish_empty_twice() {
         let mut enc = lz4_flex::frame::FrameEncoder::new(Vec::new());
         enc.write_all(b"").unwrap();
