@@ -39,11 +39,12 @@ fn main() {
         frame_compress(InputGroup::new_with_inputs(data_sets));
     }
 
-    let named_data = ALL
+    let named_data: Vec<_> = ALL
         .iter()
         .map(|data| (data.len().to_string(), data.to_vec()))
         .collect();
     block_compress(InputGroup::new_with_inputs(named_data));
+    block_compress_hc();
     block_decompress();
 }
 
@@ -142,6 +143,54 @@ fn block_compress(mut runner: InputGroup<Vec<u8>, usize>) {
     });
 
     runner.run();
+}
+
+fn lz4_cpp_block_compress_hc(input: &[u8], level: i32) -> Result<Vec<u8>, lzzzz::Error> {
+    let mut out = Vec::new();
+    lzzzz::lz4_hc::compress_to_vec(input, &mut out, level)?;
+    Ok(out)
+}
+
+fn block_compress_hc() {
+    let mut runner = BenchRunner::with_name("block_compress_hc");
+    runner.add_plugin(PeakMemAllocPlugin::new(&GLOBAL));
+
+    for data in ALL {
+        let mut group = runner.new_group();
+        group.set_name(format!("{}", data.len()));
+        group.set_input_size(data.len());
+
+        for level in [2u8, 3u8, 5, 9, 12] {
+            group.register_with_input(format!("lz4_flex_level_{level}"), data, move |i| {
+                let out = black_box(lz4_flex::block::compress_hc_to_vec(i, level));
+                out.len()
+            });
+            {
+                let table = std::cell::RefCell::new(lz4_flex::block::CompressTableHC::new());
+                // Note that the lz4 c90 reference implementation has a thread local reuse, so this
+                // is a more accurate comparison
+                group.register_with_input(
+                    format!("lz4_flex_level_{level}_reuse"),
+                    data,
+                    move |i| {
+                        let out = black_box(lz4_flex::block::compress_hc_to_vec_with_table(
+                            i,
+                            level,
+                            &mut table.borrow_mut(),
+                        ));
+                        out.len()
+                    },
+                );
+            }
+            if level >= 2 {
+                group.register_with_input(format!("lz4_c90_level_{level}"), data, move |i| {
+                    let out = black_box(lz4_cpp_block_compress_hc(i, level as i32).unwrap());
+                    out.len()
+                });
+            }
+        }
+        group.run();
+    }
 }
 
 fn block_decompress() {
