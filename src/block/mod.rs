@@ -173,7 +173,7 @@ fn large_integer_roundtrip() {
     #[cfg(not(feature = "safe-decode"))]
     let value_decompressed = {
         let mut ptr_range = buf.as_ptr_range();
-        self::decompress::read_integer_ptr(&mut ptr_range.start, ptr_range.end).unwrap()
+        unsafe { self::decompress::read_integer_ptr(&mut ptr_range.start, ptr_range.end) }.unwrap()
     };
 
     assert_eq!(value, value_decompressed);

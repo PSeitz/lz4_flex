@@ -167,7 +167,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
     // compare 4/8 bytes blocks depending on the arch
     const STEP_SIZE: usize = core::mem::size_of::<usize>();
     while *cur + STEP_SIZE <= input_end {
-        let diff = read_usize_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_usize_ptr(source_ptr);
+        let diff = unsafe { read_usize_ptr(input.as_ptr().add(*cur)) ^ read_usize_ptr(source_ptr) };
 
         if diff == 0 {
             *cur += STEP_SIZE;
@@ -184,7 +184,7 @@ fn count_same_bytes(input: &[u8], cur: &mut usize, source: &[u8], candidate: usi
     #[cfg(target_pointer_width = "64")]
     {
         if input_end - *cur >= 4 {
-            let diff = read_u32_ptr(unsafe { input.as_ptr().add(*cur) }) ^ read_u32_ptr(source_ptr);
+            let diff = unsafe { read_u32_ptr(input.as_ptr().add(*cur)) ^ read_u32_ptr(source_ptr) };
 
             if diff == 0 {
                 *cur += 4;
@@ -815,9 +815,11 @@ pub fn compress_into_with_table(
     }
 }
 
+/// # Safety
+/// `input` must be valid for reads of 2 bytes.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn read_u16_ptr(input: *const u8) -> u16 {
+unsafe fn read_u16_ptr(input: *const u8) -> u16 {
     let mut num: u16 = 0;
     unsafe {
         core::ptr::copy_nonoverlapping(input, &mut num as *mut u16 as *mut u8, 2);
@@ -825,9 +827,11 @@ fn read_u16_ptr(input: *const u8) -> u16 {
     num
 }
 
+/// # Safety
+/// `input` must be valid for reads of 4 bytes.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn read_u32_ptr(input: *const u8) -> u32 {
+unsafe fn read_u32_ptr(input: *const u8) -> u32 {
     let mut num: u32 = 0;
     unsafe {
         core::ptr::copy_nonoverlapping(input, &mut num as *mut u32 as *mut u8, 4);
@@ -835,9 +839,11 @@ fn read_u32_ptr(input: *const u8) -> u32 {
     num
 }
 
+/// # Safety
+/// `input` must be valid for reads of `size_of::<usize>()` bytes.
 #[inline]
 #[cfg(not(feature = "safe-encode"))]
-fn read_usize_ptr(input: *const u8) -> usize {
+unsafe fn read_usize_ptr(input: *const u8) -> usize {
     let mut num: usize = 0;
     unsafe {
         core::ptr::copy_nonoverlapping(
